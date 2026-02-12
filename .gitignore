@@ -22,3 +22,8 @@ logs/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# BMAD / Claude Code
+.claude/
+_bmad/
+_bmad-output/
