@@ -1,0 +1,24 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+
+# Frontend/Next.js builds
+.next/
+out/
+dist/
+.cache/
+
+# Env files (we will commit .env.example instead)
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
