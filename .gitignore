@@ -23,7 +23,10 @@ logs/
 .DS_Store
 Thumbs.db
 
-# BMAD / Claude Code
-.claude/
-_bmad/
+# Claude Code - ignore local/sensitive, track shareable config
+.claude/settings.local.json
+.claude/plugins/
+.claude/memory/
+
+# BMAD - track framework + docs, ignore generated output
 _bmad-output/
