@@ -28,5 +28,4 @@ Thumbs.db
 .claude/plugins/
 .claude/memory/
 
-# BMAD - track framework + docs, ignore generated output
-_bmad-output/
+# BMAD - track framework + docs and planning artifacts
