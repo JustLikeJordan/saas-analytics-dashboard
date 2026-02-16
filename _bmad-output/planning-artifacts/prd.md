@@ -1,5 +1,5 @@
 ---
-stepsCompleted: ['step-01-init', 'step-02-discovery', 'step-03-success', 'step-04-journeys', 'step-05-domain', 'step-06-innovation', 'step-07-project-type', 'step-08-scoping', 'step-09-functional', 'step-10-nonfunctional', 'step-11-polish']
+stepsCompleted: ['step-01-init', 'step-02-discovery', 'step-03-success', 'step-04-journeys', 'step-05-domain', 'step-06-innovation', 'step-07-project-type', 'step-08-scoping', 'step-09-functional', 'step-10-nonfunctional', 'step-11-polish', 'validation-self-consistency', 'validation-pre-mortem', 'party-mode-stress-test']
 inputDocuments:
   - _bmad-output/planning-artifacts/product-brief-saas-analytics-dashboard-2026-02-14.md
   - _bmad-output/brainstorming/brainstorming-session-2026-02-12.md
@@ -93,6 +93,10 @@ These features define the product. Without them, there's nothing to demo.
 - **AI Smart Summary** — Hybrid intelligence (local stats + LLM interpretation), single plain-English summary delivered via SSE streaming, transparency panel ("How I reached this conclusion"), Pro-only with free preview prompt. Streaming requires: SSE endpoint, chunked response handling, progressive DOM rendering, error recovery mid-stream.
 - **DevOps & Infrastructure** — Docker Compose one-command setup with seed data, health check endpoint, CI pipeline (lint, typecheck, test, seed-validation, build), feature-based folder structure, analytics events table
 - **README & Deploy** — Case study format README, hero screenshot, labeled architecture diagram, challenges with code links, live deploy with seed data
+
+### MVP-Core Completion Gate
+
+Before starting any `[Complete]` FR, all `[Core]` FRs must be implemented and tested, and the three success gates (Docker Gate, README Gate, Deploy Gate) must pass. The README Gate at this checkpoint requires structural completeness (section headers, architecture diagram placeholder, hero screenshot placeholder) — full case study prose is written last during the README & Deploy phase. This checkpoint prevents scope creep from consuming the timeline. If Core isn't done, Complete doesn't start.
 
 ### MVP-Complete (Ships If Timeline Holds)
 
@@ -209,13 +213,13 @@ She scrolls to "Challenges" — each one links to specific files and line number
 
 ### Journey Requirements Summary
 
-| Journey | Key Capabilities Revealed |
-|---------|--------------------------|
-| David — Success Path | OAuth, demo mode, CSV upload + preview, AI streaming, share/export, upgrade flow |
-| Marcus — Viral Acquisition | Focused insight card view for shared links, mobile-first AI summary, org-level data, single CTA conversion |
-| David — Error/Edge Case | Specific validation errors, sample template download, re-upload flow, no column mapping (clear errors instead) |
-| Platform Admin | RBAC (DOM-level), admin dashboard, health check, user management, analytics events |
-| Hiring Manager | Docker first-run, README narrative, architecture diagram, hybrid intelligence data flow, CI pipeline, code quality |
+| Journey | Key Capabilities Revealed | Primary FRs |
+|---------|--------------------------|-------------|
+| David — Success Path | OAuth, demo mode, CSV upload + preview, AI streaming, share/export, upgrade flow | FR1 `[Core]`, FR6 `[Core]`, FR8 `[Core]`, FR16-17 `[Core]`, FR18-19 `[Core]`, FR25 `[Complete]`, FR28 `[Complete]` |
+| Marcus — Viral Acquisition | Focused insight card view for shared links, mobile-first AI summary, org-level data, single CTA conversion | FR10 `[Core]`, FR24 `[Core]`, FR27 `[Complete]` |
+| David — Error/Edge Case | Specific validation errors, sample template download, re-upload flow, no column mapping (clear errors instead) | FR7 `[Core]`, FR9 `[Core]`, FR12 `[Core]` |
+| Platform Admin | RBAC (DOM-level), admin dashboard, health check, user management, analytics events | FR4 `[Complete]`, FR5 `[Core]`, FR32-34 `[Complete]`, FR35 `[Core]` |
+| Hiring Manager | Docker first-run, README narrative, architecture diagram, hybrid intelligence data flow, CI pipeline, code quality | FR23 `[Core]`, FR36-39 `[Core]` |
 
 ## SaaS B2B Specific Requirements
 
@@ -277,86 +281,91 @@ She scrolls to "Challenges" — each one links to specific files and line number
 
 | Risk | Category | Likelihood | Impact | Mitigation |
 |------|----------|-----------|--------|------------|
-| Auth + Org model takes > 2 weeks | Technical | Medium | High | Start here first. If week 2 passes without stable auth, reassess timeline immediately. This is the critical path. |
+| Auth + Org model takes > 2 weeks | Technical | Medium | High | Start here first. If week 2 passes without stable auth, defer invite link (FR3) and admin role separation (FR4, FR5 admin path) to MVP-Complete. Ship with Google OAuth + single-role org model. RBAC middleware enforces a single role initially — architecture supports adding admin role later without refactoring. |
 | LLM API latency exceeds 15s total | Technical | Medium | Medium | SSE streaming masks perceived latency. Time-to-first-token < 2s is the real UX target. Fallback: pre-computed statistical summary without LLM interpretation. |
 | Stripe webhook reliability in test mode | Technical | Low | Medium | Idempotent webhook handlers. Manual subscription status override for demo purposes. Test mode is forgiving. |
 | Server-side PNG rendering complexity | Technical | Medium | Low | MVP-Complete tier — can defer to manual screenshots. Canvas-based rendering simpler than headless browser. |
 | Scope creep from "one more feature" | Process | High | High | MVP-Core / MVP-Complete split is the release valve. If it's not in MVP-Core, it can wait. Reference this document when tempted. |
 | AI summary quality insufficient | Product | Low | High | Seed data AI quality is CI-testable (2+ actionable insights). Hybrid intelligence architecture gives control over prompt quality. Iterate on prompt engineering, not architecture. |
+| Free tier value overlap | Product | Low | Low | Free tier delivers visualization only, which overlaps with existing tools. Acceptable for portfolio context where the demo runs at full power with seed data. For real-user validation, consider offering one free AI analysis per month as a Growth feature if conversion data warrants it. |
 
 ## Functional Requirements
 
+**Tier key:** `[Core]` = MVP-Core (must ship), `[Complete]` = MVP-Complete (ships if timeline holds)
+
 ### Identity & Access
 
-- **FR1:** Users can sign up and sign in using their Google account
-- **FR2:** The system automatically creates an organization for first-time users
-- **FR3:** Org members can generate an invite link that allows new users to join their organization
-- **FR4:** Platform admins can view and manage all organizations and users system-wide
-- **FR5:** The system restricts capabilities based on user role (org member vs. platform admin)
+- **FR1:** `[Core]` Users can sign up and sign in using their Google account
+- **FR2:** `[Core]` The system automatically creates an organization for first-time users
+- **FR3:** `[Core]` Org members can generate an invite link that allows new users to join their organization
+- **FR4:** `[Complete]` Platform admins can view and manage all organizations and users system-wide
+- **FR5:** `[Core]` The system restricts capabilities based on user role (org member vs. platform admin)
 
 ### Data Ingestion
 
-- **FR6:** Users can upload CSV files via drag-and-drop or file picker
-- **FR7:** The system validates uploaded CSV files against expected format and displays specific error details when validation fails
-- **FR8:** Users can preview uploaded data (row count, detected column types, sample rows) before confirming the upload
-- **FR9:** Users can download a sample CSV template showing the expected format
-- **FR10:** Uploaded data is stored scoped to the user's organization
-- **FR11:** Users' first upload replaces demo/seed data within their organization
+- **FR6:** `[Core]` Users can upload CSV files via drag-and-drop or file picker
+- **FR7:** `[Core]` The system validates uploaded CSV files against expected format and displays specific error details when validation fails
+- **FR8:** `[Core]` Users can preview uploaded data (row count, detected column types, sample rows) before confirming the upload
+- **FR9:** `[Core]` Users can download a sample CSV template showing the expected format
+- **FR10:** `[Core]` Uploaded data is stored scoped to the user's organization and visible to all members of that organization
+- **FR11:** `[Core]` Users' first upload replaces demo/seed data within their organization
+- **FR12:** `[Core]` The system preserves upload flow state so users can correct and re-upload without losing their session
 
 ### Visualization & Exploration
 
-- **FR12:** Users can view their business data as interactive charts (bar and line)
-- **FR13:** Users can filter chart data by date range and category
-- **FR14:** The system displays loading states while data and charts are being prepared
-- **FR15:** The system pre-loads seed data so first-time visitors see a populated dashboard
-- **FR16:** The system displays a visual indicator when users are viewing demo/sample data
+- **FR13:** `[Core]` Users can view their business data as interactive charts (bar and line) that refresh when new data is uploaded
+- **FR14:** `[Core]` Users can filter chart data by date range and category
+- **FR15:** `[Core]` The system displays loading states while data and charts are being prepared
+- **FR16:** `[Core]` The system pre-loads seed data so first-time visitors see a populated dashboard
+- **FR17:** `[Core]` The system displays a visual indicator when users are viewing demo/sample data
 
 ### AI Interpretation
 
-- **FR17:** The system generates a plain-English AI summary interpreting the user's business data
-- **FR18:** AI summaries are delivered progressively (streaming) so users see text appearing in real time
-- **FR19:** Users can view how the AI reached its conclusions (transparency/methodology panel)
-- **FR20:** Free-tier users can see a preview of the AI summary with a prompt to upgrade for full access
-- **FR21:** The AI produces at least one non-obvious, actionable insight per analysis
-- **FR22:** The system computes statistical analysis locally and sends curated context (not raw data) to the AI service. Computations include at minimum: month-over-month growth rates, category-level comparisons, and statistical outlier detection.
+- **FR18:** `[Core]` The system generates a plain-English AI summary interpreting the user's business data
+- **FR19:** `[Core]` AI summaries are delivered progressively (streaming) so users see text appearing in real time. *Fallback: if SSE streaming is not functional by the end of the AI phase, ship with synchronous AI response behind a loading state. Streaming can be added as a progressive enhancement without architectural changes.*
+- **FR20:** `[Core]` Users can view how the AI reached its conclusions (transparency/methodology panel)
+- **FR21:** `[Core]` Free-tier users can see a preview of the AI summary with a prompt to upgrade for full access
+- **FR22:** `[Core]` The AI produces at least one non-obvious, actionable insight per analysis. Non-obvious: references a trend, anomaly, or comparison not visible by scanning raw numbers. Actionable: suggests a specific next step (investigate, reduce, expand, compare)
+- **FR23:** `[Core]` The system computes statistical analysis locally and sends curated context (not raw data) to the AI service. Computations include at minimum: month-over-month growth rates, category-level comparisons, and statistical outlier detection.
+- **FR24:** `[Core]` On mobile viewports, the AI summary is positioned above the fold, before charts and filters
 
 ### Sharing & Export
 
-- **FR23:** Users can share an insight (chart + AI summary) as a rendered image
-- **FR24:** Users can generate a shareable read-only link to a specific insight
-- **FR25:** Recipients of a shared link see a focused insight card view with a call-to-action to create an account
+- **FR25:** `[Complete]` Users can share an insight (chart + AI summary) as a rendered image
+- **FR26:** `[Complete]` Users can generate a shareable read-only link to a specific insight
+- **FR27:** `[Complete]` Recipients of a shared link see a focused insight card view with a single call-to-action to create an account
 
 ### Subscription & Billing
 
-- **FR26:** Users can upgrade their organization from Free to Pro tier
-- **FR27:** The system manages subscription lifecycle (creation, renewal, cancellation) via payment provider
-- **FR28:** The system revokes Pro access when payment fails
-- **FR29:** Subscription status is verified before granting access to Pro-only features
+- **FR28:** `[Complete]` Users can upgrade their organization from Free to Pro tier
+- **FR29:** `[Complete]` The system manages subscription lifecycle (creation, renewal, cancellation) via payment provider
+- **FR30:** `[Complete]` The system revokes Pro access when payment fails
+- **FR31:** `[Complete]` Subscription status is verified before granting access to Pro-only features
 
 ### Platform Administration
 
-- **FR30:** Platform admins can view system health status (database, AI service, uptime)
-- **FR31:** Platform admins can view analytics events across the system
-- **FR32:** Admin-only interface elements are completely absent from the page for non-admin users
-- **FR33:** The system exposes a health check endpoint for monitoring
+- **FR32:** `[Complete]` Platform admins can view system health status (database, AI service, uptime)
+- **FR33:** `[Complete]` Platform admins can view analytics events across the system
+- **FR34:** `[Complete]` Admin-only interface elements are completely absent from the page for non-admin users
+- **FR35:** `[Core]` The system exposes a health check endpoint for monitoring
 
 ### Portfolio & DevOps
 
-- **FR34:** The entire application can be launched with a single Docker command including seed data
-- **FR35:** The system runs automated checks (lint, type checking, tests, seed validation, build) in CI
-- **FR36:** The system includes a README in case-study format with hero screenshot and architecture diagram
-- **FR37:** Seed data produces a meaningful AI summary that is validated in CI
-- **FR38:** The system tracks user behavior events (upload, view, share, export, upgrade, ai_summary_view)
+- **FR36:** `[Core]` The entire application can be launched with a single Docker command including seed data
+- **FR37:** `[Core]` The system runs automated checks (lint, type checking, tests, seed validation, build) in CI
+- **FR38:** `[Core]` The system includes a README in case-study format with hero screenshot and architecture diagram
+- **FR39:** `[Core]` Seed data produces a meaningful AI summary validated in CI for both presence and quality — the summary must contain at least two distinct insight types (e.g., trend identification, anomaly detection, or actionable recommendation)
+- **FR40:** `[Core]` The system tracks user behavior events (upload, view, share, export, upgrade, ai_summary_view, transparency_panel_open)
 
 ### Appearance
 
-- **FR39:** Users can switch between light and dark appearance modes, with system preference detection as default
+- **FR41:** `[Complete]` Users can switch between light and dark appearance modes, with system preference detection as default
 
 ## Non-Functional Requirements
 
 ### Performance
 
-- **NFR1:** Dashboard initial page load completes within 3 seconds on standard broadband
+- **NFR1:** Dashboard initial page load completes within 3 seconds on 25 Mbps broadband
 - **NFR2:** AI summary begins streaming (first token visible) within 2 seconds of request
 - **NFR3:** AI summary completes full generation within 15 seconds
 - **NFR4:** CSV upload and processing completes within 5 seconds for files under 10MB
@@ -376,10 +385,10 @@ She scrolls to "Challenges" — each one links to specific files and line number
 
 ### Reliability
 
-- **NFR15:** Docker Compose first-run succeeds on macOS (Apple Silicon and Intel) and Linux (Ubuntu 22.04+) with Docker Engine 24+ and Docker Compose v2. README documents minimum requirements
+- **NFR15:** Docker Compose first-run succeeds on macOS (Apple Silicon and Intel) and Linux (Ubuntu 22.04+) with Docker Engine 24+ and Docker Compose v2. CI includes a Docker build smoke test validating `docker compose up` completes and the health check endpoint returns `status: ok` within 60 seconds. README documents minimum requirements
 - **NFR16:** Core user flows (authentication, upload, AI generation, payment) complete with < 1% error rate
 - **NFR17:** AI service unavailability produces a graceful degradation message, not a broken UI
-- **NFR18:** If AI generation exceeds the timeout threshold, the system terminates the request and displays partial results (if streaming has begun) or a graceful timeout message (if no tokens received)
+- **NFR18:** If AI generation exceeds the timeout threshold (15 seconds, per NFR3), the system terminates the request and displays partial results (if streaming has begun) or a graceful timeout message (if no tokens received)
 - **NFR19:** Seed data and demo mode are always available — the dashboard is never empty
 
 ### Integration Resilience
