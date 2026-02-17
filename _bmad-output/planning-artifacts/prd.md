@@ -3,6 +3,7 @@ stepsCompleted: ['step-01-init', 'step-02-discovery', 'step-03-success', 'step-0
 inputDocuments:
   - _bmad-output/planning-artifacts/product-brief-saas-analytics-dashboard-2026-02-14.md
   - _bmad-output/brainstorming/brainstorming-session-2026-02-12.md
+  - _bmad-output/planning-artifacts/research/competitive-financial-analytics-research-2026-02-17.md
 workflowType: 'prd'
 documentCounts:
   briefs: 1
@@ -108,8 +109,20 @@ These features complete the product but can defer gracefully without breaking th
 - **Platform Admin Role** — Separate admin dashboard, user management across orgs, system health. *Deferral path: demo/portfolio feature, not user-facing.*
 - **UI Polish** — Helpful empty states, thoughtful error handling throughout. *Note: error handling on core flows (auth, upload, AI) ships with MVP-Core. This covers edge-case polish.*
 
+### Strategic Direction: Option C — CSV Now, Financial APIs Later
+
+**Decision (2026-02-17):** Based on supplementary competitive research (`research/competitive-financial-analytics-research-2026-02-17.md`), the product adopts a "ship the wedge, architect for the platform" strategy:
+
+- **MVP-Core:** CSV upload as the sole data ingestion method. Proves the AI interpretation engine works with minimal integration complexity. Sufficient for portfolio demo with seed data.
+- **Growth-tier:** Financial API integrations (QuickBooks Online, Xero, Stripe, Plaid/bank feeds) as the commercial unlock. The architecture must design the data ingestion layer as a pluggable adapter interface so these integrations slot in without rearchitecting.
+- **Data model implication:** Normalize ingested data to a common schema regardless of source. Curation logic operates on normalized data, source-agnostic.
+- **Positioning shift:** The product's commercial positioning tightens from "general business data analytics" to "AI-powered financial co-pilot for 1-50 person businesses" — but the MVP-Core scope does not change. CSV upload with general business data (including but not limited to financial data) remains the v1 experience.
+
+**Rationale:** The competitive landscape shows no product combining AI narratives + financial depth + simple UX at SMB pricing ($49-149/mo). CSV upload demonstrates the pattern; financial integrations unlock the $12.49B financial analytics market. See full analysis in the supplementary research artifact.
+
 ### Growth Features (Post-MVP)
 
+- **Financial API integrations** — QuickBooks Online, Xero, Stripe, Plaid/bank feed adapters behind the pluggable data source interface
 - Compare periods toggle ("this month vs. last month" with AI comparison)
 - Three AI prompt strategies: Executive Summary, Anomaly Detective, Action Items
 - Grace period on payment failure (3-day window with banner before revoking Pro)
@@ -126,6 +139,7 @@ These features complete the product but can defer gracefully without breaking th
 - Smart column mapping on CSV mismatch
 - GitHub-style data health heatmap
 - Guided tour overlay for first-time users
+- Vertical-specific financial templates (agencies, e-commerce, local services, SaaS)
 
 ## User Journeys
 
