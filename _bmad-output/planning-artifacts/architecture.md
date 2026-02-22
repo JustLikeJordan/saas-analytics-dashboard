@@ -65,7 +65,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 ### Cross-Cutting Concerns Identified
 
 1. **Multi-tenancy** — org_id scoping on every query + RLS as defense-in-depth. Affects every service and repository.
-2. **Authentication/Authorization** — JWT claims (userId, org_id, role) threaded through every request. RBAC enforcement at API + service + DOM levels.
+2. **Authentication/Authorization** — JWT claims (userId, org_id, role, isAdmin) threaded through every request. Two-dimensional RBAC: org-level roles (owner/member) enforced via `roleGuard` middleware + DOM-level rendering; platform admin (`users.is_platform_admin`) enforced via `roleGuard('admin')` for system-wide routes.
 3. **Error handling** — Structured AppError hierarchy (ValidationError, AuthenticationError, etc.) with centralized Express error handler. User-friendly messages on every boundary.
 4. **Analytics event tracking** — 7+ event types (upload, view, share, export, upgrade, ai_summary_view, transparency_panel_open) instrumented across features.
 5. **Rate limiting** — Three tiers applied via Express middleware + Redis store. Affects auth, AI, and public endpoints.
@@ -73,7 +73,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 7. **Shared type safety** — Zod schemas in packages/shared as single source of truth for API contracts. Same validation frontend + backend.
 8. **Curation pipeline decomposition** — The curation logic is not one component but three: (a) statistical computation (deterministic, pure functions — simple-statistics), (b) relevance scoring (configurable weights for novelty/actionability/specificity — must support tuning without code changes), and (c) context assembly (structured prompt construction — must be versioned independently from business logic since prompt format depends on LLM model). Architecture must treat these as distinct layers, not a monolithic service.
 9. **Seed data as engineering artifact** — Seed data spans database seeding, CI quality validation (FR39 — 2+ insight types), onboarding UX (demo mode banner, FR17), and first-session "aha moment" engineering (market research: users who don't see value in first session churn permanently). Architecture must specify: (a) seed data schema and content design with deliberate anomalies, (b) seeding mechanism that runs in Docker entrypoint AND CI, (c) quality gate definition (what "2+ insight types" means concretely for CI), (d) demo-mode state management (how the system distinguishes seed data from user data).
-10. **Subscription gate** — FR31 requires subscription status verification before every Pro-only feature access (primarily AI summary generation). This is a middleware concern: the API must check org subscription status on each AI request. Architecture must decide whether to check against local DB (fast, eventually consistent with Stripe) or Stripe API (authoritative, slower). Webhook-driven local sync with DB-first checks is the expected pattern.
+10. **Subscription gate** — FR31 requires subscription status verification before every Pro-only feature access. This is a middleware concern with **two behaviors**: (a) for AI summary endpoints, the gate **annotates** the request with `req.subscriptionTier` (never blocks — free tier gets truncated stream + `upgrade_required` SSE event); (b) for other Pro-only features, the gate **blocks** with 403. Webhook-driven local sync with DB-first checks is the pattern. The annotating behavior is critical for the "show value before asking for anything" UX principle — free users always see partial AI content.
 
 ## Starter Template Evaluation
 
@@ -212,20 +212,24 @@ Hot-reload via Turbopack (frontend) and tsx watch mode (backend). Docker Compose
 | Multi-tenancy | org_id column + RLS | — | Every table has org_id; RLS policies as defense-in-depth behind application-level filtering |
 | Connection pooling | pg Pool | max: 20 | Built-in Node.js PostgreSQL driver pooling; sufficient for single-instance MVP |
 | Caching | Redis 7.x | — | Rate limiting store + session cache; Docker service |
-| Seed data | Typed seed script | — | Runs in Docker entrypoint + CI; deliberate anomalies for AI insight variety |
+| Seed data | Typed seed script | — | Runs in Docker entrypoint + CI; deliberate anomalies for AI insight variety; **pre-generates AI summary** stored in `ai_summaries` table (zero LLM calls for anonymous visitors) |
+| AI summary cache | `ai_summaries` table | — | Cache-first: check table before LLM call. Invalidated on data upload (`stale_at = now()`). Seed summaries pre-generated. No time-based TTL — stale only on data change |
 
 **Database Tables (Core Schema):**
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `users` | User accounts | id, email, name, google_id, avatar_url, created_at |
+| `users` | User accounts | id, email, name, google_id, avatar_url, is_platform_admin (boolean, default false), created_at |
 | `orgs` | Organizations (tenants) | id, name, slug, created_at |
-| `user_orgs` | Many-to-many membership | user_id, org_id, role (owner/member/admin), joined_at |
+| `user_orgs` | Many-to-many membership | user_id, org_id, role (owner/member), joined_at |
 | `refresh_tokens` | JWT refresh token storage | id, token_hash, user_id, org_id, expires_at, revoked_at |
 | `datasets` | Uploaded data collections | id, org_id, name, source_type, is_seed_data, uploaded_by, created_at |
 | `data_rows` | Normalized data (all sources) | id, org_id, dataset_id, source_type, category, parent_category, date, amount, label, metadata (jsonb) |
 | `subscriptions` | Stripe subscription state | id, org_id, stripe_customer_id, stripe_subscription_id, status, plan, current_period_end |
+| `ai_summaries` | Cached AI-generated summaries | id, org_id, dataset_id, content (text), transparency_metadata (jsonb), prompt_version (varchar), is_seed (boolean), created_at, stale_at |
 | `analytics_events` | User activity tracking | id, org_id, user_id, event_type, metadata (jsonb), created_at |
+| `org_invites` | Invite link tokens (FR3) | id, org_id, token_hash (varchar, unique), created_by (user_id), expires_at, used_at (nullable), used_by (nullable user_id), created_at |
+| `shares` | Shareable insight links (FR25-27) | id, org_id, dataset_id, share_token (varchar, unique), insight_snapshot (jsonb), chart_snapshot_url (varchar, nullable), created_by (user_id), expires_at, view_count (integer, default 0), created_at |
 
 **Normalized Schema Approach:**
 The `data_rows` table uses `category` for flat categorization (CSV default) and `parent_category` for hierarchical relationships (zero cost for CSV, enables Growth-tier financial API adapters to express chart-of-accounts hierarchy without schema migration). The `metadata` jsonb field stores source-specific fields. The `source_type` enum (`csv`, `quickbooks`, `xero`, `stripe`, `plaid`) identifies data origin. Curation logic operates only on `data_rows` — source-agnostic by design.
@@ -236,10 +240,10 @@ The `data_rows` table uses `category` for flat categorization (CSV default) and 
 |----------|--------|---------|-----------|
 | OAuth provider | Google OAuth 2.0 | — | Simplest for SMB users; googleapis npm package |
 | JWT library | jose | 6.x | Zero dependencies, ESM, tree-shakeable, Web API compatible |
-| Access token | JWT, 15-min expiry | — | Short-lived, contains userId + org_id + role in claims |
+| Access token | JWT, 15-min expiry | — | Short-lived, contains userId + org_id + role (owner/member) + isAdmin (boolean) in claims |
 | Refresh token | Opaque token, httpOnly cookie | — | Stored in `refresh_tokens` table (token_hash), rotation on each use, 7-day expiry |
 | Password auth | None (MVP) | — | Google OAuth only; reduces attack surface |
-| RBAC | 3 roles: owner, member, admin | — | Role in JWT claims; middleware + DOM-level enforcement |
+| RBAC | 2 org roles (owner, member) + `users.is_platform_admin` flag | — | Org role in JWT claims (`role`); platform admin in JWT claims (`isAdmin`). `roleGuard('owner')` checks org role. Platform admin routes check `isAdmin` claim. DOM-level conditional rendering for admin UI |
 | Cookie security | httpOnly, Secure, SameSite=Lax | — | Prevents XSS token theft; SameSite=Lax allows OAuth redirects |
 | API key security | No API keys (MVP) | — | All access via authenticated sessions |
 | Webhook verification | Stripe signature verification | — | `stripe.webhooks.constructEvent()` with signing secret |
@@ -252,8 +256,10 @@ The `data_rows` table uses `category` for flat categorization (CSV default) and 
 | BFF proxy | Next.js API routes → Express | — | Browser never calls Express directly; cookies forwarded via proxy |
 | Validation | Zod schemas (shared) | — | Single source of truth in packages/shared; validated on both sides |
 | Error handling | Structured AppError hierarchy | — | ValidationError, AuthenticationError, AuthorizationError, NotFoundError, ExternalServiceError |
-| AI streaming | Server-Sent Events (SSE) | — | Express endpoint streams Claude API response chunks; TTFT < 2s target |
+| AI summary cache | `ai_summaries` table (PostgreSQL) | — | Cache-first: dashboard RSC checks cache before any LLM call. Stale on data upload only (no time-based TTL). Seed summaries pre-generated |
+| AI streaming | Server-Sent Events (SSE) | — | Express endpoint streams Claude API response chunks; TTFT < 2s target. **Auto-triggered** on cache miss — no user-initiated "generate" action |
 | SSE fallback | Synchronous response | — | If streaming fails or times out at 15s, return accumulated partial result |
+| Subscription gate | **Annotating, not blocking** | — | `subscriptionGate.ts` adds `req.subscriptionTier` to request, never returns 403 for AI endpoints. Free tier: stream truncates after ~150 words + sends `upgrade_required` SSE event. Pro tier: full stream |
 | Rate limiting store | Redis (rate-limiter-flexible) | — | Persists across restarts; 3 tiers: auth 10/min/IP, AI 5/min/user, public 60/min/IP |
 | Rate limiting failure | **Fail open** | — | If Redis unavailable, allow requests but log warning. Blocking all traffic is worse than temporarily having no rate limits |
 | Health check | GET /api/health | — | Verifies **both PostgreSQL AND Redis** connectivity; returns structured status per dependency |
@@ -274,6 +280,8 @@ The `data_rows` table uses `category` for flat categorization (CSV default) and 
 
 **Mobile Rendering Strategy:**
 FR24 requires mobile-first AI summary above the fold. Architecture specifies: on viewports < 768px, the AI summary section renders above the fold as the primary content. Charts render below the fold, lazy-loaded on scroll via Intersection Observer. This is not a Recharts decision — it's a layout strategy where the `DashboardPage` component conditionally reorders sections based on viewport. Marcus (mobile, monthly) sees insights first; David (laptop, weekly) sees the full dashboard.
+
+**Mobile Layout Stacking:** On mobile, AppHeader is fixed at top. FilterBar is sticky below AppHeader on scroll. Combined fixed/sticky height must be accounted for when calculating "above the fold" for MobileAiSummary. Implement via CSS `position: sticky` with appropriate `top` values and `z-index` layering. The `useIsMobile` hook (matchMedia + isMounted guard) drives hydration-safe component swapping between `AiSummary` (desktop) and `MobileAiSummary` (mobile) — React conditional rendering, NOT CSS `display:none` (prevents duplicate SSE connections).
 
 **Demo Mode State Machine:**
 The system tracks demo mode via dataset state, not a single boolean. Four states with defined transitions:
@@ -496,6 +504,7 @@ packages/shared/
 │   │   ├── auth.ts            # createUserSchema, loginResponseSchema
 │   │   ├── datasets.ts        # uploadDatasetSchema, dataRowSchema
 │   │   ├── ai.ts              # aiSummaryRequestSchema, insightSchema
+│   │   ├── filters.ts         # dateRangeSchema (preset + resolved start/end), categoryFilterSchema
 │   │   └── index.ts           # Re-exports all schemas
 │   ├── types/
 │   │   └── index.ts           # Inferred types: type DataRow = z.infer<typeof dataRowSchema>
@@ -564,7 +573,7 @@ All API responses use a consistent wrapper. No bare data returns.
 ### Communication Patterns
 
 **Analytics Event Naming:**
-Dot-notation, past tense: `dataset.uploaded`, `ai_summary.viewed`, `insight.shared`, `subscription.upgraded`, `transparency_panel.opened`.
+Dot-notation, past tense: `dataset.uploaded`, `ai_summary.viewed`, `ai_preview.viewed` (free tier truncated preview — distinct from full summary view, critical for upgrade funnel measurement), `insight.shared`, `subscription.upgraded`, `transparency_panel.opened`.
 
 **Event Payload Structure:**
 ```typescript
@@ -598,7 +607,7 @@ Route handler → try/catch → service throws AppError → errorHandler middlew
 ```
 
 **Loading State Pattern:**
-React components use three states: `idle`, `loading`, `error`. Skeleton components match the shape of the content they replace.
+React components use three states: `idle`, `loading`, `error`. Skeleton components match the shape of the content they replace. **Important exception:** chart data transitions (e.g., seed-to-real data after upload) do NOT show skeletons — Recharts' built-in animation (`isAnimationActive={true}`, `animationDuration={500}`) handles the visual cross-fade. Skeletons are for initial fetch only (no data yet). Subsequent data changes use in-place animation.
 
 **Retry Pattern:**
 Only for external service calls (Claude API, Stripe). Max 2 retries with exponential backoff (1s, 3s). Never retry on 4xx errors. Always retry on 5xx and network errors.
@@ -688,8 +697,8 @@ saas-analytics-dashboard/
 ├── apps/
 │   ├── web/                                # Next.js 16 (App Router, RSC, Turbopack)
 │   │   ├── app/
-│   │   │   ├── layout.tsx                  # Root layout: fonts, metadata, providers
-│   │   │   ├── page.tsx                    # Landing/marketing page (unauthenticated)
+│   │   │   ├── layout.tsx                  # Root layout: fonts, metadata, providers, <Toaster> (bottom-right desktop, top-center mobile)
+│   │   │   ├── page.tsx                    # Root redirect → /dashboard (authenticated users) or landing hero (anonymous SEO entry point)
 │   │   │   ├── globals.css                 # Tailwind CSS 4 imports + custom properties
 │   │   │   ├── (auth)/                     # Auth route group (no layout nesting)
 │   │   │   │   ├── login/
@@ -697,8 +706,8 @@ saas-analytics-dashboard/
 │   │   │   │   └── callback/
 │   │   │   │       └── page.tsx            # OAuth callback handler
 │   │   │   ├── dashboard/
-│   │   │   │   ├── layout.tsx              # Authenticated layout: sidebar + header
-│   │   │   │   ├── page.tsx                # Dashboard page (RSC — data fetch + chart layout)
+│   │   │   │   ├── layout.tsx              # Dashboard layout: sidebar + header (renders for both anonymous and authenticated)
+│   │   │   │   ├── page.tsx                # Dashboard page (RSC — anonymous: seed data, authenticated: org data)
 │   │   │   │   ├── DashboardCharts.tsx     # Client component: Recharts + SWR revalidation
 │   │   │   │   ├── AiSummary.tsx           # Client component: SSE stream + useReducer
 │   │   │   │   ├── TransparencyPanel.tsx   # Client component: data lineage + confidence
@@ -722,7 +731,7 @@ saas-analytics-dashboard/
 │   │   │   │   └── AdminStats.tsx          # Client component: platform analytics
 │   │   │   ├── share/
 │   │   │   │   └── [shareId]/
-│   │   │   │       └── page.tsx            # Public shareable insight card view
+│   │   │   │       └── page.tsx            # Public shareable insight card view (RSC). Uses `generateMetadata()` for OG tags: og:title from key finding, og:description from first sentence, og:image from chart_snapshot_url
 │   │   │   └── api/                        # BFF proxy routes — request forwarding ONLY (never redirect)
 │   │   │       ├── auth/
 │   │   │       │   ├── login/
@@ -736,19 +745,23 @@ saas-analytics-dashboard/
 │   │   │       ├── ai-summaries/
 │   │   │       │   └── route.ts            # Proxy: GET → Express /ai-summaries (SSE passthrough)
 │   │   │       ├── subscriptions/
-│   │   │       │   └── route.ts            # Proxy: POST → Express /subscriptions
+│   │   │       │   └── route.ts            # Proxy: POST → Express /subscriptions (checkout + portal)
+│   │   │       ├── invites/
+│   │   │       │   └── route.ts            # Proxy: POST → Express /invites (create), GET → Express /invites/:token (redeem)
 │   │   │       └── health/
 │   │   │           └── route.ts            # Proxy: GET → Express /health
 │   │   ├── components/                     # Shared UI components (used by 2+ routes)
-│   │   │   ├── ui/                         # shadcn/ui components (auto-generated)
+│   │   │   ├── ui/                         # shadcn/ui components (auto-generated via `npx shadcn add`)
+│   │   │   │   ├── alert.tsx              # CSV validation errors, rate limit feedback
 │   │   │   │   ├── button.tsx
 │   │   │   │   ├── card.tsx
+│   │   │   │   ├── collapsible.tsx        # TransparencyPanel progressive disclosure
 │   │   │   │   ├── dialog.tsx
 │   │   │   │   ├── dropdown-menu.tsx
 │   │   │   │   ├── input.tsx
 │   │   │   │   ├── skeleton.tsx
-│   │   │   │   ├── toast.tsx
-│   │   │   │   └── ...                     # Other shadcn/ui components as needed
+│   │   │   │   ├── toast.tsx              # + Toaster provider in root layout.tsx
+│   │   │   │   └── ...                     # badge, tooltip, separator, sheet as needed
 │   │   │   ├── layout/
 │   │   │   │   ├── AppHeader.tsx           # Top navigation bar
 │   │   │   │   ├── AppSidebar.tsx          # Side navigation
@@ -764,9 +777,10 @@ saas-analytics-dashboard/
 │   │   │   ├── auth.ts                     # Client-side auth helpers (token check, redirect)
 │   │   │   └── hooks/
 │   │   │       ├── useAiStream.ts           # SSE streaming hook with useReducer
+│   │   │       ├── useIsMobile.ts           # Viewport detection: matchMedia + isMounted guard for hydration-safe AiSummary/MobileAiSummary swap
 │   │   │       ├── useSubscription.ts       # Subscription status hook
 │   │   │       └── useDemoMode.ts           # Demo mode state detection hook
-│   │   ├── proxy.ts                         # Next.js 16 proxy — route protection ONLY (redirect unauthed → /login, never call Express)
+│   │   ├── proxy.ts                         # Next.js 16 proxy — protects action routes only (/upload, /billing, /admin → redirect to /login). Dashboard is PUBLIC (anonymous seed data access). Never calls Express.
 │   │   ├── next.config.ts                   # Next.js 16 config: Turbopack, proxy rewrites
 │   │   ├── tailwind.config.ts               # Tailwind CSS 4 configuration
 │   │   ├── tsconfig.json                    # TypeScript config with @/ alias
@@ -780,16 +794,18 @@ saas-analytics-dashboard/
 │       │   ├── routes/                      # Route handlers (thin: validate → service → respond)
 │       │   │   ├── auth.ts                  # POST /auth/google, POST /auth/refresh, POST /auth/logout
 │       │   │   ├── datasets.ts              # GET /datasets, POST /datasets (CSV upload)
-│       │   │   ├── aiSummary.ts             # GET /ai-summaries/:datasetId (SSE stream)
-│       │   │   ├── subscriptions.ts         # POST /subscriptions/checkout (JSON body parsed)
+│       │   │   ├── aiSummary.ts             # GET /ai-summaries/:datasetId (cache-first: return cached or SSE stream on miss)
+│       │   │   ├── subscriptions.ts         # POST /subscriptions/checkout, POST /subscriptions/portal (Stripe Customer Portal for cancellation/management)
 │       │   │   ├── stripeWebhook.ts         # POST /webhooks/stripe (raw body — mounted BEFORE JSON parser)
 │       │   │   ├── sharing.ts               # POST /shares, GET /shares/:shareId
+│       │   │   ├── invites.ts               # POST /invites (create, owner-only), GET /invites/:token (redeem)
 │       │   │   ├── admin.ts                 # GET /admin/stats (role-gated)
 │       │   │   └── health.ts                # GET /health (PostgreSQL + Redis connectivity)
 │       │   ├── services/                    # Business logic layer
 │       │   │   ├── auth/
 │       │   │   │   ├── googleOAuth.ts       # Google OAuth token exchange + user creation
 │       │   │   │   ├── tokenService.ts      # JWT signing/verification, refresh rotation
+│       │   │   │   ├── inviteService.ts     # Invite link generation (token creation) + redemption (FR3)
 │       │   │   │   └── index.ts             # Re-export auth service interface
 │       │   │   ├── adapters/                # Pluggable data source adapter pattern
 │       │   │   │   ├── interface.ts         # DataSourceAdapter interface + shared adapter types
@@ -813,12 +829,12 @@ saas-analytics-dashboard/
 │       │   │   │   ├── streamHandler.ts     # SSE response construction + 15s timeout
 │       │   │   │   └── index.ts             # Re-export AI service
 │       │   │   ├── subscription/
-│       │   │   │   ├── stripeService.ts     # Stripe Checkout session creation + status sync
+│       │   │   │   ├── stripeService.ts     # Stripe Checkout session creation + Customer Portal session (cancellation/management) + status sync
 │       │   │   │   ├── webhookHandler.ts    # Stripe webhook event processing (idempotent)
 │       │   │   │   └── index.ts             # Re-export subscription service
 │       │   │   ├── sharing/
 │       │   │   │   ├── shareService.ts      # Create shareable links, retrieve shared insights
-│       │   │   │   ├── pngRenderer.ts       # Server-side PNG generation for insight cards
+│       │   │   │   ├── pngRenderer.ts       # Server-side PNG: canvas-based (`@napi-rs/canvas` or `sharp` SVG→PNG), NOT headless browser (PRD Risk #4 mitigation). Defers to manual screenshots if complex.
 │       │   │   │   └── index.ts             # Re-export sharing service
 │       │   │   ├── admin/
 │       │   │   │   ├── adminService.ts      # Platform statistics and analytics aggregation
@@ -829,13 +845,13 @@ saas-analytics-dashboard/
 │       │   ├── middleware/
 │       │   │   ├── authMiddleware.ts         # JWT verification + claims extraction
 │       │   │   ├── rateLimiter.ts            # Redis-backed rate limiting (3 tiers, fail-open)
-│       │   │   ├── subscriptionGate.ts       # Pro-only feature access check
+│       │   │   ├── subscriptionGate.ts       # Annotating middleware: adds req.subscriptionTier (never blocks AI requests — free tier gets truncated stream)
 │       │   │   ├── errorHandler.ts           # Global error handler → structured response
 │       │   │   ├── correlationId.ts          # UUID per request, attached to Pino logger
-│       │   │   └── roleGuard.ts              # RBAC middleware factory: roleGuard('admin')
+│       │   │   └── roleGuard.ts              # RBAC middleware factory: roleGuard('owner') for org roles, roleGuard('admin') checks users.is_platform_admin
 │       │   ├── db/
 │       │   │   ├── index.ts                  # Drizzle client init + pool config (INTERNAL — never imported outside db/)
-│       │   │   ├── schema.ts                 # All Drizzle table definitions (8 tables)
+│       │   │   ├── schema.ts                 # All Drizzle table definitions (11 tables)
 │       │   │   ├── queries/                  # Typed query functions (org_id required on every fn)
 │       │   │   │   ├── users.ts              # findUserByGoogleId, createUser, getUserOrgs
 │       │   │   │   ├── orgs.ts               # createOrg, findOrgBySlug
@@ -843,9 +859,12 @@ saas-analytics-dashboard/
 │       │   │   │   ├── dataRows.ts           # insertBatch, getByDateRange, getByCategory
 │       │   │   │   ├── subscriptions.ts      # upsertSubscription, getActiveSubscription
 │       │   │   │   ├── refreshTokens.ts      # createToken, findByHash, revokeToken
+│       │   │   │   ├── aiSummaries.ts        # getCachedSummary, storeSummary, markStale (by orgId + datasetId)
 │       │   │   │   ├── analyticsEvents.ts    # recordEvent, getEventCounts
+│       │   │   │   ├── orgInvites.ts        # createInvite, findByToken, markUsed, getActiveInvites
+│       │   │   │   ├── shares.ts            # createShare, findByToken, incrementViewCount, getSharesByOrg
 │       │   │   │   └── index.ts              # Barrel re-export (services import from @/db/queries)
-│       │   │   ├── seed.ts                   # Seed data script: deliberate anomalies for AI insight variety
+│       │   │   ├── seed.ts                   # Seed data script: deliberate anomalies for AI insight variety + pre-generates seed AI summary into ai_summaries table
 │       │   │   └── migrate.ts                # Migration runner (called from Docker entrypoint)
 │       │   ├── lib/
 │       │   │   ├── appError.ts               # AppError hierarchy (Validation, Auth, NotFound, External)
@@ -935,9 +954,16 @@ saas-analytics-dashboard/
 | Express → Browser | SSE stream | Client via BFF passthrough | SSE (text/event-stream) | JWT (validated before stream) |
 
 **Proxy vs API Route Boundary Rule:**
-- `proxy.ts` handles **route protection only** — redirects unauthenticated users to `/login`. It never calls Express or processes API data.
+- `proxy.ts` handles **action route protection only** — redirects unauthenticated users to `/login` for routes that require auth (`/upload`, `/billing`, `/admin`). It **does NOT protect `/dashboard`** — the dashboard is accessible to anonymous visitors (seed data experience). It never calls Express or processes API data.
 - `app/api/*/route.ts` handles **request forwarding only** — proxies requests to Express with cookie forwarding. It never redirects to pages.
 - These two mechanisms must never overlap. This prevents auth logic fragmentation across two systems.
+
+**Anonymous Dashboard Access Rule:**
+The dashboard (`/dashboard`) works as a **spectrum**, not a gate:
+- **Anonymous visitors:** Dashboard RSC detects no JWT, fetches global seed data + cached seed AI summary. Demo banner shows. Charts render with seed data. No login required.
+- **Free authenticated users:** Dashboard RSC uses JWT org_id, fetches user's org data + cached AI summary (first ~150 words visible, rest blurred). Demo banner hidden if user data exists.
+- **Pro authenticated users:** Full dashboard with complete AI summary. Same RSC, different data and rendering tier.
+- `proxy.ts` never redirects from `/dashboard`. Auth state controls *what data* renders, not *whether the page renders*.
 
 **Component Boundaries:**
 
@@ -960,6 +986,7 @@ saas-analytics-dashboard/
 | Computed statistics | `curation/computation.ts` output | Raw data (no reverse flow) |
 | Curation internal types | `curation/types.ts` (ComputedStat, ScoredInsight, AssembledContext) | `packages/shared` — these are service-internal |
 | LLM prompt context | `curation/assembly.ts` → Claude API | Client (only AI response sent to client) |
+| Cached AI summaries | `ai_summaries` table → dashboard RSC → client | LLM prompt (cached output is final, never re-processed) |
 | JWT claims | Cookie → middleware → `req.user` | Database storage (except refresh_tokens) |
 | Stripe secrets | `config.ts` → Stripe SDK | Logs, client responses, error messages |
 | Stripe raw body | `stripeWebhook.ts` route (before JSON parser) | Other routes (which use parsed JSON) |
@@ -973,7 +1000,7 @@ saas-analytics-dashboard/
 | **Identity & Access** (FR1-5) | `routes/auth.ts` | `services/auth/*` | `app/(auth)/*` | — |
 | **Data Ingestion** (FR6-12) | `routes/datasets.ts` | `services/adapters/*`, `services/dataIngestion/*` | `app/upload/*` | `UploadDropzone`, `CsvPreview` |
 | **Visualization** (FR13-17) | (via datasets) | — | `app/dashboard/*` | `DashboardCharts`, `FilterBar`, `charts/*` |
-| **AI Interpretation** (FR18-24) | `routes/aiSummary.ts` | `services/curation/*`, `services/aiInterpretation/*` | — | `AiSummary`, `TransparencyPanel`, `MobileAiSummary` |
+| **AI Interpretation** (FR18-24) | `routes/aiSummary.ts` | `services/curation/*`, `services/aiInterpretation/*`, `db/queries/aiSummaries.ts` (cache) | — | `AiSummary`, `TransparencyPanel`, `MobileAiSummary` |
 | **Sharing & Export** (FR25-27) | `routes/sharing.ts` | `services/sharing/*` | `app/share/[shareId]/*` | — |
 | **Subscription** (FR28-31) | `routes/subscriptions.ts`, `routes/stripeWebhook.ts` | `services/subscription/*` | `app/billing/*` | `PricingCard`, `SubscriptionStatus` |
 | **Platform Admin** (FR32-35) | `routes/admin.ts` | `services/admin/*` | `app/admin/*` | `AdminStats` |
@@ -984,14 +1011,15 @@ saas-analytics-dashboard/
 | Concern | Implementation Location |
 |---------|----------------------|
 | Multi-tenancy (org_id) | `db/queries/*.ts` (every function), `middleware/authMiddleware.ts` (extraction) |
-| Authentication | `middleware/authMiddleware.ts`, `services/auth/*`, `proxy.ts` (redirect only) |
-| Authorization (RBAC) | `middleware/roleGuard.ts`, JWT claims, DOM conditional rendering |
+| Authentication | `middleware/authMiddleware.ts`, `services/auth/*`, `proxy.ts` (action routes only — `/upload`, `/billing`, `/admin`) |
+| Authorization (RBAC) | `middleware/roleGuard.ts` (two-dimensional: org role + platform admin), JWT claims (role, isAdmin), DOM conditional rendering |
 | Error handling | `lib/appError.ts` (hierarchy), `middleware/errorHandler.ts` (global handler) |
 | Rate limiting | `middleware/rateLimiter.ts`, `lib/redis.ts` |
 | Logging | `lib/logger.ts` (Pino), `middleware/correlationId.ts` |
 | Analytics events | `services/analytics/eventTracker.ts`, `db/queries/analyticsEvents.ts` |
-| Subscription gate | `middleware/subscriptionGate.ts`, `db/queries/subscriptions.ts` |
-| Demo mode | `db/queries/datasets.ts` (`getDemoModeState`), `components/common/DemoModeBanner.tsx`, `lib/hooks/useDemoMode.ts` |
+| Subscription gate | `middleware/subscriptionGate.ts` (annotating for AI, blocking for other Pro features), `db/queries/subscriptions.ts` |
+| AI summary cache | `db/queries/aiSummaries.ts` (getCachedSummary, storeSummary, markStale), `db/seed.ts` (pre-generates seed summaries) |
+| Demo mode | `db/queries/datasets.ts` (`getDemoModeState`), `components/common/DemoModeBanner.tsx`, `lib/hooks/useDemoMode.ts`, `db/queries/aiSummaries.ts` (seed summary for anonymous dashboard) |
 | Type safety | `packages/shared/src/schemas/*` (Zod), all consumers import from `@shared/schemas` |
 | Adapter extensibility | `services/adapters/interface.ts` (Growth-tier adapters implement this) |
 
@@ -1018,7 +1046,7 @@ Browser ─── fetch() ──→ Next.js /api/* ─── fetch() ──→ E
 | Google OAuth | `services/auth/googleOAuth.ts` | OAuth 2.0 client credentials | ExternalServiceError + user-friendly message |
 | Anthropic Claude | `services/aiInterpretation/claudeClient.ts` | API key (from config.ts) | Retry 2x with backoff; 15s timeout; partial result fallback |
 | Stripe API | `services/subscription/stripeService.ts` | Secret key (from config.ts) | ExternalServiceError; webhook idempotency via event ID |
-| Stripe Webhooks | `routes/stripeWebhook.ts` | Signature verification (raw body) | Mounted before JSON parser; idempotent processing |
+| Stripe Webhooks | `routes/stripeWebhook.ts` | Signature verification (raw body) | Mounted before JSON parser; idempotent via status-transition safety (e.g., `UPDATE subscriptions SET status = $1 WHERE stripe_subscription_id = $2 AND status != $1` — replay is a no-op) |
 
 **Data Flow (CSV Upload → AI Insight):**
 
@@ -1027,16 +1055,32 @@ CSV File → UploadDropzone.tsx → /api/datasets (proxy) → Express POST /data
   → csvAdapter.ts (parse + validate, implements DataSourceAdapter)
   → normalizer.ts (→ data_rows schema)
   → db/queries/dataRows.ts (INSERT batch)
-  → SWR mutate() triggers chart revalidation
+  → db/queries/aiSummaries.ts markStale(orgId) (invalidate cached summary)
+  → Response 200 → UploadDropzone shows success state with brief countdown
+  → router.push('/dashboard') → Dashboard detects fresh data (stale cache)
+  → SWR mutate() triggers chart revalidation (charts cross-fade, not hard swap — Recharts built-in animation)
+  → useAiStream auto-triggers SSE on cache miss (fresh AI summary generation)
 
-User requests AI summary → /api/ai-summaries (proxy) → Express GET /ai-summaries/:datasetId
-  → subscriptionGate.ts (Pro check)
-  → curation/computation.ts (stats from data_rows via db/queries)
-  → curation/scoring.ts (rank by relevance weights from config/)
-  → curation/assembly.ts (build prompt from top-N stats, uses types.ts interfaces)
-  → claudeClient.ts (stream from Anthropic API)
-  → streamHandler.ts (SSE → client via BFF passthrough)
-  → AiSummary.tsx (useReducer renders streamed chunks)
+AI Summary (cache-first, auto-triggered):
+  Dashboard page.tsx (RSC) → db/queries/aiSummaries.ts getCachedSummary(orgId, datasetId)
+  ├─ Cache HIT → Return cached content to client (zero LLM calls)
+  │   ├─ Free tier: AiSummary.tsx renders first ~150 words + blur + UpgradeCta
+  │   └─ Pro tier: AiSummary.tsx renders full content
+  └─ Cache MISS → Client auto-triggers SSE via useAiStream hook
+      → /api/ai-summaries (proxy) → Express GET /ai-summaries/:datasetId
+      → subscriptionGate.ts (ANNOTATES req.subscriptionTier, never blocks)
+      → curation/computation.ts (stats from data_rows via db/queries)
+      → curation/scoring.ts (rank by relevance weights from config/)
+      → curation/assembly.ts (build prompt from top-N stats, uses types.ts interfaces)
+      → claudeClient.ts (stream from Anthropic API)
+      → streamHandler.ts (SSE → client via BFF passthrough)
+        ├─ Free tier: stream truncates after ~150 words, sends upgrade_required event
+        └─ Pro tier: full stream
+      → On stream complete: db/queries/aiSummaries.ts storeSummary(orgId, datasetId, content, metadata)
+      → AiSummary.tsx (useReducer renders streamed chunks)
+
+AI Summary Cache Invalidation:
+  CSV Upload complete → db/queries/aiSummaries.ts markStale(orgId) → next dashboard load triggers fresh generation
 ```
 
 ### File Organization Patterns
@@ -1172,9 +1216,9 @@ Project structure supports all architectural decisions:
 |----|-------------|----------------------|--------|
 | FR1 | Google OAuth sign up/sign in | `services/auth/googleOAuth.ts`, `routes/auth.ts`, `app/(auth)/*` | Covered |
 | FR2 | Auto-create org on signup | `services/auth/googleOAuth.ts` (user + org creation in single transaction) | Covered |
-| FR3 | Invite link for org membership | `services/auth/inviteService.ts` (added via gap analysis) | Covered |
+| FR3 | Invite link for org membership | `services/auth/inviteService.ts`, `db/queries/orgInvites.ts`, `org_invites` table. UX: invite link generation in AppHeader account dropdown (owner-only). Minimal UX — PRD risk table allows deferral if auth exceeds 2 weeks | Covered |
 | FR4 | Platform admin view/manage orgs | `routes/admin.ts`, `services/admin/adminService.ts`, `app/admin/*` | Covered |
-| FR5 | Role-based capability restriction | `middleware/roleGuard.ts`, `middleware/authMiddleware.ts`, JWT claims | Covered |
+| FR5 | Role-based capability restriction | `middleware/roleGuard.ts` (two-dimensional: org role + platform admin), `middleware/authMiddleware.ts`, JWT claims (role, isAdmin) | Covered |
 | FR6 | CSV upload via drag-and-drop | `app/upload/UploadDropzone.tsx`, `routes/datasets.ts`, `services/dataIngestion/csvAdapter.ts` | Covered |
 | FR7 | CSV validation with specific errors | `services/dataIngestion/csvAdapter.ts` (parse + validate), AppError hierarchy | Covered |
 | FR8 | Upload preview before confirm | `app/upload/CsvPreview.tsx` (row count, types, sample rows) | Covered |
@@ -1187,20 +1231,20 @@ Project structure supports all architectural decisions:
 | FR15 | Loading states | `app/dashboard/loading.tsx` (Suspense), `charts/ChartSkeleton.tsx` | Covered |
 | FR16 | Seed data pre-loaded | `db/seed.ts` (Docker entrypoint + CI), demo mode state machine | Covered |
 | FR17 | Demo data visual indicator | `components/common/DemoModeBanner.tsx`, `lib/hooks/useDemoMode.ts` | Covered |
-| FR18 | Plain-English AI summary | `services/curation/*` → `services/aiInterpretation/claudeClient.ts` → `AiSummary.tsx` | Covered |
-| FR19 | SSE streaming delivery | `services/aiInterpretation/streamHandler.ts`, `lib/hooks/useAiStream.ts` (useReducer) | Covered |
+| FR18 | Plain-English AI summary | Cache-first: `db/queries/aiSummaries.ts` → fallback: `services/curation/*` → `claudeClient.ts` → `AiSummary.tsx`. Seed summaries pre-generated | Covered |
+| FR19 | SSE streaming delivery | `streamHandler.ts` + `useAiStream.ts` (auto-triggers on cache miss, no manual "generate" button) | Covered |
 | FR20 | Transparency panel | `app/dashboard/TransparencyPanel.tsx`, context assembly includes lineage | Covered |
-| FR21 | Free preview with upgrade CTA | `middleware/subscriptionGate.ts` + `components/common/UpgradeCta.tsx` | Covered |
+| FR21 | Free preview with upgrade CTA | `subscriptionGate.ts` annotates tier (never blocks) → `streamHandler.ts` truncates at ~150 words for free tier + sends `upgrade_required` SSE event → `UpgradeCta.tsx` renders blur overlay. Cached summaries also tier-gated on client | Covered |
 | FR22 | Non-obvious + actionable insights | `curation/scoring.ts` (novelty/actionability weights), `curation/config/scoring-weights.json` | Covered |
 | FR23 | Local stats + curated LLM context | `curation/computation.ts` (simple-statistics), `curation/assembly.ts` (accepts ComputedStat[], not DataRow[]) | Covered |
 | FR24 | Mobile-first AI summary | `components/common/MobileAiSummary.tsx`, layout strategy (viewport < 768px) | Covered |
-| FR25 | Share as rendered image | `services/sharing/pngRenderer.ts` (server-side PNG) | Covered |
-| FR26 | Shareable read-only link | `routes/sharing.ts`, `services/sharing/shareService.ts` | Covered |
-| FR27 | Focused insight card view | `app/share/[shareId]/page.tsx` (minimal chrome, single CTA) | Covered |
+| FR25 | Share as rendered image | `services/sharing/pngRenderer.ts` (server-side PNG), `shares` table stores chart_snapshot_url | Covered |
+| FR26 | Shareable read-only link | `routes/sharing.ts`, `services/sharing/shareService.ts`, `db/queries/shares.ts`, `shares` table (insight_snapshot jsonb, share_token, expires_at, view_count) | Covered |
+| FR27 | Focused insight card view | `app/share/[shareId]/page.tsx` (minimal chrome, single CTA), reads from `shares` table snapshot — no live org data exposure | Covered |
 | FR28 | Free → Pro upgrade | `routes/subscriptions.ts`, `services/subscription/stripeService.ts` (Stripe Checkout) | Covered |
 | FR29 | Subscription lifecycle | `services/subscription/webhookHandler.ts` (idempotent event processing) | Covered |
 | FR30 | Payment failure revocation | `routes/stripeWebhook.ts` → `webhookHandler.ts` (invoice.payment_failed) | Covered |
-| FR31 | Status verified before Pro access | `middleware/subscriptionGate.ts` (checks local DB, synced via webhook) | Covered |
+| FR31 | Status verified before Pro access | `subscriptionGate.ts` checks local DB (webhook-synced), annotates `req.subscriptionTier`. For AI: controls stream length. For other Pro features: blocks access (403) | Covered |
 | FR32 | Admin system health view | `app/admin/AdminStats.tsx`, `services/admin/adminService.ts` | Covered |
 | FR33 | Admin analytics events view | `db/queries/analyticsEvents.ts` (getEventCounts), admin dashboard | Covered |
 | FR34 | Admin-only DOM exclusion | `middleware/roleGuard.ts` (API), conditional rendering (DOM-level, not CSS) | Covered |
@@ -1296,21 +1340,65 @@ All potential conflict points are addressed:
 
 10. **Public directory missing from tree (Party Mode)** — `apps/web/public/` was not in the directory structure, but FR9 (sample template) and static assets need a home. **Resolution:** Added `apps/web/public/templates/sample-data.csv` to the project structure, establishing the public directory pattern.
 
+**Cross-Artifact Gap Analysis Resolutions (2026-02-21):**
+
+11. **Anonymous dashboard access contradiction (Critical)** — `proxy.ts` redirected all unauthenticated users to `/login`, contradicting the UX requirement that anonymous visitors see the dashboard with seed data immediately ("no signup wall"). **Resolution:** `proxy.ts` now protects **action routes only** (`/upload`, `/billing`, `/admin`). The `/dashboard` route is public — anonymous visitors see seed data, demo banner, and cached seed AI summary without authentication. Dashboard RSC conditionally fetches: anonymous → global seed data, authenticated → org-scoped data. Auth state controls *what data* renders, not *whether the page renders*.
+
+12. **AI summary caching — no persistence layer (Critical)** — No mechanism existed for storing generated AI summaries. Every dashboard load would trigger a new Claude API call (cost, latency), and returning users would wait 2-15 seconds instead of seeing instant results. **Resolution:** Added `ai_summaries` table (id, org_id, dataset_id, content, transparency_metadata, prompt_version, is_seed, created_at, stale_at). Cache-first strategy: dashboard RSC checks `ai_summaries` before any LLM call. Invalidated on data upload (`markStale(orgId)`). Seed data summaries pre-generated in `db/seed.ts` — zero LLM calls for anonymous visitors. No time-based TTL; summaries only go stale when underlying data changes. Added `db/queries/aiSummaries.ts` (getCachedSummary, storeSummary, markStale).
+
+13. **AI summary auto-trigger vs request-based flow (Critical)** — Architecture showed a user-initiated request flow where `subscriptionGate.ts` blocked free users entirely. UX requires AI summary to auto-stream on page load with no "click to generate" button, and free users must see partial content (first ~150 words), not a blocked request. **Resolution:** Three interconnected changes: (a) `subscriptionGate.ts` changed from **blocking** to **annotating** — adds `req.subscriptionTier` to request, never returns 403 for AI endpoints; (b) `streamHandler.ts` checks tier and truncates output for free users after ~150 words, sending an `upgrade_required` SSE event; (c) `useAiStream` hook auto-triggers SSE when no cached content is available. Combined with the cache-first strategy (Gap 12), most dashboard loads serve cached content instantly — SSE generation only occurs on cache miss (first visit after data upload).
+
+14. **Missing `org_invites` table (High)** — FR3 defines invite link generation, and `services/auth/inviteService.ts` was added in gap analysis #1, but no database table existed to store invite tokens. Invite tokens are time-bound, single-use, and exist before the invitee has an account (so `user_orgs` can't be used). **Resolution:** Added `org_invites` table (id, org_id, token_hash, created_by, expires_at, used_at, used_by, created_at) and `db/queries/orgInvites.ts` (createInvite, findByToken, markUsed, getActiveInvites). UX surface: invite link generation in AppHeader account dropdown (owner-only action).
+
+15. **Missing `shares` table (High)** — FR25-27 define sharing and export features, and `services/sharing/shareService.ts` was mapped, but no database table existed to store share tokens or insight snapshots. Shareable links must contain a *snapshot* (not a live reference) to prevent leaking real-time org data to anonymous viewers. **Resolution:** Added `shares` table (id, org_id, dataset_id, share_token, insight_snapshot jsonb, chart_snapshot_url, created_by, expires_at, view_count, created_at) and `db/queries/shares.ts` (createShare, findByToken, incrementViewCount, getSharesByOrg).
+
+16. **RBAC role mismatch — PRD vs Architecture (High)** — PRD defines two distinct role dimensions: "Platform Admin" (system-wide, manages all orgs) and "Org Member" (org-scoped, with owner as a behavioral role). Architecture conflated these into a single `user_orgs.role` enum with `owner/member/admin`, incorrectly making "admin" an org-level role. Platform admin is a *user-level* attribute (you're an admin or you're not, regardless of org). **Resolution:** (a) `user_orgs.role` changed from `owner/member/admin` to `owner/member`; (b) `users.is_platform_admin` boolean added (default false); (c) JWT claims updated to include `isAdmin` boolean alongside org `role`; (d) `roleGuard.ts` supports two-dimensional checks: `roleGuard('owner')` for org roles, `roleGuard('admin')` for platform admin.
+
+**Cross-Artifact MEDIUM Gap Resolutions (2026-02-22):**
+
+17. **`inviteService.ts` missing from directory tree** — Service was referenced in FR3 coverage and gap #1, but not listed in the `services/auth/` directory. **Resolution:** Added to directory tree.
+18. **No route handler or proxy for invite operations** — Transport layer (route + proxy) was missing despite service and DB layers existing. **Resolution:** Added `routes/invites.ts` (POST /invites, GET /invites/:token) and `app/api/invites/route.ts` proxy.
+19. **`useIsMobile` hook missing from directory tree** — UX spec's hydration strategy requires dedicated hook for viewport detection. **Resolution:** Added `useIsMobile.ts` to `lib/hooks/`.
+20. **Missing `alert` + `collapsible` from shadcn/ui component list** — UX spec requires these for CSV validation errors and TransparencyPanel progressive disclosure. **Resolution:** Added explicitly to `components/ui/` directory listing.
+21. **`ai_preview.viewed` event not documented** — PRD success metrics require distinguishing free-tier preview views from full summary views for upgrade funnel measurement. **Resolution:** Added to analytics event naming.
+22. **Webhook idempotency mechanism unspecified** — Architecture claimed "event ID deduplication" but didn't specify storage. **Resolution:** Clarified as status-transition safety (UPDATE WHERE status != target is a no-op on replay).
+23. **PNG rendering approach unspecified** — PRD Risk #4 recommends canvas over headless browser. **Resolution:** Added canvas-based approach (`@napi-rs/canvas` or `sharp`) to `pngRenderer.ts` annotation.
+24. **Subscription cancellation — no route or UI** — FR29 includes cancellation but no endpoint existed. **Resolution:** Added Stripe Customer Portal session creation to `stripeService.ts` and `POST /subscriptions/portal` to routes.
+25. **Shared `DateRange` type missing** — Used across 3+ UX components and backend queries with no shared definition. **Resolution:** Added `filters.ts` to `packages/shared/src/schemas/`.
+26. **OG meta tags for share pages undocumented** — Shareable links need `og:title`, `og:description`, `og:image` for iMessage/WhatsApp unfurling. **Resolution:** Added `generateMetadata()` note to share page annotation.
+27. **Post-upload navigation flow unspecified** — Architecture's data flow ended at SWR mutate but user is on `/upload` page. **Resolution:** Added full flow: success state → countdown → `router.push('/dashboard')` → cache miss triggers AI streaming.
+28. **Toast provider and positioning not documented** — UX spec defines responsive positioning (bottom-right desktop, top-center mobile). **Resolution:** Added `<Toaster>` to root layout annotation.
+29. **Chart cross-fade animation pattern missing** — UX spec says "cross-fade, not hard swap" but Loading State Pattern only defined skeleton states. **Resolution:** Clarified that data transitions use Recharts built-in animation, skeletons are initial-load only.
+30. **Mobile sticky FilterBar not documented** — UX spec defines sticky positioning below header. **Resolution:** Added Mobile Layout Stacking note to Mobile Rendering Strategy.
+31. **Auth deferral fallback not architecturally specified** — PRD Risk #1 (highest risk) had no concrete fallback plan. **Resolution:** Added Auth Deferral Fallback section with 5-point plan.
+32. **Free tier Growth path not acknowledged** — PRD Risk #7 suggests "one free AI per month" as Growth feature. **Resolution:** Added to Areas for Future Enhancement with extensibility note.
+
+**UX Spec Gaps (flagged for epic breakdown, not architecture issues):**
+
+- **FR40 analytics event mapping** — UX spec has no component-to-event mapping table. Add during epic breakdown.
+- **Upload page layout** — UX spec never diagrams the upload page layout (only the UploadDropzone component). Add during epic breakdown.
+- **Payment failure/subscription downgrade UX** — No designed experience for Pro → Free transition mid-session. Add during epic breakdown.
+- **Free preview wording** — UX spec inconsistent ("first sentence" vs "2-3 sentences" vs "~150 words"). Standardize during epic breakdown.
+
 **Nice-to-Have Gaps (Documented, Not Blocking):**
 
 - **Database seeding idempotency** — `db/seed.ts` should check if seed data already exists before inserting (guard against re-runs). Pattern: `INSERT ... ON CONFLICT DO NOTHING` or existence check.
 - **Monitoring/alerting** — Console-based Pino logging is sufficient for MVP. Growth-tier should add structured log aggregation and alerting. Documented as deferred decision.
 - **API versioning** — No versioning for MVP (single consumer). Growth-tier with public API should add `/api/v1/` prefix. Documented as deferred decision.
+- **Analytics event naming convention** — PRD uses bare nouns (`upload`, `view`), architecture uses dot-notation past tense (`dataset.uploaded`). Architecture convention is authoritative; PRD references are informational.
 
 ### Validation Issues Addressed
 
-All 10 validation issues were identified through structured analysis and resolved with architectural additions:
+All 32 validation issues were identified through structured analysis and resolved with architectural additions:
 
 - **2 FR coverage gaps** → service file + static asset additions
 - **4 Pre-mortem blockers** → proxy patterns, CI strategy, env var additions
 - **4 Party Mode findings** → documentation, scripts, directory structure additions
+- **3 Cross-artifact alignment gaps (Critical)** → anonymous access, AI caching, subscription gate behavior
+- **3 Cross-artifact alignment gaps (High)** → missing DB tables (org_invites, shares), RBAC role reconciliation
+- **16 Cross-artifact alignment gaps (Medium)** → directory tree completeness, missing decisions/patterns, data flow gaps, Growth-tier extensibility notes
 
-No critical unresolved issues remain.
+No critical, high, or medium-priority unresolved issues remain. 4 UX spec gaps flagged for epic breakdown phase.
 
 ### Architecture Completeness Checklist
 
@@ -1370,6 +1458,11 @@ No critical unresolved issues remain.
 3. **API versioning** — Not needed for single-consumer MVP; required at Growth-tier with public API
 4. **CORS** — Explicitly a non-decision for MVP (same-origin BFF); needed at Growth-tier for custom domains
 5. **Multi-org UI** — Data model supports it (many-to-many `user_orgs`); UI limited to one org in MVP
+6. **Free tier usage quota** — Current subscription gate is binary (`free`/`pro`). Growth-tier may introduce "one free full AI summary per month" for free tier to improve conversion. `subscriptionGate.ts` annotation should be extensible to include quota state (not just tier).
+7. **Settings/account page** — PRD mentions org rename "in settings" (line 242). MVP defers dedicated settings page; org rename can be surfaced in AppHeader dropdown if needed. Growth-tier adds full settings page.
+
+**Auth Deferral Fallback (PRD Risk #1):**
+If auth implementation exceeds 2 weeks, the following deferral plan activates: (a) all users get `owner` role by default — the owner/member distinction is unused; (b) `roleGuard` middleware still exists but is effectively a no-op for org roles; (c) `users.is_platform_admin` is deferred — all admin routes return 403; (d) `org_invites` table migration still runs but invite UI is hidden (feature flag or conditional rendering); (e) FR3 (invite link) and FR4/FR5 admin paths defer to MVP-Complete. This is a config/feature-flag change, not a schema change.
 
 ### Implementation Handoff
 
