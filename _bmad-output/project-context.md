@@ -1,12 +1,13 @@
 ---
 project_name: 'SaaS Analytics Dashboard'
 user_name: 'Corey'
-date: '2026-02-19'
-sections_completed: ['technology_stack', 'language_specific_rules', 'framework_specific_rules', 'testing_rules', 'code_quality_style', 'development_workflow', 'critical_dont_miss']
+date: '2026-02-21'
+sections_completed: ['technology_stack', 'language_specific_rules', 'framework_specific_rules', 'testing_rules', 'code_quality_style', 'ux_design_rules', 'development_workflow', 'critical_dont_miss']
 status: 'complete'
-rule_count: 180
+rule_count: 228
 optimized_for_llm: true
 existing_patterns_found: 32
+cross_artifact_gaps_resolved: 22
 ---
 
 # Project Context for AI Agents
@@ -103,8 +104,8 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Import shared schemas: `import { dataRowSchema } from '@shared/schemas'`
 - Import shared types: `import type { DataRow } from '@shared/types'`
 - Import shared constants: `import { MAX_FILE_SIZE } from '@shared/constants'`
-- No barrel `index.ts` at shared package root — use explicit sub-path imports
-- One Zod schema file per domain (auth, datasets, ai, subscriptions, sharing, api)
+- No barrel `index.ts` at shared package root (`packages/shared/src/index.ts`) — use explicit sub-path imports. Sub-path barrels (e.g., `schemas/index.ts`) are expected and required by the exports map.
+- One Zod schema file per domain (auth, datasets, ai, filters, subscriptions, sharing, api)
 - Types are ALWAYS inferred from Zod schemas: `type DataRow = z.infer<typeof dataRowSchema>` — never hand-written
 
 **Type Boundaries:**
@@ -117,7 +118,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Use the `AppError` hierarchy: `ValidationError`, `AuthenticationError`, `AuthorizationError`, `NotFoundError`, `ExternalServiceError`
 - Never throw raw `Error` objects from services
 - Services throw typed `AppError` subclasses → `errorHandler` middleware catches and formats
-- Error chain: route handler → try/catch → service throws AppError → errorHandler middleware → structured JSON response
+- Error chain: route handler → service throws AppError → Express 5 auto-catches rejected promise → errorHandler middleware → structured JSON response (no manual try/catch in async route handlers)
 - External service errors (Claude, Stripe, Google) wrap in `ExternalServiceError` with user-friendly message
 
 **Zod Usage:**
@@ -147,9 +148,10 @@ _This file contains critical rules and patterns that AI agents must follow when 
 ### Framework-Specific Rules
 
 **Next.js 16 (App Router):**
-- `proxy.ts` handles route protection ONLY — redirects unauthenticated users to `/login`. Never calls Express.
+- `proxy.ts` protects **action routes only** (`/upload`, `/billing`, `/admin`) — redirects unauthenticated users to `/login`. Does NOT protect `/dashboard` (anonymous seed data access). Never calls Express.
 - `app/api/*/route.ts` handles request forwarding ONLY — proxies to Express with cookie forwarding. Never redirects.
 - proxy.ts and app/api/ MUST NEVER overlap — this prevents auth logic fragmentation
+- `/dashboard` is PUBLIC — anonymous visitors see seed data + cached AI summary without auth. Auth state controls *what data* renders, not *whether the page renders*.
 - Pages (`page.tsx`, `layout.tsx`) are Server Components by default — data fetching happens here
 - Client Components require `'use client'` directive at top of file
 - Use React Suspense boundaries with `loading.tsx` for RSC streaming fallbacks
@@ -173,20 +175,24 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 **Drizzle ORM Patterns:**
 - All table definitions in single `db/schema.ts` file
-- All queries in `db/queries/*.ts` — one file per domain (users, orgs, datasets, dataRows, subscriptions, refreshTokens, analyticsEvents)
+- All queries in `db/queries/*.ts` — one file per domain (users, orgs, datasets, dataRows, subscriptions, refreshTokens, analyticsEvents, aiSummaries, orgInvites, shares)
 - Every query function takes `orgId` as required parameter — fail closed if missing
 - Barrel re-export via `db/queries/index.ts` — services import from this, never `db/index.ts`
 - Use `drizzle-kit migrate` for versioned SQL — migrations run in Docker entrypoint
 
 **SWR Patterns:**
 - Client Components use SWR for data that needs revalidation (charts after upload)
-- `mutate()` called after CSV upload to trigger chart refresh
+- `mutate()` called after CSV upload to trigger chart refresh — charts cross-fade via Recharts animation, NOT skeleton reload
 - SWR cache is separate from SSE streaming state (useReducer)
+- Post-upload flow: UploadDropzone success → countdown → `router.push('/dashboard')` → SWR mutate + useAiStream auto-trigger
 
 **Recharts Patterns:**
 - SVG-based — allows CSS styling and accessibility
 - Chart wrappers co-located in `dashboard/charts/` (feature-specific until shared)
 - Mobile layout: viewport < 768px renders AI summary above fold, charts below (lazy-loaded via Intersection Observer)
+- Data transitions use Recharts built-in animation (`isAnimationActive`, `animationDuration={500}`) — cross-fade, NOT skeleton. Skeletons are initial-load only.
+- `useIsMobile` hook (matchMedia + isMounted guard) drives hydration-safe swap between AiSummary (desktop) and MobileAiSummary (mobile)
+- Mobile stacking: AppHeader fixed → FilterBar sticky below → MobileAiSummary above fold. Account for combined height.
 
 ### Testing Rules
 
@@ -281,7 +287,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Never store or transmit Unix timestamps
 
 **Analytics Event Naming:**
-- Dot-notation, past tense: `dataset.uploaded`, `ai_summary.viewed`, `insight.shared`, `subscription.upgraded`
+- Dot-notation, past tense: `dataset.uploaded`, `ai_summary.viewed`, `ai_preview.viewed` (free tier truncated — distinct from full view for upgrade funnel), `insight.shared`, `subscription.upgraded`, `transparency_panel.opened`
 
 **Component Organization:**
 - Feature-specific components co-located with route (e.g., `dashboard/DashboardCharts.tsx`)
@@ -289,6 +295,73 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - shadcn/ui components in `components/ui/` (auto-generated)
 - Layout components in `components/layout/`
 - Common components in `components/common/` (DemoModeBanner, UpgradeCta, ErrorBoundary)
+
+### UX Design Rules (from UX Design Specification)
+
+**Design Direction: Trust Blue**
+- Font: Inter via `next/font/google` in root `layout.tsx`
+- Color system: oklch — primary accent `oklch(0.55 0.15 250)` (Trust Blue, hue 250)
+- AI summary card: `border-left: 4px solid hsl(var(--primary))`, `shadow-md` (elevated above chart cards which use `shadow-sm`)
+- Financial data: `font-feature-settings: "tnum"` (tabular figures) on chart labels, table cells, metric cards, inline numbers
+
+**Typography (AI Summary):**
+- Body text: 17px on desktop (not 16px), `line-height: 1.8`, `max-width: 65ch`
+- Streaming cursor: `▋` (U+258B), 530ms blink with `step-end` easing
+- Minimum font size on mobile: 16px — never smaller
+
+**Button Hierarchy (4-tier — agents WILL get this wrong):**
+- Primary: shadcn `default` variant (Trust Blue filled)
+- Secondary: shadcn `outline` variant — NOT `secondary` variant
+- Destructive: shadcn `destructive` variant
+- Tertiary: shadcn `ghost` variant
+- **shadcn/ui's `secondary` variant is NOT USED in this product** — always use `outline` for second-tier actions
+- Maximum ONE primary button per viewport section — demote competing actions to `outline`
+
+**Breakpoint Strategy (non-obvious — agents WILL use `sm:`):**
+- Mobile: 0–767px — covered entirely by **base Tailwind classes** (no prefix)
+- `sm:` prefix (640px) is **NOT USED** — intentionally skipped
+- `md:` (768px) is the FIRST layout breakpoint — all responsive changes start here
+- `lg:` (1024px) for wide desktop adjustments
+
+**Mobile/Desktop Component Swap (NOT CSS — React conditional):**
+- `DashboardPage` renders `AiSummary` (≥768px) OR `MobileAiSummary` (<768px) via React conditional — NOT `display:none`
+- This ensures only ONE SSE connection is active
+- Hydration strategy: Server renders `AiSummarySkeleton` → client `useIsMobile` hook resolves via `window.matchMedia` + `isMounted` guard → correct variant mounts and initiates SSE
+- No layout flash, no CLS — skeleton remains until mount resolves
+
+**Toast Positioning:**
+- Desktop: bottom-right corner
+- Mobile: top-center (avoids overlap with bottom Sheet panels)
+
+**FilterBar:**
+- Filters are NOT in URL params for MVP-Core — state resets on page refresh
+- Date range presets only: "Last month", "Last 3 months", "Last 6 months", "Last year", "All time"
+- No custom date picker in MVP-Core — DropdownMenu with presets
+- Category filter: DropdownMenu populated from `getDistinctCategories(orgId)` query
+
+**Error Message Pattern (3-part structure):**
+- What happened → Why → What to do next
+- Example: "Column 'date' not found → Your CSV needs date, amount, and category columns → Download our sample template"
+
+**Animation Durations (all specific):**
+- Skeleton to content: 150ms ease-out
+- Sheet open/close: 200ms ease-in-out
+- Toast appear/dismiss: 150ms
+- DemoModeBanner dissolve: 300ms ease-out
+- Streaming cursor blink: 530ms step-end
+- Skeleton pulse: 1500ms ease-in-out infinite
+- `prefers-reduced-motion: reduce` → all decorative motion at 0ms, cursor visible but static, skeleton at solid `--color-muted`
+
+**Accessibility (specific to this project):**
+- Skip-to-content link: first focusable element on every page, visible on `:focus-visible`, targets `<main id="main-content">`
+- `aria-live="polite"` on AiSummary (announces streaming content) + `aria-busy="true"` during streaming
+- Minimum touch target on mobile: 44x44px (WCAG 2.5.5)
+- Open Graph meta tags on shared insight page: `og:title` (<60 chars), `og:description` (first AI sentence), `og:image` (auto-generated PNG)
+
+**Dual API Client Pattern (agents WILL use raw fetch):**
+- `apps/web/lib/api-client.ts` — Client Components → `/api/*` proxy routes
+- `apps/web/lib/api-server.ts` — Server Components → `http://api:3001` directly
+- **NEVER use raw `fetch()` in either context** — always use the typed wrapper
 
 ### Development Workflow Rules
 
@@ -310,7 +383,8 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - `.env.example` committed with descriptions — `.env` in `.gitignore`
 - Docker Compose uses `env_file` to load `.env`
 - Each app validates its own env vars at startup via Zod `config.ts`
-- Required env vars: `DATABASE_URL`, `REDIS_URL`, `CLAUDE_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `JWT_SECRET` (min 32 chars), `NODE_ENV`, `PORT`, `APP_URL`
+- Required env vars for `apps/api`: `DATABASE_URL`, `REDIS_URL`, `CLAUDE_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `JWT_SECRET` (min 32 chars), `NODE_ENV`, `PORT`
+- Required env vars for `apps/web`: `APP_URL` (OAuth callback URL + shareable link generation), `NODE_ENV`
 
 **Docker Networking:**
 - Services communicate via Docker service names: `http://api:3001`, `db:5432`, `redis:6379`
@@ -326,7 +400,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 ### Critical Don't-Miss Rules
 
 **Architecture Boundaries (agents WILL violate these):**
-- `proxy.ts` = route protection ONLY. `app/api/` = request forwarding ONLY. They NEVER overlap.
+- `proxy.ts` = action route protection ONLY (`/upload`, `/billing`, `/admin`). `app/api/` = request forwarding ONLY. They NEVER overlap. Dashboard is PUBLIC.
 - Services NEVER import `db/index.ts` — only `db/queries/` barrel. This is the org_id enforcement chokepoint.
 - `assembly.ts` accepts `ComputedStat[]`, NOT `DataRow[]` — raw data physically cannot reach the LLM prompt
 - Curation pipeline is THREE separate layers (computation → scoring → assembly) — never a monolithic service
@@ -337,7 +411,10 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - `org_id` is required on EVERY database query function — no exceptions
 - If `org_id` is missing, the query must fail (not return all data)
 - RLS policies are defense-in-depth behind application-level filtering
-- JWT claims contain `userId`, `org_id`, `role` — threaded through every request
+- JWT claims contain `userId`, `org_id`, `role` (owner/member), `isAdmin` (boolean) — threaded through every request
+- **Two-dimensional RBAC:** org-level roles (owner/member) in `user_orgs.role` + platform admin flag in `users.is_platform_admin`
+- `roleGuard('owner')` checks org role from JWT claims. `roleGuard('admin')` checks `isAdmin` claim for platform-admin routes.
+- Platform admin is a USER-level attribute, NOT an org-level role — don't add "admin" to `user_orgs.role` enum
 
 **Demo Mode State Machine (NOT a boolean):**
 - 4 states: `seed_only`, `seed_plus_user`, `user_only`, `empty`
@@ -352,21 +429,34 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Scoring weights in `config/scoring-weights.json` — tunable without code changes
 - Prompt templates versioned independently in `config/prompt-templates/v1.md`
 
+**AI Summary Cache-First Strategy:**
+- `ai_summaries` table stores generated summaries (content, transparency_metadata, prompt_version, is_seed, stale_at)
+- Dashboard RSC checks `db/queries/aiSummaries.ts` getCachedSummary() BEFORE any LLM call
+- Cache invalidation: on CSV upload, call markStale(orgId) — next dashboard load triggers fresh generation
+- Seed data summaries are PRE-GENERATED in `db/seed.ts` — zero LLM calls for anonymous visitors
+- No time-based TTL — summaries only go stale when underlying data changes
+- `useAiStream` hook AUTO-TRIGGERS SSE on cache miss — no "click to generate" button exists
+
 **SSE Streaming:**
 - Express endpoint streams Claude API response chunks via Server-Sent Events
 - 15-second timeout — if exceeded, return accumulated partial result (not an error)
 - Next.js proxy must NOT buffer the response — use `ReadableStream` with proper headers
 - Client-side: `useReducer` manages streaming state, NOT SWR
+- Free tier: `streamHandler.ts` truncates after ~150 words, sends `upgrade_required` SSE event
+- On stream complete: summary stored in `ai_summaries` table for future cache hits
 
-**Subscription Gate:**
-- Free tier = visualization only. Pro tier = AI interpretation.
-- `subscriptionGate.ts` middleware checks org subscription status on EVERY AI request
+**Subscription Gate (annotating, NOT blocking for AI):**
+- Free tier = visualization + partial AI preview (~150 words). Pro tier = full AI interpretation.
+- `subscriptionGate.ts` has TWO behaviors:
+  - **AI endpoints:** ANNOTATES request with `req.subscriptionTier` — NEVER returns 403. Free tier gets truncated stream (~150 words) + `upgrade_required` SSE event. Pro tier gets full stream.
+  - **Other Pro features:** BLOCKS with 403.
 - Checks local DB first (fast, webhook-synced), not Stripe API
-- Free users see preview with upgrade CTA — not a hard block
+- Subscription cancellation: redirect to Stripe Customer Portal via `POST /subscriptions/portal` — no custom cancellation UI needed
+- This is critical for "show value before asking for anything" — free users always see partial AI content
 
 **Stripe Webhook Handling:**
 - Raw body required for signature verification — route mounted BEFORE `express.json()`
-- Idempotent processing via Stripe event ID deduplication
+- Idempotent via status-transition safety (UPDATE WHERE status != target is a no-op on replay) — no separate event ID tracking table needed
 - Handles: `checkout.session.completed`, `invoice.payment_succeeded`, `invoice.payment_failed`, `customer.subscription.updated`
 
 **Retry Logic (external services only):**
@@ -409,8 +499,9 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Remove rules that become obvious over time
 
 **Reference Documents:**
-- Architecture: `_bmad-output/planning-artifacts/architecture.md` (~1300 lines, full decisions)
+- Architecture: `_bmad-output/planning-artifacts/architecture.md` (~1500 lines, full decisions + 32 validation issues resolved including 22 cross-artifact gaps)
 - PRD: `_bmad-output/planning-artifacts/prd.md` (41 FRs, 27 NFRs)
-- This file is the LLM-optimized subset — agents should start here, reference architecture for depth
+- UX Design: `_bmad-output/planning-artifacts/ux-design-specification.md` (~2000 lines, all screens + components)
+- This file is the LLM-optimized subset — agents should start here, reference architecture/UX for depth
 
-Last Updated: 2026-02-19
+Last Updated: 2026-02-21
