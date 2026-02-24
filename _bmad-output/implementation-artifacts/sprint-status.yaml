@@ -1,0 +1,104 @@
+# generated: 2026-02-23
+# project: SaaS Analytics Dashboard
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-02-23
+project: SaaS Analytics Dashboard
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # ── Epic 1: Project Foundation & User Authentication ──
+  epic-1: backlog
+  1-1-monorepo-scaffold-docker-development-environment: backlog
+  1-2-database-schema-core-identity-tables: backlog
+  1-3-google-oauth-authentication-org-auto-creation: backlog
+  1-4-role-based-access-control-route-protection: backlog
+  1-5-org-invite-link-system: backlog
+  1-6-cross-cutting-infrastructure-foundation: backlog
+  epic-1-retrospective: optional
+
+  # ── Epic 2: Data Pipeline & Visualization ──
+  epic-2: backlog
+  2-1-seed-data-demo-mode-foundation: backlog
+  2-2-csv-upload-validation: backlog
+  2-3-csv-preview-confirmation: backlog
+  2-4-sample-csv-template-download: backlog
+  2-5-demo-to-real-data-transition: backlog
+  2-6-interactive-dashboard-charts: backlog
+  2-7-date-range-category-filters: backlog
+  2-8-loading-states-demo-mode-banner: backlog
+  epic-2-retrospective: optional
+
+  # ── Epic 3: AI-Powered Business Insights ──
+  epic-3: backlog
+  3-1-curation-pipeline-statistical-computation-scoring: backlog
+  3-2-curation-pipeline-prompt-assembly-llm-integration: backlog
+  3-3-sse-streaming-delivery-ai-summary-card: backlog
+  3-4-ai-summary-timeout-error-handling: backlog
+  3-5-free-preview-with-upgrade-cta: backlog
+  3-6-transparency-panel-mobile-first-layout: backlog
+  epic-3-retrospective: optional
+
+  # ── Epic 4: Sharing & Export ──
+  epic-4: backlog
+  4-1-share-insight-as-rendered-image: backlog
+  4-2-shareable-read-only-link: backlog
+  4-3-shared-insight-card-view: backlog
+  epic-4-retrospective: optional
+
+  # ── Epic 5: Subscription & Payments ──
+  epic-5: backlog
+  5-1-stripe-checkout-free-to-pro-upgrade: backlog
+  5-2-subscription-lifecycle-management: backlog
+  5-3-subscription-status-verification: backlog
+  5-4-payment-failure-pro-access-revocation: backlog
+  epic-5-retrospective: optional
+
+  # ── Epic 6: Platform Administration ──
+  epic-6: backlog
+  6-1-admin-dashboard-org-user-management: backlog
+  6-2-system-health-monitoring: backlog
+  6-3-cross-organization-analytics-events-view: backlog
+  epic-6-retrospective: optional
+
+  # ── Epic 7: DevOps, Quality & Portfolio Readiness ──
+  epic-7: backlog
+  7-1-complete-ci-pipeline-5-stage: backlog
+  7-2-seed-data-ai-quality-validation: backlog
+  7-3-readme-case-study-hero-screenshot: backlog
+  7-4-analytics-event-verification-completeness: backlog
+  7-5-dark-mode-appearance: backlog
+  epic-7-retrospective: optional
