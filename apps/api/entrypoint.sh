@@ -3,8 +3,8 @@ set -e
 
 echo "Running database migrations..."
 cd /app/apps/api
-if ! ./node_modules/.bin/drizzle-kit migrate; then
-  echo "WARNING: drizzle-kit migrate exited non-zero (may be no pending migrations)"
+if ! npx tsx src/db/migrate.ts; then
+  echo "WARNING: migration runner exited non-zero (may be no pending migrations)"
 fi
 cd /app
 
