@@ -9,16 +9,9 @@ import { redis } from './lib/redis.js';
 
 const app = express();
 
-// 1. Correlation ID — FIRST (threads through all logs)
 app.use(correlationId);
-
-// 2. Stripe webhook route placeholder — BEFORE body parser (needs raw body)
-// Will be mounted here in a later story
-
-// 3. JSON body parser
+// TODO: mount stripe webhook route here — needs raw body, must come before json parser
 app.use(express.json({ limit: '10mb' }));
-
-// 4. Pino HTTP request logging
 app.use(
   pinoHttp({
     logger,
@@ -27,19 +20,14 @@ app.use(
     },
   }),
 );
-
-// 5. Route handlers
 app.use(healthRouter);
-
-// 6. Error handler — LAST
 app.use(errorHandler);
 
 async function start() {
   try {
     await redis.connect();
-    logger.info('Redis connected successfully');
   } catch (err) {
-    logger.error({ err }, 'Failed to connect to Redis');
+    logger.error({ err }, 'Redis connect failed — shutting down');
     process.exit(1);
   }
 
