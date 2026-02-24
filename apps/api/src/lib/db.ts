@@ -1,7 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { env } from '../config.js';
-import { logger } from './logger.js';
 
 const queryClient = postgres(env.DATABASE_URL, {
   max: 10,

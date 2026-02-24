@@ -5,7 +5,9 @@
  * NEVER use this in Client Components — use api-client.ts instead.
  */
 
-const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://api:3001';
+import { webEnv } from './config.js';
+
+const API_INTERNAL_URL = webEnv.API_INTERNAL_URL;
 
 interface ApiResponse<T> {
   data: T;

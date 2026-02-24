@@ -12,7 +12,7 @@ redis.on('error', (err) => {
 });
 
 redis.on('connect', () => {
-  logger.info('Redis connected');
+  logger.info({}, 'Redis connected');
 });
 
 export async function checkRedisHealth(): Promise<{ status: 'ok' | 'error'; latencyMs: number }> {

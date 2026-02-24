@@ -26,8 +26,8 @@ module.exports = {
           {
             patterns: [
               {
-                group: ['../../apps/api/*'],
-                message: 'apps/web cannot import from apps/api. Use @shared/* for shared code.',
+                group: ['../../apps/api/*', 'api', 'api/*'],
+                message: 'apps/web cannot import from apps/api. Use shared/* for shared code.',
               },
             ],
           },
@@ -42,8 +42,8 @@ module.exports = {
           {
             patterns: [
               {
-                group: ['../../apps/web/*'],
-                message: 'apps/api cannot import from apps/web. Use @shared/* for shared code.',
+                group: ['../../apps/web/*', 'web', 'web/*'],
+                message: 'apps/api cannot import from apps/web. Use shared/* for shared code.',
               },
             ],
           },
