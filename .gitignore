@@ -34,4 +34,7 @@ Thumbs.db
 .claude/plugins/
 .claude/memory/
 
+# Interview docs — personal study material
+*_explained.md
+
 # BMAD - track framework + docs and planning artifacts
