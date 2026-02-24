@@ -1,0 +1,41 @@
+import { z } from 'zod';
+
+export const roleSchema = z.enum(['owner', 'member']);
+
+export const userSchema = z.object({
+  id: z.number().int(),
+  email: z.string().email(),
+  name: z.string().min(1).max(255),
+  googleId: z.string().nullable(),
+  avatarUrl: z.string().url().nullable(),
+  isPlatformAdmin: z.boolean(),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
+});
+
+export const orgSchema = z.object({
+  id: z.number().int(),
+  name: z.string().min(1).max(255),
+  slug: z.string().min(1).max(255),
+  createdAt: z.coerce.date(),
+});
+
+export const userOrgSchema = z.object({
+  id: z.number().int(),
+  userId: z.number().int(),
+  orgId: z.number().int(),
+  role: roleSchema,
+  joinedAt: z.coerce.date(),
+});
+
+export const createUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(255),
+  googleId: z.string().min(1),
+  avatarUrl: z.string().url().optional(),
+});
+
+export const createOrgSchema = z.object({
+  name: z.string().min(1).max(255),
+  slug: z.string().min(1).max(255).regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens'),
+});
