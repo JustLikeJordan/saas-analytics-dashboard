@@ -1,0 +1,29 @@
+services:
+  db:
+    ports:
+      - '5432:5432'
+
+  redis:
+    ports:
+      - '6379:6379'
+
+  api:
+    build:
+      target: development
+    volumes:
+      - ./apps/api:/app/apps/api
+      - /app/apps/api/node_modules
+    ports:
+      - '3001:3001'
+      - '9229:9229'
+    command: pnpm --filter api dev
+
+  web:
+    build:
+      target: development
+    volumes:
+      - ./apps/web:/app/apps/web
+      - /app/apps/web/node_modules
+    ports:
+      - '3000:3000'
+    command: pnpm --filter web dev
