@@ -11,8 +11,12 @@ declare global {
   }
 }
 
+const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
 export function correlationId(req: Request, res: Response, next: NextFunction) {
-  const id = (req.headers['x-correlation-id'] as string) ?? randomUUID();
+  const raw = req.headers['x-correlation-id'];
+  const supplied = Array.isArray(raw) ? raw[0] : raw;
+  const id = typeof supplied === 'string' && UUID_PATTERN.test(supplied) ? supplied : randomUUID();
   req.correlationId = id;
   req.log = logger.child({ correlationId: id });
   res.setHeader('x-correlation-id', id);

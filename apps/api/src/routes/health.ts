@@ -13,14 +13,12 @@ router.get('/health', async (_req, res) => {
   const statusCode = status === 'ok' ? 200 : 503;
 
   res.status(statusCode).json({
-    data: {
-      status,
-      services: {
-        database: dbHealth,
-        redis: redisHealth,
-      },
-      timestamp: new Date().toISOString(),
+    status,
+    services: {
+      database: dbHealth,
+      redis: redisHealth,
     },
+    timestamp: new Date().toISOString(),
   });
 });
 

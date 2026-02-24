@@ -12,7 +12,9 @@ services:
       target: development
     volumes:
       - ./apps/api:/app/apps/api
+      - ./packages/shared:/app/packages/shared
       - /app/apps/api/node_modules
+      - /app/packages/shared/node_modules
     ports:
       - '3001:3001'
       - '9229:9229'
@@ -23,7 +25,9 @@ services:
       target: development
     volumes:
       - ./apps/web:/app/apps/web
+      - ./packages/shared:/app/packages/shared
       - /app/apps/web/node_modules
+      - /app/packages/shared/node_modules
     ports:
       - '3000:3000'
     command: pnpm --filter web dev

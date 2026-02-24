@@ -1,6 +1,6 @@
 # Story 1.1: Monorepo Scaffold & Docker Development Environment
 
-Status: review
+Status: done
 
 ## Story
 
@@ -540,3 +540,36 @@ packages/shared:
 - `src/constants/index.ts` — MAX_FILE_SIZE, AI_TIMEOUT_MS, RATE_LIMITS, ROLES
 - `package.json` — Exports map: ./schemas, ./types, ./constants
 - `tsconfig.json` — Extends base
+
+### Code Review Fixes Applied
+
+**Reviewer:** Claude Opus 4.6 (adversarial code review)
+**Date:** 2026-02-24
+**Issues Found:** 7 HIGH, 8 MEDIUM, 8 LOW — all fixed
+
+**HIGH fixes:**
+- H-1: Added `output: 'standalone'` to `next.config.ts` — production Dockerfile requires it
+- H-2: Added `import` condition to `shared/package.json` exports pointing to `./dist/*.js` for production
+- H-3: Removed `2>/dev/null` from `entrypoint.sh`; migration errors now visible; uses local binary
+- H-4: Added UUID format validation + array guard to `correlationId.ts`
+- H-5: Removed `data:` envelope from `health.ts` — monitoring tools expect flat root response
+- H-6/H-7: Created `apps/web/lib/config.ts` (Zod-validated); `api-server.ts` imports from it
+
+**MEDIUM fixes:**
+- M-1: Added `packages/shared` volume mounts to `docker-compose.override.yml`
+- M-2: Added package-name patterns (`api`, `web`) to ESLint import boundary rules
+- M-3: Reverted — `moduleResolution: "bundler"` kept (CJS interop issues with `nodenext`)
+- M-4: Removed dead `logger` import from `db.ts`
+- M-5: Added `vitest`, `@vitejs/plugin-react`, `shared` deps to `apps/web/package.json`
+- M-6: Renamed `MAX_FILE_SIZE_BYTES` → `MAX_FILE_SIZE`
+- M-7: Changed `target: "ES2017"` → `"ES2022"` in `apps/web/tsconfig.json`
+- M-8: Added `type-check` and `test` scripts to `apps/web/package.json`
+
+**LOW fixes:**
+- L-1: Fixed Pino logging convention in `redis.ts`
+- L-2: Used local binary in `entrypoint.sh` (combined with H-3)
+- L-3: Added fail-fast guard to `drizzle.config.ts`
+- L-4: Added explanatory comment for `redis.connect()` in `index.ts`
+- L-5: Added TODO comment for JWT validation in `proxy.ts`
+- L-6: Replaced `__dirname` with `import.meta.url` in `apps/web/vitest.config.ts`
+- L-7: Changed `jsx: "react-jsx"` → `"preserve"` per Next.js convention

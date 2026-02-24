@@ -25,6 +25,7 @@ app.use(errorHandler);
 
 async function start() {
   try {
+    // redis.ts uses lazyConnect: true — explicit connect() required here
     await redis.connect();
   } catch (err) {
     logger.error({ err }, 'Redis connect failed — shutting down');

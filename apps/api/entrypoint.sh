@@ -3,7 +3,9 @@ set -e
 
 echo "Running database migrations..."
 cd /app/apps/api
-npx drizzle-kit migrate 2>/dev/null || echo "No pending migrations or migration skipped"
+if ! ./node_modules/.bin/drizzle-kit migrate; then
+  echo "WARNING: drizzle-kit migrate exited non-zero (may be no pending migrations)"
+fi
 cd /app
 
 echo "Starting API server..."

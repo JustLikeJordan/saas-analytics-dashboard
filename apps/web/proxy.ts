@@ -10,6 +10,7 @@ export function proxy(request: NextRequest) {
   );
 
   if (isProtected) {
+    // TODO(Story 1.3): Add JWT validation — currently only checks cookie presence
     const token = request.cookies.get('access_token')?.value;
 
     if (!token) {
