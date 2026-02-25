@@ -11,7 +11,8 @@ export default function LoginButton({ redirectPath }: { redirectPath: string }) 
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/login');
+      const params = redirectPath ? `?redirect=${encodeURIComponent(redirectPath)}` : '';
+      const response = await fetch(`/api/auth/login${params}`);
       if (!response.ok) {
         throw new Error('Failed to initiate sign-in');
       }

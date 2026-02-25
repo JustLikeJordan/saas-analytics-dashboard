@@ -83,7 +83,7 @@ export async function verifyGoogleIdToken(idToken: string): Promise<GoogleUserPr
     return {
       googleId: sub,
       email,
-      name: name ?? email.split('@')[0],
+      name: name ?? email.split('@')[0] ?? email,
       avatarUrl: picture ?? null,
     };
   } catch (err) {
@@ -140,7 +140,7 @@ export async function handleGoogleCallback(code: string) {
       throw new AuthenticationError('User has no organization membership');
     }
 
-    const primaryMembership = memberships[0];
+    const primaryMembership = memberships[0]!;
     logger.info({ userId: existingUser.id }, 'Returning user authenticated via Google OAuth');
 
     return {
