@@ -4,7 +4,7 @@ user_name: 'Corey'
 date: '2026-02-21'
 sections_completed: ['technology_stack', 'language_specific_rules', 'framework_specific_rules', 'testing_rules', 'code_quality_style', 'ux_design_rules', 'development_workflow', 'critical_dont_miss']
 status: 'complete'
-rule_count: 228
+rule_count: 251
 optimized_for_llm: true
 existing_patterns_found: 32
 cross_artifact_gaps_resolved: 22
@@ -243,6 +243,28 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Deterministic, free, fast — no Claude API call in CI
 
 ### Code Quality & Style Rules
+
+**Code Humanization (ALL code must follow — agents WILL write AI-sounding code):**
+- Comments explain WHY, never WHAT — if code needs a "what" comment, refactor the code instead
+- No section-header comments (`// === Section ===`, `// ─── Tables ───`) — if a file needs signposts, it's too long
+- No echo comments (restating the next line of code in English) — delete on sight
+- No narrating comments (`// First, we validate the input`, `// Now let's fetch the data`) — just do it
+- Naming: concise and opinionated — `cfg`, `ctx`, `opts`, `err`, `btn`, `msg` are idiomatic. `numberOfRetryAttempts`, `userAuthenticationTokenExpirationTimestamp` are not.
+- Booleans read like questions: `hasAccess`, `isReady`, `shouldRetry`, `canEdit`
+- Early returns reduce nesting — bail out at the top, not deep in an else chain
+- No premature abstraction — write the concrete thing first, abstract on the third copy
+- No defensive overkill — don't catch-log-rethrow, don't validate already-validated inputs
+- Leave a rough edge: a TODO, an imperfect-but-working solution — perfection is suspicious
+- `const` by default, `let` when needed. Arrow functions for callbacks, regular for top-level.
+
+**Interview Documentation (MANDATORY for all new/modified code files):**
+- Every new or substantially modified `.ts`/`.tsx` file gets a companion `<filename>_explained.md` in the same directory
+- Skip for: config/boilerplate files, pure barrel re-exports, test files, typo-only changes
+- 8 required sections: Elevator Pitch, Why This Approach, Code Walkthrough, Complexity/Trade-offs, Patterns Worth Knowing, Interview Questions (4-6), Data Structures & Algorithms, Impress the Interviewer
+- Voice: patient senior engineer teaching a CS freshman — explain every concept from the ground up, then provide confident interview-ready sentences
+- Use "What's happening → How to say it in an interview" pairs throughout
+- Depth scales with file complexity: 20-line utility = concise. 150-line service = full depth. All 8 sections always present.
+- Update existing `_explained.md` files when their source file is substantially modified
 
 **File Naming:**
 - Components: `PascalCase.tsx` — `DashboardPage.tsx`, `InsightCard.tsx`
@@ -504,4 +526,4 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - UX Design: `_bmad-output/planning-artifacts/ux-design-specification.md` (~2000 lines, all screens + components)
 - This file is the LLM-optimized subset — agents should start here, reference architecture/UX for depth
 
-Last Updated: 2026-02-21
+Last Updated: 2026-02-25

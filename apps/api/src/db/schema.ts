@@ -11,11 +11,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
-// ─── Enums ───────────────────────────────────────────────
-
 export const userRoleEnum = pgEnum('user_role', ['owner', 'member']);
-
-// ─── Tables ──────────────────────────────────────────────
 
 export const users = pgTable('users', {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
@@ -72,8 +68,6 @@ export const refreshTokens = pgTable(
   },
   (table) => [index('idx_refresh_tokens_user_id').on(table.userId)],
 );
-
-// ─── Relations ───────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
   userOrgs: many(userOrgs),
