@@ -90,10 +90,8 @@ export async function rotateRefreshToken(rawToken: string) {
     throw new AuthenticationError('Invalid refresh token');
   }
 
-  // Revoke the old token
   await refreshTokensQueries.revokeToken(existing.id);
 
-  // Fetch fresh user data for the new access token claims
   const user = await usersQueries.findUserById(existing.userId);
   if (!user) {
     throw new AuthenticationError('User not found');
@@ -105,7 +103,6 @@ export async function rotateRefreshToken(rawToken: string) {
     throw new AuthenticationError('Organization membership not found');
   }
 
-  // Issue new token pair
   const { accessToken, refreshToken } = await createTokenPair(
     user.id,
     existing.orgId,

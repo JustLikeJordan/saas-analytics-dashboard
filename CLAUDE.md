@@ -97,6 +97,26 @@ RBAC: `user_orgs.role` (owner/member) + `users.is_platform_admin` boolean.
 
 Planning artifacts in `_bmad-output/`. Sprint tracking in `_bmad-output/implementation-artifacts/sprint-status.yaml`. Stories created via `/bmad-bmm-create-story`, implemented via `/bmad-bmm-dev-story`.
 
+## Code Style (humanize-code)
+
+All code must read like a senior dev wrote it — not a tutorial, not a textbook.
+
+- **Comments**: Why, never what. If the code needs a comment to explain what it does, rename things or extract a function. `// edge case — API returns null for deleted users` is good. `// Loop through the array` is delete-on-sight.
+- **Naming**: Concise and opinionated. `cfg`, `ctx`, `opts`, `err` are fine. `numberOfRetryAttempts` is not. Booleans read like questions: `hasAccess`, `isReady`.
+- **Structure**: Early returns, minimal nesting. A 40-line function doing one thing is fine — don't split into 6 one-call helpers.
+- **No AI anti-patterns**: No section-header comments (`// === Section ===`), no echo comments, no narrating (`// First we validate`), no symmetry-for-symmetry's-sake, no premature abstraction.
+- **Error handling**: Catch specific errors you can handle. Let everything else propagate. No catch-log-rethrow.
+
+## Interview Documentation (_explained.md)
+
+Every new or substantially modified code file gets a companion `<filename>_explained.md` in the same directory.
+
+- **When**: After creating or substantially modifying a code file. Not for typo fixes, config, or boilerplate.
+- **Structure**: 8 sections — Elevator Pitch, Why This Approach, Code Walkthrough, Complexity/Trade-offs, Patterns Worth Knowing, Interview Questions, Data Structures, Impress the Interviewer.
+- **Voice**: Patient senior engineer teaching a CS freshman. "What's happening" → "How to say it in an interview" pairs throughout.
+- **Depth scales with complexity**: 20-line utility gets concise treatment. 150-line service gets full depth.
+- **Update existing docs**: If modifying a file that already has `_explained.md`, update the doc to reflect changes.
+
 ## Testing
 
 - Vitest for unit/integration tests

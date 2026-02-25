@@ -125,11 +125,9 @@ export async function handleGoogleCallback(code: string) {
   const tokens = await exchangeCodeForTokens(code);
   const profile = await verifyGoogleIdToken(tokens.id_token);
 
-  // Check if returning user
   const existingUser = await usersQueries.findUserByGoogleId(profile.googleId);
 
   if (existingUser) {
-    // Update profile info in case it changed
     await usersQueries.updateUser(existingUser.id, {
       name: profile.name,
       avatarUrl: profile.avatarUrl ?? undefined,
@@ -151,7 +149,6 @@ export async function handleGoogleCallback(code: string) {
     };
   }
 
-  // New user: create user + org + membership
   const user = await usersQueries.createUser({
     email: profile.email,
     name: profile.name,
