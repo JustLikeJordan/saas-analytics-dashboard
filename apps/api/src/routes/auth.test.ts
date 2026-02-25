@@ -165,7 +165,7 @@ describe('auth routes', () => {
       expect(cookies.access_token).toBe('jwt-access-123');
       expect(cookies.refresh_token).toBe('refresh-raw-456');
 
-      expect(mockHandleGoogleCallback).toHaveBeenCalledWith('google-auth-code');
+      expect(mockHandleGoogleCallback).toHaveBeenCalledWith('google-auth-code', undefined);
       expect(mockCreateTokenPair).toHaveBeenCalledWith(1, 10, 'owner', false);
     });
 

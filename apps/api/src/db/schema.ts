@@ -51,6 +51,28 @@ export const userOrgs = pgTable(
   ],
 );
 
+export const orgInvites = pgTable(
+  'org_invites',
+  {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    orgId: integer('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    tokenHash: varchar('token_hash', { length: 255 }).notNull().unique(),
+    createdBy: integer('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    usedBy: integer('used_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_org_invites_org_id').on(table.orgId),
+    index('idx_org_invites_token_hash').on(table.tokenHash),
+  ],
+);
+
 export const refreshTokens = pgTable(
   'refresh_tokens',
   {
@@ -72,11 +94,13 @@ export const refreshTokens = pgTable(
 export const usersRelations = relations(users, ({ many }) => ({
   userOrgs: many(userOrgs),
   refreshTokens: many(refreshTokens),
+  createdInvites: many(orgInvites, { relationName: 'inviteCreator' }),
 }));
 
 export const orgsRelations = relations(orgs, ({ many }) => ({
   userOrgs: many(userOrgs),
   refreshTokens: many(refreshTokens),
+  invites: many(orgInvites),
 }));
 
 export const userOrgsRelations = relations(userOrgs, ({ one }) => ({
@@ -98,5 +122,17 @@ export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
   org: one(orgs, {
     fields: [refreshTokens.orgId],
     references: [orgs.id],
+  }),
+}));
+
+export const orgInvitesRelations = relations(orgInvites, ({ one }) => ({
+  org: one(orgs, {
+    fields: [orgInvites.orgId],
+    references: [orgs.id],
+  }),
+  creator: one(users, {
+    fields: [orgInvites.createdBy],
+    references: [users.id],
+    relationName: 'inviteCreator',
   }),
 }));

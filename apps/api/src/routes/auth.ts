@@ -53,7 +53,7 @@ router.post('/auth/callback', rateLimitAuth, async (req: Request, res: Response)
     throw new ValidationError('Invalid callback parameters', parsed.error.format());
   }
 
-  const { code, state } = parsed.data;
+  const { code, state, inviteToken } = parsed.data;
   const storedState = req.cookies?.[AUTH.COOKIE_NAMES.OAUTH_STATE];
 
   if (!storedState || state !== storedState) {
@@ -62,7 +62,7 @@ router.post('/auth/callback', rateLimitAuth, async (req: Request, res: Response)
 
   clearCookie(res, AUTH.COOKIE_NAMES.OAUTH_STATE);
 
-  const { user, org, membership, isNewUser } = await handleGoogleCallback(code);
+  const { user, org, membership, isNewUser } = await handleGoogleCallback(code, inviteToken);
 
   const { accessToken, refreshToken } = await createTokenPair(
     user.id,

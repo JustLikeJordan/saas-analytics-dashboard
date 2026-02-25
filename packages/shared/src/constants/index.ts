@@ -13,6 +13,11 @@ export const ROLES = {
   MEMBER: 'member',
 } as const;
 
+export const INVITES = {
+  DEFAULT_EXPIRY_DAYS: 7,
+  TOKEN_BYTES: 32,
+} as const;
+
 export const AUTH = {
   ACCESS_TOKEN_EXPIRY: '15m',
   REFRESH_TOKEN_EXPIRY_DAYS: 7,

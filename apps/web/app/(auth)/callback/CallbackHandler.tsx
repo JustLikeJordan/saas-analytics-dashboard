@@ -23,11 +23,14 @@ export default function CallbackHandler({
 
     async function exchangeCode() {
       try {
+        const inviteToken = sessionStorage.getItem('pending_invite_token') ?? undefined;
+        sessionStorage.removeItem('pending_invite_token');
+
         const response = await fetch('/api/auth/callback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ code, state }),
+          body: JSON.stringify({ code, state, inviteToken }),
         });
 
         if (!cancelled) {

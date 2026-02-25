@@ -52,6 +52,15 @@ export const jwtPayloadSchema = z.object({
 export const googleCallbackSchema = z.object({
   code: z.string().min(1),
   state: z.string().min(1),
+  inviteToken: z.string().min(1).optional(),
+});
+
+export const createInviteSchema = z.object({
+  expiresInDays: z.number().int().min(1).max(30).optional(),
+});
+
+export const inviteTokenParamSchema = z.object({
+  token: z.string().min(1),
 });
 
 export const loginResponseSchema = z.object({

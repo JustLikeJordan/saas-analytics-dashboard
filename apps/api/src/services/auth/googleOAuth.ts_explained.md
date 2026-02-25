@@ -89,13 +89,19 @@ The catch block re-throws `AuthenticationError` instances (our own errors) but w
 
 `generateUniqueSlug` tries the slug as-is, then adds random 4-hex suffixes (3 attempts), and finally falls back to a fully random slug. The early return pattern keeps it readable — each attempt bails out immediately on success. The `|| 'org'` fallback handles edge cases where the name slugifies to an empty string (e.g., a name entirely in non-Latin characters).
 
-### Block 8: handleGoogleCallback (lines 124-169)
+### Block 8: handleGoogleCallback (lines 125-203)
 
-The main orchestrator. It exchanges the code for tokens, verifies the ID token, then branches:
+The main orchestrator. Accepts an optional `inviteToken` that changes the user provisioning path. Exchanges the code for tokens, verifies the ID token, then branches on three paths:
 
-Returning user path: Find by Google ID, update profile, fetch memberships, return the first org membership. The `memberships[0]!` non-null assertion is safe because we just checked `memberships.length === 0` above.
+**Invite validation (lines 130-133):** If an `inviteToken` is provided, validates it upfront before touching user records. Fail-fast — if the invite is expired or used, we throw before creating any users.
 
-New user path: Create user, generate org name and slug, create org, add user as owner. The order matters — user must exist before you can create a membership.
+**Existing user + invite (lines 144-157):** Redeems the invite (adds membership, marks invite used), then returns the invite's org as primary. The user joins an existing org instead of using their default one.
+
+**New user + invite (lines 184-192):** Creates the user, redeems the invite, skips auto-org creation. Invited users don't get auto-created orgs.
+
+**Default paths (no invite):** Existing user returns first org membership. New user gets auto-created org as owner. Same as before.
+
+The order matters: user must exist before you can create a membership, and the invite must be validated before any user provisioning.
 
 ---
 
