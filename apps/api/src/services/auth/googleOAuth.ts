@@ -6,6 +6,7 @@ import { AuthenticationError, ExternalServiceError } from '../../lib/appError.js
 import * as usersQueries from '../../db/queries/users.js';
 import * as orgsQueries from '../../db/queries/orgs.js';
 import * as userOrgsQueries from '../../db/queries/userOrgs.js';
+import { validateInviteToken, redeemInvite } from './inviteService.js';
 import { AUTH } from 'shared/constants';
 
 interface GoogleTokenResponse {
@@ -121,9 +122,15 @@ async function generateUniqueSlug(name: string): Promise<string> {
   return `org-${randomBytes(4).toString('hex')}`;
 }
 
-export async function handleGoogleCallback(code: string) {
+export async function handleGoogleCallback(code: string, inviteToken?: string) {
   const tokens = await exchangeCodeForTokens(code);
   const profile = await verifyGoogleIdToken(tokens.id_token);
+
+  // if invite token provided, validate it upfront before touching user records
+  let invite: Awaited<ReturnType<typeof validateInviteToken>> | null = null;
+  if (inviteToken) {
+    invite = await validateInviteToken(inviteToken);
+  }
 
   const existingUser = await usersQueries.findUserByGoogleId(profile.googleId);
 
@@ -132,6 +139,22 @@ export async function handleGoogleCallback(code: string) {
       name: profile.name,
       avatarUrl: profile.avatarUrl ?? undefined,
     });
+
+    // invited user — redeem invite, then use invite's org as primary
+    if (invite) {
+      await redeemInvite(invite.id, invite.orgId, existingUser.id);
+      const membership = await userOrgsQueries.findMembership(invite.orgId, existingUser.id);
+      if (!membership) throw new AuthenticationError('Failed to join organization');
+
+      logger.info({ userId: existingUser.id, orgId: invite.orgId }, 'Existing user joined org via invite');
+
+      return {
+        user: existingUser,
+        org: invite.org,
+        membership,
+        isNewUser: false,
+      };
+    }
 
     const memberships = await userOrgsQueries.getUserOrgs(existingUser.id);
     if (memberships.length === 0) {
@@ -149,6 +172,7 @@ export async function handleGoogleCallback(code: string) {
     };
   }
 
+  // new user
   const user = await usersQueries.createUser({
     email: profile.email,
     name: profile.name,
@@ -156,6 +180,18 @@ export async function handleGoogleCallback(code: string) {
     avatarUrl: profile.avatarUrl ?? undefined,
   });
 
+  // invited new user — join the invite's org, skip auto-org creation
+  if (invite) {
+    await redeemInvite(invite.id, invite.orgId, user.id);
+    const membership = await userOrgsQueries.findMembership(invite.orgId, user.id);
+    if (!membership) throw new AuthenticationError('Failed to join organization');
+
+    logger.info({ userId: user.id, orgId: invite.orgId }, 'New user registered via invite');
+
+    return { user, org: invite.org, membership, isNewUser: true };
+  }
+
+  // no invite — default behavior: create org, user becomes owner
   const orgName = `${profile.name}'s Organization`;
   const slug = await generateUniqueSlug(profile.name);
   const org = await orgsQueries.createOrg({ name: orgName, slug });

@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { rateLimitPublic } from './middleware/rateLimiter.js';
 import healthRouter from './routes/health.js';
 import authRouter from './routes/auth.js';
+import { publicInviteRouter } from './routes/invites.js';
 import protectedRouter from './routes/protected.js';
 import { redis } from './lib/redis.js';
 
@@ -27,9 +28,9 @@ app.use(
   }),
 );
 app.use(healthRouter);
-app.use(rateLimitPublic);
 app.use(authRouter);
-app.use(protectedRouter);
+app.use(publicInviteRouter);
+app.use(rateLimitPublic, protectedRouter);
 app.use(errorHandler);
 
 async function start() {

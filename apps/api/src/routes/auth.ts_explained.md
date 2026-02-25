@@ -2,9 +2,9 @@
 
 ## Section 1: 30-Second Elevator Pitch
 
-This file is the HTTP layer for authentication — the actual endpoints that the browser talks to. Think of it as a reception desk at a secure building. One window starts the Google sign-in process, another handles the callback when Google sends you back, a third exchanges your expiring badge for a fresh one, and a fourth lets you leave and hands back your badge. Under the hood, it stores credentials in secure cookies rather than handing them directly to the browser's JavaScript.
+This file is the HTTP layer for authentication — the actual endpoints that the browser talks to. Think of it as a reception desk at a secure building. One window starts the Google sign-in process, another handles the callback when Google sends you back, a third exchanges your expiring badge for a fresh one, and a fourth lets you leave and hands back your badge. Every route is individually rate-limited to prevent abuse. Under the hood, it stores credentials in secure cookies rather than handing them directly to the browser's JavaScript.
 
-**How to say it in an interview:** "This is the Express router defining the four auth endpoints — initiate OAuth, handle callback, refresh tokens, and logout. It manages httpOnly cookies for token storage and delegates business logic to the auth service layer, keeping routes thin."
+**How to say it in an interview:** "This is the Express router defining the four auth endpoints — initiate OAuth, handle callback, refresh tokens, and logout. It applies per-route rate limiting, manages httpOnly cookies for token storage, and delegates business logic to the auth service layer, keeping routes thin."
 
 ---
 
@@ -42,13 +42,21 @@ This file is the HTTP layer for authentication — the actual endpoints that the
 
 **Over alternative:** Express 4 required wrapping every async handler in try/catch or using a wrapper library. Express 5 eliminates this boilerplate.
 
+### Decision 5: Co-located rate limiting per route
+
+**What's happening:** `rateLimitAuth` is applied as inline middleware on each route (`router.post('/auth/callback', rateLimitAuth, async (req, res) => { ... })`) rather than mounted globally via `app.use('/auth', rateLimitAuth)`. This means every route explicitly declares its own rate limiter in the handler chain.
+
+**How to say it in an interview:** "Rate limiting is co-located with each route handler instead of applied at the path prefix level. If someone moves or renames a route during a refactor, the rate limiter moves with it — you can't accidentally expose an unprotected auth endpoint."
+
+**Over alternative:** A global `app.use('/auth', rateLimitAuth)` is fewer lines of code, but it's invisible at the route definition site. A developer reading a route handler wouldn't know it's rate-limited without checking the app-level middleware stack. Co-location makes security properties visible where they matter.
+
 ---
 
 ## Section 3: Code Walkthrough
 
 ### Block 1: Imports (lines 1-16)
 
-Standard Express types, the auth service functions, refresh token queries (for logout), and shared constants/schemas. The import from `shared/schemas` gives us the Zod validation schema — same schema could be used on the frontend for client-side validation too.
+Standard Express types, the auth service functions, refresh token queries (for logout), shared constants/schemas, and the `rateLimitAuth` middleware from the rate limiter module. The import from `shared/schemas` gives us the Zod validation schema — same schema could be used on the frontend for client-side validation too. The `rateLimitAuth` import brings in the pre-configured limiter scoped to auth endpoints (10 req/min by default).
 
 ### Block 2: Cookie helpers (lines 20-39)
 
@@ -63,17 +71,17 @@ The `clearCookie` helper mirrors the same options minus `maxAge`. The non-obviou
 
 ### Block 3: GET /auth/google (lines 41-47)
 
-Initiates the OAuth flow. Generates a random state parameter, stores it in a cookie (for CSRF verification later), and returns the Google auth URL for the frontend to redirect to. The cookie expires in 600 seconds (10 minutes) — more than enough for a user to complete the Google consent screen.
+Initiates the OAuth flow. `rateLimitAuth` runs first, then the handler generates a random state parameter, stores it in a cookie (for CSRF verification later), and returns the Google auth URL for the frontend to redirect to. The cookie expires in 600 seconds (10 minutes) — more than enough for a user to complete the Google consent screen.
 
 Returns `{ data: { url } }` matching the standard API response format. The frontend takes this URL and does `window.location.href = url`.
 
 ### Block 4: POST /auth/callback (lines 49-92)
 
-The most complex route. In order:
-1. **Validate input** — Zod checks that `code` and `state` are non-empty strings
+The most complex route. `rateLimitAuth` runs first, then in order:
+1. **Validate input** — Zod checks that `code` and `state` are non-empty strings; `inviteToken` is optional
 2. **Verify CSRF** — compares the state parameter from the request body with the one stored in the cookie. If they don't match, someone may be trying a CSRF attack
 3. **Clear state cookie** — it's single-use, consumed here
-4. **Handle callback** — delegates to `handleGoogleCallback` which does the OAuth exchange, token verification, and user provisioning
+4. **Handle callback** — delegates to `handleGoogleCallback(code, inviteToken)` which does the OAuth exchange, token verification, and user provisioning. If `inviteToken` is present, the user joins the inviting org instead of getting a new auto-created org
 5. **Create token pair** — generates our JWT access token and refresh token
 6. **Set cookies** — access token (15 minutes), refresh token (7 days)
 7. **Return user data** — the response includes user info, org info, and whether this is a new registration
@@ -82,11 +90,11 @@ The `membership.role as 'owner' | 'member'` cast is needed because Drizzle's ret
 
 ### Block 5: POST /auth/refresh (lines 94-106)
 
-Reads the refresh token from the cookie, passes it to `rotateRefreshToken` (which validates, revokes, and issues new tokens), and sets the new tokens as cookies. If no refresh token cookie exists, throws immediately.
+`rateLimitAuth` runs first, then reads the refresh token from the cookie, passes it to `rotateRefreshToken` (which validates, revokes, and issues new tokens), and sets the new tokens as cookies. If no refresh token cookie exists, throws immediately.
 
 ### Block 6: POST /auth/logout (lines 108-124)
 
-Reads the refresh token cookie, hashes it, finds the matching token in the database, and revokes it. Then clears both cookies. The `if (rawToken)` guard handles the case where the user is already logged out (no cookie present) — we still clear cookies to be safe, but skip the database revocation.
+`rateLimitAuth` runs first, then reads the refresh token cookie, hashes it, finds the matching token in the database, and revokes it. Then clears both cookies. The `if (rawToken)` guard handles the case where the user is already logged out (no cookie present) — we still clear cookies to be safe, but skip the database revocation.
 
 The logger call on successful revocation includes `userId` for audit trail — you can search logs to see when any user logged out.
 
@@ -100,7 +108,7 @@ The logger call on successful revocation includes `userId` for audit trail — y
 
 **Cookie clearing must match flags:** If you set a cookie with `httpOnly: true, sameSite: 'lax', path: '/'`, you must clear it with the same flags. This is why `clearCookie` exists as a helper — it ensures consistency. Getting this wrong is a common bug where cookies become "immortal."
 
-**No rate limiting on these routes (yet):** Auth endpoints are prime targets for abuse (credential stuffing, OAuth state brute-forcing). The rate limiting is defined in shared constants (`RATE_LIMITS.auth: 10 req/min`) but not yet implemented on these routes. That's upcoming work.
+**Per-route rate limiting verbosity:** Repeating `rateLimitAuth` in every route handler is more verbose than a single `app.use('/auth', rateLimitAuth)`. Four routes means four repetitions. The trade-off is worth it: you can read any route in isolation and see its full middleware chain. No rate limiter silently falls off during a refactor. For a security-critical surface like auth, explicitness beats brevity.
 
 **How to say it in an interview:** "The main trade-off is cookie-based auth versus bearer tokens. Cookies give us automatic credential transmission and XSS protection through httpOnly, but tie us to same-origin requests. For our BFF architecture where the frontend proxies to the API, this is ideal. The logout is deliberately single-session — multi-device logout is a separate feature."
 
@@ -139,6 +147,14 @@ Express `Router` creates modular, mountable route handlers. Each router is a min
 **Where it appears:** `const router = Router()` and `export default router`.
 
 **Interview-ready line:** "Routes are organized using Express Router for modularity — each feature area (auth, health, etc.) is a separate router mounted on the main app, which keeps the codebase navigable and each router independently testable."
+
+### Inline Middleware Co-location
+
+Instead of applying middleware at the router or app level, you pass it directly in the route definition: `router.post('/path', middlewareA, middlewareB, handler)`. Each route's middleware chain is self-documenting — you see exactly what runs and in what order just by reading the route.
+
+**Where it appears:** Every route in this file passes `rateLimitAuth` as inline middleware before the async handler.
+
+**Interview-ready line:** "We co-locate middleware with each route handler rather than applying it globally. This makes the security properties of each endpoint visible at the definition site — you don't need to trace through app-level middleware to know a route is rate-limited."
 
 ---
 
@@ -184,6 +200,14 @@ Express `Router` creates modular, mountable route handlers. Each router is a min
 
 **Red flag answer:** "They'd log in again." — Authorization codes are single-use. This answer shows no understanding of OAuth security.
 
+### Q6: "Why is rate limiting applied per-route instead of on the path prefix?"
+
+**Context if you need it:** This tests whether you think about maintainability and security defaults in middleware design.
+
+**Strong answer:** "Per-route rate limiting co-locates the security policy with the handler. If a route gets moved to a different path or a new auth route is added, the rate limiter is right there in the definition — it can't be accidentally omitted. A path-prefix approach is less verbose, but it's invisible at the route level. Someone adding a new route might not realize the prefix covers it, or worse, they refactor the path and the limiter silently stops applying. For auth endpoints specifically, I'd rather be explicit."
+
+**Red flag answer:** "It doesn't matter, they do the same thing." — They do behave the same when everything is wired correctly, but the failure modes are different. The per-route approach fails safe.
+
 ---
 
 ## Section 7: Data Structures & Algorithms Used
@@ -227,3 +251,11 @@ Express `Router` creates modular, mountable route handlers. Each router is a min
 **Why it matters:** Security engineers talk about "defense in depth" — assuming any single layer can be bypassed, and building multiple overlapping protections. This callback exemplifies the principle.
 
 **How to bring it up:** "The callback has three defense layers — input validation, CSRF state verification, and the inherent security of server-side code exchange. Even if Zod had a bypass bug, the state check catches CSRF. Even if the state check fails, the single-use code limits replay. It's defense in depth, not security by any single mechanism."
+
+### Co-located Security Middleware Shows Ownership
+
+**What's happening:** Each route in this file explicitly lists `rateLimitAuth` in its middleware chain. You can read any single route definition and know its full security posture — rate limiting, validation, cookie handling — without checking app-level configuration.
+
+**Why it matters:** In larger codebases, security middleware applied at the app or router level becomes invisible. New routes get added and nobody checks whether the global middleware covers them. When security properties are co-located with the handler, the route "owns" its security — code review catches missing middleware because it's visible in the diff.
+
+**How to bring it up:** "We co-locate rate limiting on each route instead of applying it globally. This means every route's security properties are visible at the definition site. In a code review, if someone adds a new auth endpoint without rateLimitAuth in the chain, it's immediately obvious. Global middleware makes the absence of protection invisible."
