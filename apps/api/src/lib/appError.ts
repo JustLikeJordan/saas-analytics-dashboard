@@ -18,13 +18,13 @@ export class ValidationError extends AppError {
 
 export class AuthenticationError extends AppError {
   constructor(message = 'Authentication required') {
-    super(message, 'AUTHENTICATION_ERROR', 401);
+    super(message, 'AUTHENTICATION_REQUIRED', 401);
   }
 }
 
 export class AuthorizationError extends AppError {
   constructor(message = 'Insufficient permissions') {
-    super(message, 'AUTHORIZATION_ERROR', 403);
+    super(message, 'FORBIDDEN', 403);
   }
 }
 

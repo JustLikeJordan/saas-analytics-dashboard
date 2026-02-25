@@ -28,9 +28,9 @@ Think of it like a restaurant kitchen. `AppError` is the general concept of "som
 
 ### Decision 3: Machine-readable `code` strings alongside human-readable `message`
 
-**What's happening:** Every error carries two descriptions: a `message` like `"Authentication required"` (meant for humans reading logs or debugging) and a `code` like `"AUTHENTICATION_ERROR"` (meant for frontend code to switch on). The frontend can show a localized message in any language but still use the code string to decide which UI to render.
+**What's happening:** Every error carries two descriptions: a `message` like `"Authentication required"` (meant for humans reading logs or debugging) and a `code` like `"AUTHENTICATION_REQUIRED"` (meant for frontend code to switch on). The frontend can show a localized message in any language but still use the code string to decide which UI to render.
 
-Imagine you're building a mobile app that consumes this API. Your app is available in English and Spanish. You can't parse the English message string to figure out what happened -- that's fragile and breaks when someone changes the wording. But the code `"AUTHENTICATION_ERROR"` is a stable contract: your app sees that code and shows the login screen, regardless of language.
+Imagine you're building a mobile app that consumes this API. Your app is available in English and Spanish. You can't parse the English message string to figure out what happened -- that's fragile and breaks when someone changes the wording. But the code `"AUTHENTICATION_REQUIRED"` is a stable contract: your app sees that code and shows the login screen, regardless of language.
 
 **How to say it in an interview:** "We separate machine-readable error codes from human-readable messages. This makes the API stable for client developers -- they can switch on the code string without worrying about message text changes, and it supports internationalization since the client can map codes to localized messages."
 
@@ -97,7 +97,7 @@ This is the pattern every subclass follows: extend `AppError`, call `super(...)`
 ```ts
 export class AuthenticationError extends AppError {
   constructor(message = 'Authentication required') {
-    super(message, 'AUTHENTICATION_ERROR', 401);
+    super(message, 'AUTHENTICATION_REQUIRED', 401);
   }
 }
 ```
@@ -109,7 +109,7 @@ HTTP 401 means "who are you?" The server doesn't know who is making the request.
 ```ts
 export class AuthorizationError extends AppError {
   constructor(message = 'Insufficient permissions') {
-    super(message, 'AUTHORIZATION_ERROR', 403);
+    super(message, 'FORBIDDEN', 403);
   }
 }
 ```
