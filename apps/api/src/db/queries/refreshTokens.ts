@@ -1,4 +1,4 @@
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, gt } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { refreshTokens } from '../schema.js';
 
@@ -9,7 +9,8 @@ export async function createRefreshToken(data: {
   expiresAt: Date;
 }) {
   const [token] = await db.insert(refreshTokens).values(data).returning();
-  return token!;
+  if (!token) throw new Error('Insert failed to return refresh token');
+  return token;
 }
 
 export async function findByHash(tokenHash: string) {
@@ -17,6 +18,7 @@ export async function findByHash(tokenHash: string) {
     where: and(
       eq(refreshTokens.tokenHash, tokenHash),
       isNull(refreshTokens.revokedAt),
+      gt(refreshTokens.expiresAt, new Date()),
     ),
   });
 }
@@ -30,6 +32,7 @@ export async function revokeToken(tokenId: number) {
   return token;
 }
 
+/** Cross-org revocation — revokes all tokens for a user across all orgs (security: full logout) */
 export async function revokeAllForUser(userId: number) {
   return db
     .update(refreshTokens)

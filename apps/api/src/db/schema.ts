@@ -17,23 +17,16 @@ export const userRoleEnum = pgEnum('user_role', ['owner', 'member']);
 
 // ─── Tables ──────────────────────────────────────────────
 
-export const users = pgTable(
-  'users',
-  {
-    id: integer().primaryKey().generatedAlwaysAsIdentity(),
-    email: varchar({ length: 255 }).notNull().unique(),
-    name: varchar({ length: 255 }).notNull(),
-    googleId: varchar('google_id', { length: 255 }).unique(),
-    avatarUrl: text('avatar_url'),
-    isPlatformAdmin: boolean('is_platform_admin').default(false).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_users_email').on(table.email),
-    index('idx_users_google_id').on(table.googleId),
-  ],
-);
+export const users = pgTable('users', {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  email: varchar({ length: 255 }).notNull().unique(),
+  name: varchar({ length: 255 }).notNull(),
+  googleId: varchar('google_id', { length: 255 }).unique(),
+  avatarUrl: text('avatar_url'),
+  isPlatformAdmin: boolean('is_platform_admin').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const orgs = pgTable('orgs', {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
@@ -77,10 +70,7 @@ export const refreshTokens = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_refresh_tokens_token_hash').on(table.tokenHash),
-    index('idx_refresh_tokens_user_id').on(table.userId),
-  ],
+  (table) => [index('idx_refresh_tokens_user_id').on(table.userId)],
 );
 
 // ─── Relations ───────────────────────────────────────────

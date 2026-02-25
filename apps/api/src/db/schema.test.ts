@@ -53,11 +53,15 @@ describe('schema', () => {
       expect(googleIdCol!.isUnique).toBe(true);
     });
 
-    it('has indexes on email and google_id', () => {
+    it('has no redundant indexes (unique constraints already create indexes)', () => {
       const config = getTableConfig(users);
-      const indexNames = config.indexes.map((i) => i.config.name);
-      expect(indexNames).toContain('idx_users_email');
-      expect(indexNames).toContain('idx_users_google_id');
+      expect(config.indexes).toHaveLength(0);
+    });
+
+    it('does not have an org_id column (cross-org by design)', () => {
+      const config = getTableConfig(users);
+      const columnNames = config.columns.map((c) => c.name);
+      expect(columnNames).not.toContain('org_id');
     });
   });
 
@@ -157,11 +161,11 @@ describe('schema', () => {
       expect(config.foreignKeys).toHaveLength(2);
     });
 
-    it('has indexes on token_hash and user_id', () => {
+    it('has user_id index but not redundant token_hash index', () => {
       const config = getTableConfig(refreshTokens);
       const indexNames = config.indexes.map((i) => i.config.name);
-      expect(indexNames).toContain('idx_refresh_tokens_token_hash');
       expect(indexNames).toContain('idx_refresh_tokens_user_id');
+      expect(indexNames).not.toContain('idx_refresh_tokens_token_hash');
     });
   });
 
