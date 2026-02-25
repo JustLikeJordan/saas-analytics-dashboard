@@ -7,7 +7,8 @@ import * as refreshTokensQueries from '../../db/queries/refreshTokens.js';
 import * as usersQueries from '../../db/queries/users.js';
 import * as userOrgsQueries from '../../db/queries/userOrgs.js';
 import { AUTH } from 'shared/constants';
-import type { Role } from 'shared/types';
+import { jwtPayloadSchema } from 'shared/schemas';
+import type { JwtPayload, Role } from 'shared/types';
 
 const JWT_ALG = 'HS256' as const;
 
@@ -33,17 +34,10 @@ export async function signAccessToken(payload: {
     .sign(getSecret());
 }
 
-export async function verifyAccessToken(token: string) {
+export async function verifyAccessToken(token: string): Promise<JwtPayload> {
   try {
     const { payload } = await jwtVerify(token, getSecret());
-    return {
-      sub: payload.sub!,
-      org_id: payload.org_id as number,
-      role: payload.role as Role,
-      isAdmin: payload.isAdmin as boolean,
-      iat: payload.iat!,
-      exp: payload.exp!,
-    };
+    return jwtPayloadSchema.parse(payload);
   } catch {
     throw new AuthenticationError('Invalid or expired access token');
   }
@@ -84,9 +78,15 @@ export async function rotateRefreshToken(rawToken: string) {
   const existing = await refreshTokensQueries.findByHash(hash);
 
   if (!existing) {
-    // Possible reuse: check if this hash matches a revoked token
-    // If so, revoke ALL tokens for the associated user (security measure)
-    logger.warn({ tokenHashPrefix: hash.slice(0, 8) }, 'Refresh token not found — possible reuse');
+    // Token not valid — check if it was previously revoked (reuse attack detection)
+    const revoked = await refreshTokensQueries.findAnyByHash(hash);
+    if (revoked) {
+      logger.warn(
+        { userId: revoked.userId, tokenHashPrefix: hash.slice(0, 8) },
+        'Refresh token reuse detected — revoking all tokens for user',
+      );
+      await refreshTokensQueries.revokeAllForUser(revoked.userId);
+    }
     throw new AuthenticationError('Invalid refresh token');
   }
 

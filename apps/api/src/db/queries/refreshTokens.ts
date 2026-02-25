@@ -23,6 +23,13 @@ export async function findByHash(tokenHash: string) {
   });
 }
 
+/** Looks up a token by hash regardless of revocation status — used for reuse detection */
+export async function findAnyByHash(tokenHash: string) {
+  return db.query.refreshTokens.findFirst({
+    where: eq(refreshTokens.tokenHash, tokenHash),
+  });
+}
+
 export async function revokeToken(tokenId: number) {
   const [token] = await db
     .update(refreshTokens)

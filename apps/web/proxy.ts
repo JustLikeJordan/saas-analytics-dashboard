@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
+import { webEnv } from '@/lib/config';
 
 const PROTECTED_ROUTES = ['/upload', '/billing', '/admin'];
 
 function getJwtSecret(): Uint8Array | null {
-  const secret = process.env.JWT_SECRET;
-  if (!secret || secret.length < 32) return null;
-  return new TextEncoder().encode(secret);
+  if (!webEnv.JWT_SECRET) return null;
+  return new TextEncoder().encode(webEnv.JWT_SECRET);
 }
 
 export async function proxy(request: NextRequest) {
