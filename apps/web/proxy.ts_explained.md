@@ -1,10 +1,10 @@
-# proxy.ts — Interview-Ready Documentation
+# proxy.ts — interview-ready documentation
 
 > Source file: `apps/web/proxy.ts` (46 lines)
 
 ---
 
-## 1. 30-Second Elevator Pitch
+## 1. 30-second elevator pitch
 
 In Next.js 16, there's a special file called `proxy.ts` (previously `middleware.ts` in older versions) that runs *before* any page renders. Think of it as a security guard at the entrance to a building. Most visitors can walk right in — but if you're heading to a restricted floor (like `/upload`, `/billing`, or `/admin`), the guard checks your badge first. No badge? You get redirected to the sign-in desk.
 
@@ -12,9 +12,9 @@ In Next.js 16, there's a special file called `proxy.ts` (previously `middleware.
 
 ---
 
-## 2. Why This Approach?
+## 2. Why this approach?
 
-### Decision 1: Edge-level route protection instead of per-page checks
+### Decision 1: edge-level route protection instead of per-page checks
 
 **What's happening:** Instead of checking authentication inside each protected page component, we check once at the proxy level before the page even starts rendering. It's like having a gate at the parking lot entrance rather than checking tickets at every individual office door — more efficient and harder to forget.
 
@@ -22,7 +22,7 @@ In Next.js 16, there's a special file called `proxy.ts` (previously `middleware.
 
 **Over alternative:** Per-page `getServerSideProps` auth checks would work but are repetitive, easy to forget on new pages, and waste server resources rendering pages that will just redirect anyway.
 
-### Decision 2: Centralized config via `webEnv` instead of `process.env`
+### Decision 2: centralized config via `webEnv` instead of `process.env`
 
 **What's happening:** The JWT secret comes from `webEnv.JWT_SECRET` — an import from `@/lib/config` that validates environment variables through Zod at startup. Using `process.env` directly is tempting but dangerous: if the variable is missing, you get `undefined` and the code silently breaks. With `webEnv`, a missing variable crashes at startup with a clear error message — fail fast, fail loudly.
 

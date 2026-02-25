@@ -16,9 +16,9 @@ This file is the single source of truth for every magic number and configuration
 
 **Why this matters:** Imagine the frontend says "max file size is 10 MB" and shows an error if you try to upload 11 MB. But the backend says "max file size is 5 MB" because someone changed one without the other. The user sees "file uploaded successfully" on the frontend but gets a 413 error from the server. That's a terrible user experience caused by duplicated constants falling out of sync.
 
-By putting these values in one place that both apps import, there's a single source of truth. Change it in one file, both apps pick it up automatically. Monorepo tooling (pnpm workspaces) makes this import seamless — you just write `import { MAX_FILE_SIZE_BYTES } from '@repo/shared'`.
+By putting these values in one place that both apps import, there's a single source of truth. Change it in one file, both apps pick it up automatically. Monorepo tooling (pnpm workspaces) makes this straightforward — you just write `import { MAX_FILE_SIZE_BYTES } from '@repo/shared'`.
 
-**How to say it in an interview:** "Shared constants eliminate drift between frontend and backend. In a monorepo, the shared package acts as a contract — both apps import the same values, so they can never disagree on limits, timeouts, or role definitions."
+**How to say it in an interview:** "Shared constants eliminate drift between frontend and backend. In a monorepo, the shared package is a contract — both apps import the same values, so they can never disagree on limits, timeouts, or role definitions."
 
 ### Decision 2: `as const` assertion for literal types
 
@@ -163,7 +163,7 @@ The `15_000` syntax uses numeric separators — underscores in numbers that Java
 
 ### Q1: "Why put constants in a shared package instead of defining them in each app?"
 
-**Strong answer:** "Duplication across apps means the values can drift apart. If the frontend thinks the max file size is 10 MB but the backend was updated to 5 MB, users get confusing errors — the frontend accepts the upload but the server rejects it. A shared package creates a single source of truth that both apps import. When you change the constant, both apps pick it up in the next build. In a monorepo with pnpm workspaces, the import is seamless — `@repo/shared` resolves to the local package, no publishing to npm needed."
+**Strong answer:** "Duplication across apps means the values can drift apart. If the frontend thinks the max file size is 10 MB but the backend was updated to 5 MB, users get confusing errors — the frontend accepts the upload but the server rejects it. A shared package creates a single source of truth that both apps import. When you change the constant, both apps pick it up in the next build. In a monorepo with pnpm workspaces, the import just works — `@repo/shared` resolves to the local package, no publishing to npm needed."
 
 **Red flag:** "You could just copy-paste the values" or not understanding why duplication is a problem.
 

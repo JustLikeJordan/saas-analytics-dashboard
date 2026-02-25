@@ -171,7 +171,7 @@ The health check returns a result object instead of throwing. This lets the call
 ### Talking point 1: "Fail-open rate limiting is an intentional resilience choice"
 "Our rate limiter is backed by Redis, so if Redis goes down, we can't check rate limits. We chose fail-open — allowing requests through — because for a SaaS dashboard, availability matters more than strict enforcement. If we were protecting a payment API, we'd fail-closed instead. The choice depends on what's worse: a brief window without rate limits, or the entire app going down."
 
-### Talking point 2: "Module-level singletons in Node.js leverage the module cache"
+### Talking point 2: "Module-level singletons in Node.js use the module cache"
 "Node.js caches modules after the first `require` or `import`. So `export const redis = new Redis(...)` at the top level naturally creates a singleton — every importer gets the same instance. This is an elegant alternative to more complex singleton patterns you'd see in languages like Java, where you'd need a private constructor and a `getInstance()` method."
 
 ### Talking point 3: "Health checks should never throw"

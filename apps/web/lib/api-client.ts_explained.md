@@ -95,11 +95,11 @@ Automatically handling certain failure modes (like expired tokens) without the c
 
 ### Promise Deduplication
 
-Ensuring that multiple concurrent triggers of the same async operation share a single execution rather than each spawning their own. The "if null, create; otherwise reuse" pattern.
+Multiple concurrent triggers of the same async operation share a single execution rather than each spawning their own. The "if null, create; otherwise reuse" pattern.
 
 **Where it appears:** The `if (!refreshPromise) { refreshPromise = attemptRefresh()... }` block.
 
-**Interview-ready line:** "Promise deduplication prevents the thundering herd problem — multiple concurrent 401s coalesce into a single refresh request. This is critical with refresh token rotation, where concurrent refreshes would trigger reuse detection and revoke all sessions."
+**Interview-ready line:** "Promise deduplication prevents the thundering herd problem — multiple concurrent 401s coalesce into a single refresh request. This matters with refresh token rotation, where concurrent refreshes would trigger reuse detection and revoke all sessions."
 
 ---
 
@@ -161,7 +161,7 @@ Ensuring that multiple concurrent triggers of the same async operation share a s
 
 **What's happening:** Without deduplication, a page that makes 5 parallel API calls (dashboard loading multiple data sources) would trigger 5 simultaneous refresh attempts if the access token expired. With refresh token rotation, only the first refresh consumes the token — the other 4 would present an already-consumed token, triggering reuse detection and revoking ALL sessions.
 
-**Why it matters:** This isn't a theoretical edge case — it happens on every page load after token expiry. The singleton promise is the difference between a seamless background refresh and logging the user out of every device.
+**Why it matters:** This isn't a theoretical edge case — it happens on every page load after token expiry. The singleton promise is the difference between an invisible background refresh and logging the user out of every device.
 
 **How to bring it up:** "The deduplication singleton was a deliberate design choice to prevent reuse detection false positives. A dashboard page that fires 5 parallel API calls would trigger 5 refresh attempts without it — and with single-use tokens, that would look like a replay attack and nuke all the user's sessions."
 

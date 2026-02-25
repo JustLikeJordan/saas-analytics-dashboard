@@ -150,7 +150,7 @@ The startup sequence (Redis connect) is a single network round-trip, typically c
 
 **Choice made:** Exit if Redis is unreachable.
 **Alternative:** Start the server anyway and fall back to in-memory rate limiting.
-**Why we chose crashing:** In a multi-tenant SaaS app, rate limiting protects against abuse that could affect all tenants. Running without Redis means running without rate limiting, which is a security risk. Additionally, AI summary caching depends on Redis — without it, every AI request would hit the Claude API, burning through API credits. The cost of "degraded mode" is higher than the cost of a brief outage while the orchestrator restarts the container.
+**Why we chose crashing:** In a multi-tenant SaaS app, rate limiting protects against abuse that could affect all tenants. Running without Redis means running without rate limiting, which is a security risk. AI summary caching also depends on Redis — without it, every AI request would hit the Claude API, burning through API credits. The cost of "degraded mode" is higher than the cost of a brief outage while the orchestrator restarts the container.
 
 ### Trade-off 2: 10MB body limit vs. no limit or a smaller limit
 

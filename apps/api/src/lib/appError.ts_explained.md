@@ -174,7 +174,7 @@ Each error object holds a handful of string and number properties plus a stack t
 
 This is a well-established pattern in languages like Java, C#, and Python. You create a tree of error types where each branch represents a category of failure. The root of the tree (`AppError`) is your "application-level" error, and everything below it is a specific case.
 
-The key benefit is **polymorphism** -- the error handler can catch `AppError` (the parent) and handle all application errors uniformly, or it can check for specific subtypes when it needs to behave differently for, say, validation errors vs. auth errors.
+The benefit is **polymorphism** -- the error handler can catch `AppError` (the parent) and handle all application errors uniformly, or it can check for specific subtypes when it needs to behave differently for, say, validation errors vs. auth errors.
 
 ### Pattern 2: Separation of Concerns -- Throw Site vs. Handle Site
 

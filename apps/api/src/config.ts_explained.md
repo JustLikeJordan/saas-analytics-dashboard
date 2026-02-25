@@ -1,6 +1,6 @@
-# config.ts — Environment Validation with Zod
+# config.ts — environment validation with Zod
 
-## 1. 30-Second Elevator Pitch
+## 1. 30-second elevator pitch
 
 This file is the gatekeeper for the entire API server. Before anything else runs — before the database connects, before a single HTTP request is handled — this module checks that every required environment variable exists and has the right shape. It uses a library called Zod to define a "schema" (a blueprint) of what the environment *must* look like, then validates `process.env` against that blueprint at startup. If anything is missing or malformed, the server crashes immediately with a clear error message instead of silently breaking ten minutes later when some feature tries to use a variable that isn't there.
 
@@ -8,7 +8,7 @@ This file is the gatekeeper for the entire API server. Before anything else runs
 
 ---
 
-## 2. Why This Approach?
+## 2. Why this approach?
 
 ### Decision 1: Schema-based validation instead of manual checks
 
@@ -16,7 +16,7 @@ This file is the gatekeeper for the entire API server. Before anything else runs
 
 **Why it matters:** Manual checks are tedious and easy to forget. When you add a new environment variable six months from now, you just add one line to the schema. With manual checks, you'd need to remember to add a new `if` block, and if you forget, you get a silent bug.
 
-**How to say it in an interview:** "A schema-based approach gives me a single source of truth for configuration requirements. It's declarative — I describe *what* I need, not *how* to check it — and it scales cleanly as the app grows."
+**How to say it in an interview:** "A schema-based approach gives me a single source of truth for configuration requirements. It's declarative: I describe *what* I need, not *how* to check it, and it scales cleanly as the app grows."
 
 ### Decision 2: Fail-fast at startup
 
@@ -50,9 +50,9 @@ Missing or invalid environment variables:
 
 ---
 
-## 3. Code Walkthrough
+## 3. Code walkthrough
 
-### Block 1: The Schema Definition (lines 3-15)
+### Block 1: The schema definition (lines 3-15)
 
 ```ts
 const envSchema = z.object({
@@ -71,7 +71,7 @@ Think of this like a form you're filling out. Each field has rules:
 - `z.enum(['development', 'production', 'test'])` means `NODE_ENV` can only be one of those three exact strings. Anything else (like a typo: `NODE_ENV=producton`) gets rejected.
 - `z.coerce.number().default(3001)` is interesting — `coerce` means "if this is the string `"3001"`, convert it to the number `3001`." Environment variables are always strings, so coercion is needed for numeric values. The `.default(3001)` means if `PORT` isn't set at all, just use 3001.
 
-### Block 2: The Type Export (line 17)
+### Block 2: The type export (line 17)
 
 ```ts
 export type Env = z.infer<typeof envSchema>;
@@ -177,7 +177,7 @@ This file is a textbook example of SSOT. The schema defines: (1) what variables 
 
 **Strong answer:** "Environment variables in Node.js are always strings — `process.env.PORT` gives you `'3001'`, not `3001`. `z.coerce.number()` first converts the string to a number using JavaScript's `Number()` constructor, then validates it's actually a valid number. Without coercion, the validation would fail because `'3001'` is a string, not a number. This is a common gotcha when working with `process.env`."
 
-**Red flag answer:** "PORT is a number so I used a number validator." (Misses the crucial detail about env vars being strings.)
+**Red flag answer:** "PORT is a number so I used a number validator." (Misses the important detail that env vars are always strings.)
 
 ### Q4: "What happens if someone adds a new feature that needs a new API key but forgets to update this schema?"
 
@@ -217,7 +217,7 @@ This file is a textbook example of SSOT. The schema defines: (1) what variables 
 
 ### Talking Point 1: "This pattern enables infrastructure-as-code validation"
 
-"In a real deployment pipeline, this schema acts as a contract between the application and the infrastructure. If we use Terraform or Pulumi to provision secrets, we can export the schema's required keys and automatically verify that all secrets are provisioned before deployment even starts. It's not just a runtime check — it's a bridge between your app code and your infrastructure code."
+"In a real deployment pipeline, this schema is a contract between the application and the infrastructure. If we use Terraform or Pulumi to provision secrets, we can export the schema's required keys and automatically verify that all secrets are provisioned before deployment even starts. It's a bridge between your app code and your infrastructure code, not just a runtime check."
 
 ### Talking Point 2: "Zod schemas compose across the stack"
 
@@ -225,4 +225,4 @@ This file is a textbook example of SSOT. The schema defines: (1) what variables 
 
 ### Talking Point 3: "The `.default()` pattern handles development ergonomics"
 
-"Notice that `PORT` has a default but `DATABASE_URL` doesn't. That's intentional — a developer should never accidentally connect to the wrong database, but defaulting the port to 3001 is safe and convenient. Each field's constraints are a micro-decision about developer experience versus safety. In a team setting, these constraints also serve as documentation: a new developer reading this schema immediately knows what the app needs."
+"Notice that `PORT` has a default but `DATABASE_URL` doesn't. That's intentional — a developer should never accidentally connect to the wrong database, but defaulting the port to 3001 is safe and convenient. Each field's constraints are a micro-decision about developer experience versus safety. In a team setting, these constraints double as documentation: a new developer reading this schema immediately knows what the app needs."

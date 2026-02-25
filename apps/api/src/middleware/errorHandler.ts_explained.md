@@ -2,7 +2,7 @@
 
 ## 1. 30-Second Elevator Pitch
 
-This file is a single Express middleware function that acts as the API's global safety net. Every error that gets thrown (or passed to `next(err)`) anywhere in the request pipeline eventually lands here. It checks whether the error is one of our custom `AppError` types or an unexpected crash. For known errors, it logs a warning and sends back a structured JSON response with the right HTTP status code. For unknown errors, it logs the full error at the `error` level and sends a generic 500 response that reveals nothing about the server's internals to the client. Twenty-seven lines that prevent your API from ever sending a raw stack trace to a user.
+This file is a single Express middleware function — the API's global safety net. Every error that gets thrown (or passed to `next(err)`) anywhere in the request pipeline eventually lands here. It checks whether the error is one of our custom `AppError` types or an unexpected crash. For known errors, it logs a warning and sends back a structured JSON response with the right HTTP status code. For unknown errors, it logs the full error at the `error` level and sends a generic 500 response that reveals nothing about the server's internals to the client. Twenty-seven lines that prevent your API from ever sending a raw stack trace to a user.
 
 **How to say it in an interview:** "The error handler is centralized middleware at the end of the Express pipeline. It distinguishes between expected application errors and unexpected crashes, logs them at appropriate severity levels, and sends consistent JSON responses. It's the single place that controls what error information leaves the server."
 
@@ -184,7 +184,7 @@ This is more concise than an `if` statement that mutates the object after creati
 
 ### Concept: Defense in Depth
 
-This error handler is one layer in a security strategy called defense in depth. Even if a developer accidentally puts sensitive data (like a database connection string) in an error message, this handler ensures that unknown errors never expose that message to the client. It's not the only security layer -- there's also input validation, authentication middleware, RLS policies in the database -- but it's a critical backstop.
+This error handler is one layer in a security strategy called defense in depth. Even if a developer accidentally puts sensitive data (like a database connection string) in an error message, this handler ensures that unknown errors never expose that message to the client. It's not the only security layer -- there's also input validation, authentication middleware, RLS policies in the database -- but it's the last line of defense.
 
 ---
 
