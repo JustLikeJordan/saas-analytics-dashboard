@@ -182,7 +182,7 @@ describe('auth routes', () => {
       const body = (await res.json()) as any;
 
       expect(res.status).toBe(401);
-      expect(body.error.code).toBe('AUTHENTICATION_ERROR');
+      expect(body.error.code).toBe('AUTHENTICATION_REQUIRED');
     });
 
     it('returns 400 when code is missing from callback body', async () => {
@@ -249,7 +249,7 @@ describe('auth routes', () => {
       const body = (await res.json()) as any;
 
       expect(res.status).toBe(401);
-      expect(body.error.code).toBe('AUTHENTICATION_ERROR');
+      expect(body.error.code).toBe('AUTHENTICATION_REQUIRED');
       expect(body.error.message).toBe('Refresh token required');
     });
   });

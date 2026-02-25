@@ -14,24 +14,61 @@ interface ApiResponse<T> {
   meta?: Record<string, unknown>;
 }
 
+interface ApiErrorBody {
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
+
+export class ApiServerError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly statusCode: number,
+    public readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = 'ApiServerError';
+  }
+}
+
 export async function apiServer<T>(
   path: string,
   options?: RequestInit & { cookies?: string },
 ): Promise<ApiResponse<T>> {
   const url = `${API_INTERNAL_URL}${path}`;
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options?.cookies ? { Cookie: options.cookies } : {}),
-      ...options?.headers,
-    },
-    cache: 'no-store',
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options?.cookies ? { Cookie: options.cookies } : {}),
+        ...options?.headers,
+      },
+      cache: 'no-store',
+    });
+  } catch {
+    throw new ApiServerError('NETWORK_ERROR', 'API request failed', 0);
+  }
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`);
+    let body: ApiErrorBody | null = null;
+    try {
+      body = (await response.json()) as ApiErrorBody;
+    } catch {
+      // non-JSON response (timeouts, proxy errors, etc.)
+    }
+
+    throw new ApiServerError(
+      body?.error?.code ?? 'UNKNOWN_ERROR',
+      body?.error?.message ?? `API error: ${response.status}`,
+      response.status,
+      body?.error?.details,
+    );
   }
 
   return response.json() as Promise<ApiResponse<T>>;
