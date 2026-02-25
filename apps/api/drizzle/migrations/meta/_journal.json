@@ -15,6 +15,13 @@
       "when": 1771967817226,
       "tag": "0001_add-rls-policies",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771975570142,
+      "tag": "0002_gorgeous_lizard",
+      "breakpoints": true
     }
   ]
 }

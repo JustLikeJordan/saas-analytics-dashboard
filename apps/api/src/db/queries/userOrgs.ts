@@ -11,7 +11,8 @@ export async function addMember(
     .insert(userOrgs)
     .values({ orgId, userId, role })
     .returning();
-  return membership!;
+  if (!membership) throw new Error('Insert failed to return membership');
+  return membership;
 }
 
 export async function findMembership(orgId: number, userId: number) {
@@ -20,6 +21,7 @@ export async function findMembership(orgId: number, userId: number) {
   });
 }
 
+/** Cross-org lookup — returns all org memberships for a user (auth-flow only, intentional exception) */
 export async function getUserOrgs(userId: number) {
   return db.query.userOrgs.findMany({
     where: eq(userOrgs.userId, userId),
