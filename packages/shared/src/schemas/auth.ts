@@ -39,3 +39,32 @@ export const createOrgSchema = z.object({
   name: z.string().min(1).max(255),
   slug: z.string().min(1).max(255).regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens'),
 });
+
+export const jwtPayloadSchema = z.object({
+  sub: z.string(),
+  org_id: z.number().int(),
+  role: roleSchema,
+  isAdmin: z.boolean(),
+  iat: z.number(),
+  exp: z.number(),
+});
+
+export const googleCallbackSchema = z.object({
+  code: z.string().min(1),
+  state: z.string().min(1),
+});
+
+export const loginResponseSchema = z.object({
+  user: z.object({
+    id: z.number().int(),
+    name: z.string(),
+    email: z.string().email(),
+    avatarUrl: z.string().url().nullable(),
+  }),
+  org: z.object({
+    id: z.number().int(),
+    name: z.string(),
+    slug: z.string(),
+  }),
+  isNewUser: z.boolean(),
+});

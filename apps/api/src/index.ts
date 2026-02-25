@@ -1,10 +1,12 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import pinoHttp from 'pino-http';
 import { env } from './config.js';
 import { logger } from './lib/logger.js';
 import { correlationId } from './middleware/correlationId.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import healthRouter from './routes/health.js';
+import authRouter from './routes/auth.js';
 import { redis } from './lib/redis.js';
 
 const app = express();
@@ -12,6 +14,7 @@ const app = express();
 app.use(correlationId);
 // TODO: mount stripe webhook route here — needs raw body, must come before json parser
 app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
 app.use(
   pinoHttp({
     logger,
@@ -21,6 +24,7 @@ app.use(
   }),
 );
 app.use(healthRouter);
+app.use(authRouter);
 app.use(errorHandler);
 
 async function start() {
