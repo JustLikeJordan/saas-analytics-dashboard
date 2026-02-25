@@ -11,8 +11,11 @@ export default function LoginButton({ redirectPath }: { redirectPath: string }) 
     setError(null);
 
     try {
-      const params = redirectPath ? `?redirect=${encodeURIComponent(redirectPath)}` : '';
-      const response = await fetch(`/api/auth/login${params}`);
+      if (redirectPath && redirectPath !== '/dashboard') {
+        sessionStorage.setItem('auth_redirect', redirectPath);
+      }
+
+      const response = await fetch('/api/auth/login');
       if (!response.ok) {
         throw new Error('Failed to initiate sign-in');
       }

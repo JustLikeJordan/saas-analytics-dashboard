@@ -1,6 +1,6 @@
 # Story 1.3: Google OAuth Authentication & Org Auto-Creation
 
-Status: review
+Status: done
 
 ## Story
 
@@ -116,13 +116,11 @@ All 8 tasks complete. 79 total API tests passing (33 auth-specific). TypeScript 
 ## File List
 
 ### New files
-- `packages/shared/src/schemas/auth.ts` — JWT, callback, login response schemas
-- `packages/shared/src/types/auth.ts` — Auth type exports
 - `apps/api/src/services/auth/tokenService.ts` — JWT signing/verification, refresh token rotation
 - `apps/api/src/services/auth/googleOAuth.ts` — Google OAuth flow, user/org creation
 - `apps/api/src/services/auth/index.ts` — Auth service barrel export
 - `apps/api/src/routes/auth.ts` — Auth route handlers (4 endpoints)
-- `apps/api/src/services/auth/tokenService.test.ts` — 15 token service tests
+- `apps/api/src/services/auth/tokenService.test.ts` — 16 token service tests
 - `apps/api/src/services/auth/googleOAuth.test.ts` — 9 Google OAuth tests
 - `apps/api/src/routes/auth.test.ts` — 9 route integration tests (HTTP)
 - `apps/web/app/api/auth/login/route.ts` — BFF proxy: login
@@ -133,21 +131,23 @@ All 8 tasks complete. 79 total API tests passing (33 auth-specific). TypeScript 
 - `apps/web/app/(auth)/login/LoginButton.tsx` — Google sign-in button
 - `apps/web/app/(auth)/callback/page.tsx` — Callback page
 - `apps/web/app/(auth)/callback/CallbackHandler.tsx` — Token exchange handler
-- `apps/web/lib/api-client.ts` — Client-side API client with silent refresh
-- `apps/web/lib/api-server.ts` — Server-side API client
 
 ### Modified files
+- `packages/shared/src/schemas/auth.ts` — Added JWT, callback, login response schemas (created in 1.2)
+- `packages/shared/src/types/auth.ts` — Added auth type exports (created in 1.2)
 - `packages/shared/src/constants/index.ts` — Added AUTH constant
 - `packages/shared/src/schemas/index.ts` — Added auth schema re-exports
 - `packages/shared/src/types/index.ts` — Added auth type re-exports
-- `packages/shared/package.json` — No change (exports already configured)
+- `apps/api/src/db/schema.ts` — Removed section-header comments
+- `apps/api/src/db/queries/refreshTokens.ts` — Added findAnyByHash for reuse detection
 - `apps/api/src/index.ts` — Added cookie-parser + auth routes mounting
 - `apps/api/src/config.ts` — Added GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, JWT_SECRET, APP_URL env vars
 - `apps/api/package.json` — Added cookie-parser, @types/cookie-parser
-- `apps/web/proxy.ts` — Added JWT verification for protected routes
+- `apps/web/proxy.ts` — Added JWT verification for protected routes (uses webEnv)
+- `apps/web/lib/api-client.ts` — Added 401 → silent refresh → retry logic (created in 1.1)
 - `apps/web/lib/config.ts` — Added JWT_SECRET to web env schema
 - `apps/web/package.json` — Added jose dependency
-- `docker-compose.yml` — Added JWT_SECRET to web service environment
+- `docker-compose.yml` — Added JWT_SECRET + env_file to web service
 
 ## Change Log
 
@@ -155,3 +155,11 @@ All 8 tasks complete. 79 total API tests passing (33 auth-specific). TypeScript 
 - **2026-02-24**: Tasks 6, 8.1-8.2 implemented — login/callback UI pages, token and OAuth tests
 - **2026-02-25**: Task 7.4 implemented — JWT_SECRET in docker-compose.yml
 - **2026-02-25**: Task 8.3 rewritten — route tests now use real Express app + HTTP requests (was mock-only). Fixed stale shared dist, ESM/CJS interop, TypeScript strict mode issues, unused prop, missing jose dep in web
+- **2026-02-25**: Code review — 3 HIGH, 4 MEDIUM fixes applied:
+  - H1: proxy.ts now uses webEnv instead of process.env (config convention)
+  - H2: Refresh token reuse detection implemented — findAnyByHash + revokeAllForUser on replay
+  - H3: File List corrected — removed ghost entry (api-server.ts), reclassified 3 files as Modified
+  - M1: Documented schema.ts + refreshTokens.ts changes in File List
+  - M3: Redirect flow completed — sessionStorage persistence through OAuth flow
+  - M4: verifyAccessToken now uses jwtPayloadSchema.parse() instead of unsafe type casts
+  - Test count: 80 (was 79, +1 reuse detection test)

@@ -3,6 +3,7 @@ import { SignJWT } from 'jose';
 
 const mockCreateRefreshToken = vi.fn();
 const mockFindByHash = vi.fn();
+const mockFindAnyByHash = vi.fn();
 const mockRevokeToken = vi.fn();
 const mockRevokeAllForUser = vi.fn();
 const mockFindUserById = vi.fn();
@@ -11,6 +12,7 @@ const mockGetUserOrgs = vi.fn();
 vi.mock('../../db/queries/refreshTokens.js', () => ({
   createRefreshToken: mockCreateRefreshToken,
   findByHash: mockFindByHash,
+  findAnyByHash: mockFindAnyByHash,
   revokeToken: mockRevokeToken,
   revokeAllForUser: mockRevokeAllForUser,
 }));
@@ -202,12 +204,30 @@ describe('tokenService', () => {
       expect(result.orgId).toBe(10);
     });
 
-    it('throws AuthenticationError when token not found', async () => {
+    it('throws AuthenticationError when token not found and not revoked', async () => {
       mockFindByHash.mockResolvedValueOnce(null);
+      mockFindAnyByHash.mockResolvedValueOnce(null);
 
       await expect(rotateRefreshToken('nonexistent')).rejects.toThrow(
         'Invalid refresh token',
       );
+      expect(mockRevokeAllForUser).not.toHaveBeenCalled();
+    });
+
+    it('revokes all user tokens when a revoked token is replayed (reuse detection)', async () => {
+      mockFindByHash.mockResolvedValueOnce(null);
+      mockFindAnyByHash.mockResolvedValueOnce({
+        id: 5,
+        userId: 42,
+        orgId: 10,
+        revokedAt: new Date(),
+      });
+      mockRevokeAllForUser.mockResolvedValueOnce(undefined);
+
+      await expect(rotateRefreshToken('a'.repeat(64))).rejects.toThrow(
+        'Invalid refresh token',
+      );
+      expect(mockRevokeAllForUser).toHaveBeenCalledWith(42);
     });
 
     it('throws AuthenticationError when user not found', async () => {

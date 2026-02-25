@@ -36,7 +36,9 @@ export default function CallbackHandler({
             throw new Error(body.error?.message ?? 'Authentication failed');
           }
 
-          router.push('/dashboard');
+          const redirect = sessionStorage.getItem('auth_redirect') ?? '/dashboard';
+          sessionStorage.removeItem('auth_redirect');
+          router.push(redirect);
         }
       } catch (err) {
         if (!cancelled) {
