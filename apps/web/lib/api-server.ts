@@ -51,8 +51,8 @@ export async function apiServer<T>(
       },
       cache: 'no-store',
     });
-  } catch {
-    throw new ApiServerError('NETWORK_ERROR', 'API request failed', 0);
+  } catch (err) {
+    throw new ApiServerError('NETWORK_ERROR', 'API request failed', 0, { cause: err });
   }
 
   if (!response.ok) {

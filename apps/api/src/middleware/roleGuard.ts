@@ -1,12 +1,17 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { AuthenticatedRequest } from './authMiddleware.js';
-import { AuthorizationError } from '../lib/appError.js';
+import { AuthenticationError, AuthorizationError } from '../lib/appError.js';
 
 type GuardRole = 'owner' | 'member' | 'admin';
 
 export function roleGuard(requiredRole: GuardRole) {
   return (req: Request, _res: Response, next: NextFunction) => {
     const { user } = req as AuthenticatedRequest;
+
+    // safety net — roleGuard must run after authMiddleware
+    if (!user) {
+      throw new AuthenticationError('Missing auth context');
+    }
 
     if (requiredRole === 'admin') {
       if (!user.isAdmin) {

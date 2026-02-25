@@ -6,9 +6,7 @@ const protectedRouter = Router();
 // every route mounted on this router requires a valid JWT
 protectedRouter.use(authMiddleware);
 
-// future stories mount their routes here:
-// protectedRouter.use(datasetRouter);
-// protectedRouter.use(aiRouter);
-// protectedRouter.use(adminRouter); // + roleGuard('admin')
+// Story 2+: mount dataset/AI/admin routes here
+// AI routes need rateLimitAi (per-user, 5/min) — see rateLimiter.ts
 
 export default protectedRouter;

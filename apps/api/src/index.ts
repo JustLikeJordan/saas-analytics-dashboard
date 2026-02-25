@@ -5,7 +5,7 @@ import { env } from './config.js';
 import { logger } from './lib/logger.js';
 import { correlationId } from './middleware/correlationId.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { rateLimitPublic, rateLimitAuth } from './middleware/rateLimiter.js';
+import { rateLimitPublic } from './middleware/rateLimiter.js';
 import healthRouter from './routes/health.js';
 import authRouter from './routes/auth.js';
 import protectedRouter from './routes/protected.js';
@@ -13,6 +13,7 @@ import { redis } from './lib/redis.js';
 
 const app = express();
 
+app.set('trust proxy', 1); // BFF proxy is the first hop — needed for correct req.ip in rate limiting
 app.use(correlationId);
 // TODO: mount stripe webhook route here — needs raw body, must come before json parser
 app.use(express.json({ limit: '10mb' }));
@@ -25,9 +26,8 @@ app.use(
     },
   }),
 );
-app.use(rateLimitPublic);
 app.use(healthRouter);
-app.use('/auth', rateLimitAuth);
+app.use(rateLimitPublic);
 app.use(authRouter);
 app.use(protectedRouter);
 app.use(errorHandler);
