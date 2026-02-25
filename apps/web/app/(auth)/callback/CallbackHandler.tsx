@@ -36,8 +36,10 @@ export default function CallbackHandler({
             throw new Error(body.error?.message ?? 'Authentication failed');
           }
 
-          const redirect = sessionStorage.getItem('auth_redirect') ?? '/dashboard';
+          const stored = sessionStorage.getItem('auth_redirect') ?? '/dashboard';
           sessionStorage.removeItem('auth_redirect');
+          // guard against open redirect — only allow relative paths starting with /
+          const redirect = stored.startsWith('/') && !stored.startsWith('//') ? stored : '/dashboard';
           router.push(redirect);
         }
       } catch (err) {

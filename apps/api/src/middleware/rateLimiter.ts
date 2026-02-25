@@ -104,6 +104,3 @@ export function rateLimitPublic(req: Request, res: Response, next: NextFunction)
       next();
     });
 }
-
-// re-export for testing
-export { authLimiter, aiLimiter, publicLimiter };

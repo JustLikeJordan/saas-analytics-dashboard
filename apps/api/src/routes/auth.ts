@@ -14,6 +14,7 @@ import {
 import * as refreshTokensQueries from '../db/queries/refreshTokens.js';
 import { AUTH } from 'shared/constants';
 import { googleCallbackSchema } from 'shared/schemas';
+import { rateLimitAuth } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
@@ -38,7 +39,7 @@ function clearCookie(res: Response, name: string) {
   });
 }
 
-router.get('/auth/google', (_req: Request, res: Response) => {
+router.get('/auth/google', rateLimitAuth, (_req: Request, res: Response) => {
   const state = generateOAuthState();
   setCookie(res, AUTH.COOKIE_NAMES.OAUTH_STATE, state, AUTH.OAUTH_STATE_EXPIRY_SECONDS);
 
@@ -46,7 +47,7 @@ router.get('/auth/google', (_req: Request, res: Response) => {
   res.json({ data: { url } });
 });
 
-router.post('/auth/callback', async (req: Request, res: Response) => {
+router.post('/auth/callback', rateLimitAuth, async (req: Request, res: Response) => {
   const parsed = googleCallbackSchema.safeParse(req.body);
   if (!parsed.success) {
     throw new ValidationError('Invalid callback parameters', parsed.error.format());
@@ -91,7 +92,7 @@ router.post('/auth/callback', async (req: Request, res: Response) => {
   });
 });
 
-router.post('/auth/refresh', async (req: Request, res: Response) => {
+router.post('/auth/refresh', rateLimitAuth, async (req: Request, res: Response) => {
   const rawToken = req.cookies?.[AUTH.COOKIE_NAMES.REFRESH_TOKEN];
   if (!rawToken) {
     throw new AuthenticationError('Refresh token required');
@@ -105,7 +106,7 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
   res.json({ data: { success: true } });
 });
 
-router.post('/auth/logout', async (req: Request, res: Response) => {
+router.post('/auth/logout', rateLimitAuth, async (req: Request, res: Response) => {
   const rawToken = req.cookies?.[AUTH.COOKIE_NAMES.REFRESH_TOKEN];
 
   if (rawToken) {
