@@ -1,6 +1,6 @@
 # Story 1.2: Database Schema & Core Identity Tables
 
-Status: review
+Status: done
 
 ## Story
 
