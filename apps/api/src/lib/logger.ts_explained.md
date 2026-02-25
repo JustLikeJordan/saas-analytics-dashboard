@@ -160,7 +160,7 @@ The pattern of checking `NODE_ENV` to change behavior is ubiquitous in Node.js a
 
 ### Q5: "How would you add log rotation or shipping to a cloud service?"
 
-**Strong answer:** "With Pino, you do not handle that in the application at all. Pino writes JSON to stdout, and the infrastructure handles the rest. In a containerized deployment, the container runtime captures stdout and forwards it to whatever logging backend you configure — CloudWatch, Datadog, Grafana Loki, etc. If you are running on bare metal, you would pipe Pino's output to a transport like `pino-elasticsearch` or use a sidecar process. The key principle is that the application should not know or care where logs end up."
+**Strong answer:** "With Pino, you do not handle that in the application at all. Pino writes JSON to stdout, and the infrastructure handles the rest. In a containerized deployment, the container runtime captures stdout and forwards it to whatever logging backend you configure — CloudWatch, Datadog, Grafana Loki, etc. If you are running on bare metal, you would pipe Pino's output to a transport like `pino-elasticsearch` or use a sidecar process. The principle is that the application should not know or care where logs end up."
 
 **Red flag answer:** "I would add a file transport and use logrotate." (Shows a pre-container mindset. Modern Node.js apps write to stdout and let the platform handle routing and rotation.)
 

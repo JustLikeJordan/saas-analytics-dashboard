@@ -1,6 +1,6 @@
-# orgs.ts (queries) — Interview-Ready Documentation
+# orgs.ts (queries) — interview-ready documentation
 
-## Section 1: 30-Second Elevator Pitch
+## Section 1: 30-second elevator pitch
 
 This file is the librarian for the organizations table. It handles three things: creating a new org, finding one by its URL slug, and finding one by its database ID. It's deliberately minimal — orgs are simple entities in this system, and the query layer reflects that.
 
@@ -8,25 +8,25 @@ This file is the librarian for the organizations table. It handles three things:
 
 ---
 
-## Section 2: Why This Approach?
+## Section 2: Why this approach?
 
 ### Decision 1: Slug-based lookup as the primary access pattern
 
-**What's happening:** `findOrgBySlug` exists alongside `findOrgById` because slugs are how orgs appear in URLs (`/orgs/janes-org`). The slug lookup is the more interesting one — it's used during slug generation to check for collisions, and would be used in URL routing.
+What's happening: `findOrgBySlug` exists alongside `findOrgById` because slugs are how orgs appear in URLs (`/orgs/janes-org`). The slug lookup is the more interesting one — it's used during slug generation to check for collisions, and would be used in URL routing.
 
 **How to say it in an interview:** "Orgs are accessed by slug in URLs and by ID internally. Both lookups hit unique indexes, so they're equally fast."
 
-**Over alternative:** Using only numeric IDs in URLs works but creates ugly, non-memorable URLs and leaks database implementation details.
+Over alternative: Using only numeric IDs in URLs works but creates ugly, non-memorable URLs and leaks database implementation details.
 
 ### Decision 2: Cross-org lookups documented as intentional
 
-**What's happening:** Like the users module, these lookups don't filter by org_id. That sounds odd for a multi-tenant system, but the `orgs` table *is* the tenant entity itself — you can't scope the lookup of an org by org_id, that's circular.
+What's happening: Like the users module, these lookups don't filter by org_id. That sounds odd for a multi-tenant system, but the `orgs` table *is* the tenant entity itself — you can't scope the lookup of an org by org_id, that's circular.
 
 **How to say it in an interview:** "Org lookups are inherently cross-tenant because the orgs table defines the tenants themselves. This is documented as an intentional exception to the org-scoping convention."
 
 ---
 
-## Section 3: Code Walkthrough
+## Section 3: Code walkthrough
 
 ### createOrg (lines 5-9)
 
@@ -42,7 +42,7 @@ Same pattern but by primary key. Used in service-layer lookups where you already
 
 ---
 
-## Section 4: Complexity and Trade-offs
+## Section 4: Complexity and trade-offs
 
 All three operations are O(log n) — slug has a unique index, id is the primary key. This file will stay simple unless org management grows (renaming, deleting, transferring ownership). At that point, more functions would be added here rather than scattering queries in services.
 
@@ -50,44 +50,44 @@ All three operations are O(log n) — slug has a unique index, id is the primary
 
 ---
 
-## Section 5: Patterns and Concepts Worth Knowing
+## Section 5: Patterns and concepts worth knowing
 
-### Slug-Based Routing
+### Slug-based routing
 
 Using human-readable URL identifiers (`janes-org`) instead of numeric IDs (`42`). Slugs must be unique, URL-safe, and stable. The unique index on `orgs.slug` enforces uniqueness at the database level.
 
-**Where it appears:** `findOrgBySlug`.
+Where it appears: `findOrgBySlug`.
 
 **Interview-ready line:** "Slugs provide human-readable, bookmarkable URLs while the unique database index guarantees they're unambiguous identifiers."
 
 ---
 
-## Section 6: Potential Interview Questions
+## Section 6: Potential interview questions
 
 ### Q1: "What if an org needs to be renamed — should the slug change too?"
 
-**Strong answer:** "It depends on the product decision. Changing slugs breaks existing bookmarks and shared links. A common pattern is to keep the old slug as an alias that redirects to the new one. The database would need a `slug_history` table or the slug stays immutable after creation."
+Strong answer: "It depends on the product decision. Changing slugs breaks existing bookmarks and shared links. A common pattern is to keep the old slug as an alias that redirects to the new one. The database would need a `slug_history` table or the slug stays immutable after creation."
 
-**Red flag answer:** "Just update the slug column." — Ignores the impact on existing URLs, links, and integrations.
+Red flag answer: "Just update the slug column." — Ignores the impact on existing URLs, links, and integrations.
 
 ### Q2: "Why `.returning()` instead of a separate SELECT after insert?"
 
-**Strong answer:** "`.returning()` gets the inserted row in the same database round-trip as the INSERT. A separate SELECT would require two queries and introduces a race condition — another process could modify the row between insert and select. PostgreSQL's RETURNING clause is atomic."
+Strong answer: "`.returning()` gets the inserted row in the same database round-trip as the INSERT. A separate SELECT would require two queries and introduces a race condition — another process could modify the row between insert and select. PostgreSQL's RETURNING clause is atomic."
 
-**Red flag answer:** "To avoid a second query." — Partially right but misses the atomicity argument.
+Red flag answer: "To avoid a second query." — Partially right but misses the atomicity argument.
 
 ---
 
-## Section 7: Data Structures & Algorithms Used
+## Section 7: Data structures and algorithms used
 
 No meaningful data structures beyond what Drizzle generates. The slug lookup uses a B-tree index (O(log n)). The primary key lookup uses the clustered index.
 
 ---
 
-## Section 8: Impress the Interviewer
+## Section 8: Impress the interviewer
 
-### Slug Uniqueness at the Database Level
+### Slug uniqueness at the database level
 
-**What's happening:** The unique constraint on `orgs.slug` means two orgs can never share a slug, even under concurrent creation. The slug generation function in `googleOAuth.ts` can safely retry with different slugs because the database constraint is the ultimate arbiter.
+What's happening: The unique constraint on `orgs.slug` means two orgs can never share a slug, even under concurrent creation. The slug generation function in `googleOAuth.ts` can safely retry with different slugs because the database constraint is the ultimate arbiter.
 
 **How to bring it up:** "We enforce slug uniqueness at the database level, not in application code. This means even concurrent org creation can't produce duplicates — the database constraint handles the race condition that application-level checks can't."

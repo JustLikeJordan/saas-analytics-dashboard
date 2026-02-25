@@ -162,7 +162,7 @@ Express `Router` creates modular, mountable route handlers. Each router is a min
 
 ### Q3: "Why isn't there a try/catch around the async route handlers?"
 
-**Context if you need it:** This tests whether you understand Express 5's async error handling, which is a significant change from Express 4.
+**Context if you need it:** This tests whether you understand Express 5's async error handling, which is a big change from Express 4.
 
 **Strong answer:** "Express 5 automatically catches promise rejections from async route handlers and forwards them to the error-handling middleware. In Express 4, you'd need try/catch or a wrapper like express-async-errors. The errorHandler middleware at the end of the middleware chain catches everything — AppError subclasses get structured responses, unknown errors get a generic 500."
 

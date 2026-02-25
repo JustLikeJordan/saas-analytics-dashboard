@@ -1,6 +1,6 @@
 # correlationId.ts — Explained
 
-## 1. 30-Second Elevator Pitch
+## 1. 30-second elevator pitch
 
 Every time someone calls our API, this middleware stamps the request with a unique tracking ID — like a receipt number at a deli counter. If that request later causes an error three services deep, we can grep for that one ID and see every log line related to that single user action. It is 20 lines of code that makes debugging a multi-service system possible instead of nightmarish.
 
@@ -80,11 +80,11 @@ next();
 ```
 
 Line by line:
-- **Get or create an ID.** The `??` operator (nullish coalescing) means "use the left side if it is not null or undefined, otherwise use the right side." So: use the incoming header if present, otherwise generate a fresh UUID.
-- **Stick the ID on the request** so any route handler can access it via `req.correlationId`.
-- **Create a child logger** that automatically tags every log message with this ID (explained more in the logger file).
-- **Put the ID on the response** so the caller gets it back.
-- **Call next()** to pass control to the next middleware or route handler.
+- Get or create an ID. The `??` operator (nullish coalescing) means "use the left side if it is not null or undefined, otherwise use the right side." So: use the incoming header if present, otherwise generate a fresh UUID.
+- Stick the ID on the request so any route handler can access it via `req.correlationId`.
+- Create a child logger that automatically tags every log message with this ID (explained more in the logger file).
+- Put the ID on the response so the caller gets it back.
+- Call `next()` to pass control to the next middleware or route handler.
 
 ---
 
@@ -107,23 +107,23 @@ We accept whatever string the caller sends in `x-correlation-id`. A malicious ca
 
 ---
 
-## 5. Patterns and Concepts Worth Knowing
+## 5. Patterns and concepts worth knowing
 
-### The Middleware Pattern
+### The middleware pattern
 
 Express middleware is an implementation of the "Chain of Responsibility" design pattern. Imagine a factory assembly line: each station (middleware) does one small job and passes the item (request) to the next station. Each middleware is independent and reusable — you can add, remove, or reorder them without rewriting your routes.
 
-### Declaration Merging (TypeScript Module Augmentation)
+### Declaration merging (TypeScript module augmentation)
 
 When you write `declare global { namespace Express { interface Request { ... } } }`, you are extending an interface that was defined in someone else's library. TypeScript merges your additions with the original definition. This is how the entire Express type ecosystem works — the `@types/express` package defines the base types, and your app extends them with custom properties.
 
-### Structured Logging
+### Structured logging
 
 Traditional logging is `console.log("Error in request 123")`. Structured logging is `logger.info({ correlationId: "abc-123", userId: 42 }, "Request failed")`. The difference is that structured logs produce JSON, which tools like Elasticsearch, Datadog, or Grafana Loki can search, filter, and aggregate. The child logger pattern means the structure (the correlationId field) is set once and inherited by every subsequent log call.
 
 ---
 
-## 6. Potential Interview Questions
+## 6. Potential interview questions
 
 ### Q1: "Why not just use `console.log` with the request ID?"
 
@@ -145,34 +145,34 @@ Traditional logging is `console.log("Error in request 123")`. Structured logging
 
 ### Q4: "How would you extend this for a microservices architecture?"
 
-**Strong answer:** "The key piece is already here: we reuse an incoming correlation ID rather than always generating a new one. In a microservices setup, the API gateway or the first service in the chain generates the ID, and every downstream HTTP call includes it in the x-correlation-id header. Each service runs this same middleware, so the ID threads through the entire call graph. You could also add a span ID alongside the correlation ID to distinguish individual hops — that is essentially what OpenTelemetry does."
+**Strong answer:** "The important piece is already here: we reuse an incoming correlation ID rather than always generating a new one. In a microservices setup, the API gateway or the first service in the chain generates the ID, and every downstream HTTP call includes it in the x-correlation-id header. Each service runs this same middleware, so the ID threads through the entire call graph. You could also add a span ID alongside the correlation ID to distinguish individual hops — that is essentially what OpenTelemetry does."
 
 **Red flag answer:** "I would use a global variable to share the ID between services." (Demonstrates a fundamental misunderstanding of how distributed systems communicate.)
 
 ---
 
-## 7. Data Structures & Algorithms Used
+## 7. Data structures & algorithms used
 
-### UUID (Universally Unique Identifier)
+### UUID (universally unique identifier)
 
 A UUIDv4 is a 128-bit number (displayed as a 36-character string like `550e8400-e29b-41d4-a716-446655440000`) generated from cryptographically secure random bytes. It is not an algorithm in the sorting-and-searching sense — it is a strategy for generating identifiers that are globally unique without requiring a central authority (like a database auto-increment). Node's `crypto.randomUUID()` is backed by the operating system's CSPRNG (cryptographically secure pseudo-random number generator).
 
-### Hash Map (implicit)
+### Hash map (implicit)
 
 Express headers (`req.headers`) are stored as a plain JavaScript object, which under the hood is a hash map. Looking up `req.headers['x-correlation-id']` is an O(1) average-case operation. The child logger also stores its bindings in an object — same O(1) access pattern.
 
 ---
 
-## 8. Impress the Interviewer
+## 8. Impress the interviewer
 
-### Talking Point 1: "This is the foundation of observability."
+### Talking point 1: "This is the foundation of observability."
 
 "In production, you cannot SSH into a server and tail a log file — you might have dozens of containers. Correlation IDs are the glue that lets you reconstruct the full story of a request in a log aggregation system. This 20-line middleware is what makes that possible. It is one of the first things I set up in any new service."
 
-### Talking Point 2: "The child logger pattern eliminates an entire category of bugs."
+### Talking point 2: "The child logger pattern eliminates an entire category of bugs."
 
 "The most common logging mistake is forgetting to include context. By binding the correlation ID at the middleware level and passing `req.log` through the request lifecycle, every log call downstream automatically inherits the ID. You cannot forget it because it is baked into the logger instance itself. This is the 'pit of success' principle — making the right thing easier than the wrong thing."
 
-### Talking Point 3: "This integrates cleanly with distributed tracing standards."
+### Talking point 3: "This integrates cleanly with distributed tracing standards."
 
-"The `x-correlation-id` header pattern is compatible with W3C Trace Context and OpenTelemetry. If we later adopt a full tracing solution, we can map our correlation ID to a trace ID with minimal refactoring. Starting simple and leaving the door open for more sophisticated tooling is a hallmark of pragmatic engineering."
+"The `x-correlation-id` header pattern is compatible with W3C Trace Context and OpenTelemetry. If we later adopt a full tracing solution, we can map our correlation ID to a trace ID with minimal refactoring. We start simple now, and the upgrade path to full distributed tracing stays open."

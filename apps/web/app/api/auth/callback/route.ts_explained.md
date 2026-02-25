@@ -58,7 +58,7 @@ Browser fetch automatically includes cookies. Server-side fetch doesn't — ther
 
 **Where it appears:** `const cookieHeader = request.headers.get('cookie') ?? ''` → attached to the fetch as `Cookie: cookieHeader`.
 
-**Interview-ready line:** "Server-side fetch is cookie-agnostic, so the BFF proxy manually forwards the browser's Cookie header. This is essential for any server-side auth flow that depends on httpOnly cookies."
+**Interview-ready line:** "Server-side fetch is cookie-agnostic, so the BFF proxy manually forwards the browser's Cookie header. You need this for any server-side auth flow that depends on httpOnly cookies."
 
 ---
 

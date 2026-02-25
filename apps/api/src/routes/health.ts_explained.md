@@ -174,7 +174,7 @@ In production systems, especially container orchestrated ones like Kubernetes, t
 Our `/health` endpoint functions as a readiness probe. It returns 503 when dependencies are down, which tells load balancers to send traffic elsewhere. A separate liveness check might just verify the process is running (which the OS handles).
 
 ### Parallel Async Operations with `Promise.all`
-`Promise.all` is a fundamental concurrency tool in JavaScript. It takes an array of promises and returns a single promise that resolves when ALL of them resolve. The key insight: JavaScript is single-threaded but non-blocking. While waiting for the database response, the event loop can process the Redis response. The two checks literally run at the same time from the perspective of I/O.
+`Promise.all` is a fundamental concurrency tool in JavaScript. It takes an array of promises and returns a single promise that resolves when ALL of them resolve. The point: JavaScript is single-threaded but non-blocking. While waiting for the database response, the event loop can process the Redis response. The two checks literally run at the same time from the perspective of I/O.
 
 ### Modular Router Pattern (Express)
 Express routers let you break a large application into small, focused files. Each router handles one "concern" — health checks, authentication, user management, etc. The main app imports all routers and mounts them. This makes the codebase navigable (want to understand health checks? Look at one file) and testable (you can mount a router in a test server without booting the whole app).
@@ -206,7 +206,7 @@ Instead of crashing or returning vague errors when dependencies fail, this endpo
 
 ### Q4: "How would you add a timeout to the health checks so a slow dependency doesn't hang the endpoint?"
 
-**Strong answer:** "I'd wrap each check in a `Promise.race` against a timer. Something like `Promise.race([checkDatabaseHealth(), timeout(5000)])` where `timeout` returns `{ status: 'timeout', latencyMs: 5000 }` after 5 seconds. This way, if PostgreSQL is reachable but taking 10 seconds to respond, the health endpoint still returns within 5 seconds and reports the database as timed out. The load balancer's own timeout (usually configurable) acts as a secondary safeguard, but having our own timeout gives us cleaner error reporting."
+**Strong answer:** "I'd wrap each check in a `Promise.race` against a timer. Something like `Promise.race([checkDatabaseHealth(), timeout(5000)])` where `timeout` returns `{ status: 'timeout', latencyMs: 5000 }` after 5 seconds. This way, if PostgreSQL is reachable but taking 10 seconds to respond, the health endpoint still returns within 5 seconds and reports the database as timed out. The load balancer's own timeout (usually configurable) is a secondary safeguard, but having our own timeout gives us cleaner error reporting."
 
 **Red flag:** "I'd just increase the load balancer timeout" without addressing the root issue, or not knowing about `Promise.race`.
 

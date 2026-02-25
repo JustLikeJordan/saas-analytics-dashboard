@@ -36,7 +36,7 @@ This is a BFF (Backend-For-Frontend) proxy route. When the browser calls `GET /a
 
 1. **Forward to backend** — Calls the Express API's `/auth/google` endpoint using the internal URL from config. No body or cookies to forward on this initial request.
 2. **Error check** — If the backend returns an error, wraps it in the standard API error format (`{ error: { code, message } }`) with a 502 (Bad Gateway) status.
-3. **Cookie relay** — Loops through `response.headers.getSetCookie()` and appends each cookie to the Next.js response. This is critical for the OAuth state cookie that the backend sets.
+3. **Cookie relay** — Loops through `response.headers.getSetCookie()` and appends each cookie to the Next.js response. This matters for the OAuth state cookie that the backend sets.
 4. **Return data** — Returns the JSON body (containing the Google auth URL) to the browser.
 
 The 502 status code is deliberate — it means "the proxy (Next.js) got a bad response from the upstream server (Express)." This is semantically correct for a proxy error.
@@ -57,7 +57,7 @@ The 502 status code is deliberate — it means "the proxy (Next.js) got a bad re
 
 ### BFF Proxy Pattern
 
-A Next.js route handler that acts as an intermediary between the browser and the backend API. The browser never calls the backend directly. This enables same-origin cookies, hides the API URL, and eliminates CORS.
+A Next.js route handler that sits between the browser and the backend API. The browser never calls the backend directly. This enables same-origin cookies, hides the API URL, and eliminates CORS.
 
 **Where it appears:** This entire file is a BFF proxy route.
 

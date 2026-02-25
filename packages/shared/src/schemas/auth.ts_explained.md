@@ -4,7 +4,7 @@
 
 This file is the single source of truth for what "valid data" looks like in the auth system. It defines Zod schemas — objects that describe the shape, types, and constraints of users, orgs, memberships, JWTs, and API payloads. These schemas do double duty: they validate data at runtime (catch bad input before it hits the database) and generate TypeScript types at compile time (catch type errors before code even runs). One definition, two layers of safety.
 
-**How to say it in an interview:** "This is the shared validation layer using Zod schemas — they define data shapes used by both the API and frontend. Each schema serves as a single source of truth for runtime validation and TypeScript type inference, eliminating the drift between what the code expects and what it actually validates."
+**How to say it in an interview:** "This is the shared validation layer using Zod schemas — they define data shapes used by both the API and frontend. Each schema is a single source of truth for runtime validation and TypeScript type inference, eliminating the drift between what the code expects and what it actually validates."
 
 ---
 
