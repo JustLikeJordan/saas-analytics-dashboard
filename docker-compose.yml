@@ -44,6 +44,7 @@ services:
     env_file: .env
     environment:
       API_INTERNAL_URL: http://api:3001
+      JWT_SECRET: ${JWT_SECRET}
 
 volumes:
   pgdata:

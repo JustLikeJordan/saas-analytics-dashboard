@@ -1,6 +1,6 @@
 # Story 1.3: Google OAuth Authentication & Org Auto-Creation
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -22,57 +22,57 @@ So that I can start using the application immediately without manual setup.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add shared constants, schemas, and types (AC: #3)
-  - [ ] 1.1 Add AUTH constants to `packages/shared/src/constants/index.ts`
-  - [ ] 1.2 Add `jwtPayloadSchema`, `googleCallbackSchema`, `loginResponseSchema` to `packages/shared/src/schemas/auth.ts`
-  - [ ] 1.3 Update schema barrel exports
-  - [ ] 1.4 Add `JwtPayload`, `GoogleCallback`, `LoginResponse` types
-  - [ ] 1.5 Update type barrel exports
+- [x] Task 1: Add shared constants, schemas, and types (AC: #3)
+  - [x] 1.1 Add AUTH constants to `packages/shared/src/constants/index.ts`
+  - [x] 1.2 Add `jwtPayloadSchema`, `googleCallbackSchema`, `loginResponseSchema` to `packages/shared/src/schemas/auth.ts`
+  - [x] 1.3 Update schema barrel exports
+  - [x] 1.4 Add `JwtPayload`, `GoogleCallback`, `LoginResponse` types
+  - [x] 1.5 Update type barrel exports
 
-- [ ] Task 2: Create tokenService.ts (AC: #3, #4)
-  - [ ] 2.1 `signAccessToken` — jose SignJWT, HS256, 15-min, claims: sub, org_id, role, isAdmin
-  - [ ] 2.2 `verifyAccessToken` — jose jwtVerify, throws AuthenticationError on failure
-  - [ ] 2.3 `generateRefreshToken` — crypto.randomBytes(32) hex + SHA-256 hash
-  - [ ] 2.4 `createTokenPair` — signs JWT + generates/stores refresh token
-  - [ ] 2.5 `rotateRefreshToken` — hash→lookup→revoke old→issue new, reuse detection
+- [x] Task 2: Create tokenService.ts (AC: #3, #4)
+  - [x] 2.1 `signAccessToken` — jose SignJWT, HS256, 15-min, claims: sub, org_id, role, isAdmin
+  - [x] 2.2 `verifyAccessToken` — jose jwtVerify, throws AuthenticationError on failure
+  - [x] 2.3 `generateRefreshToken` — crypto.randomBytes(32) hex + SHA-256 hash
+  - [x] 2.4 `createTokenPair` — signs JWT + generates/stores refresh token
+  - [x] 2.5 `rotateRefreshToken` — hash→lookup→revoke old→issue new, reuse detection
 
-- [ ] Task 3: Create googleOAuth.ts (AC: #1, #2, #5)
-  - [ ] 3.1 `buildGoogleAuthUrl` — constructs Google consent URL
-  - [ ] 3.2 `exchangeCodeForTokens` — POST to Google token endpoint
-  - [ ] 3.3 `verifyGoogleIdToken` — jose createRemoteJWKSet + jwtVerify, validates aud
-  - [ ] 3.4 `handleGoogleCallback` — orchestrates full flow: exchange → verify → findOrCreate → org auto-creation
-  - [ ] 3.5 Slug generation with uniqueness retry
+- [x] Task 3: Create googleOAuth.ts (AC: #1, #2, #5)
+  - [x] 3.1 `buildGoogleAuthUrl` — constructs Google consent URL
+  - [x] 3.2 `exchangeCodeForTokens` — POST to Google token endpoint
+  - [x] 3.3 `verifyGoogleIdToken` — jose createRemoteJWKSet + jwtVerify, validates aud
+  - [x] 3.4 `handleGoogleCallback` — orchestrates full flow: exchange → verify → findOrCreate → org auto-creation
+  - [x] 3.5 Slug generation with uniqueness retry
 
-- [ ] Task 4: Create auth routes + mount middleware (AC: #1, #2, #3, #4, #5)
-  - [ ] 4.1 Install cookie-parser + @types/cookie-parser
-  - [ ] 4.2 `GET /auth/google` — generate state, set oauth_state cookie, return URL
-  - [ ] 4.3 `POST /auth/callback` — verify state, call handleGoogleCallback, set token cookies
-  - [ ] 4.4 `POST /auth/refresh` — read refresh_token cookie, rotate, set new cookies
-  - [ ] 4.5 `POST /auth/logout` — revoke token, clear cookies
-  - [ ] 4.6 Mount cookie-parser + auth routes in index.ts
+- [x] Task 4: Create auth routes + mount middleware (AC: #1, #2, #3, #4, #5)
+  - [x] 4.1 Install cookie-parser + @types/cookie-parser
+  - [x] 4.2 `GET /auth/google` — generate state, set oauth_state cookie, return URL
+  - [x] 4.3 `POST /auth/callback` — verify state, call handleGoogleCallback, set token cookies
+  - [x] 4.4 `POST /auth/refresh` — read refresh_token cookie, rotate, set new cookies
+  - [x] 4.5 `POST /auth/logout` — revoke token, clear cookies
+  - [x] 4.6 Mount cookie-parser + auth routes in index.ts
 
-- [ ] Task 5: Create Web BFF proxy routes (AC: #1, #4)
-  - [ ] 5.1 `app/api/auth/login/route.ts` — GET, proxy to Express /auth/google
-  - [ ] 5.2 `app/api/auth/callback/route.ts` — POST, proxy to Express /auth/callback
-  - [ ] 5.3 `app/api/auth/refresh/route.ts` — POST, proxy to Express /auth/refresh
-  - [ ] 5.4 `app/api/auth/logout/route.ts` — POST, proxy to Express /auth/logout
+- [x] Task 5: Create Web BFF proxy routes (AC: #1, #4)
+  - [x] 5.1 `app/api/auth/login/route.ts` — GET, proxy to Express /auth/google
+  - [x] 5.2 `app/api/auth/callback/route.ts` — POST, proxy to Express /auth/callback
+  - [x] 5.3 `app/api/auth/refresh/route.ts` — POST, proxy to Express /auth/refresh
+  - [x] 5.4 `app/api/auth/logout/route.ts` — POST, proxy to Express /auth/logout
 
-- [ ] Task 6: Create login + callback pages (AC: #1, #5)
-  - [ ] 6.1 `app/(auth)/login/page.tsx` — login page (Server Component)
-  - [ ] 6.2 `app/(auth)/login/LoginButton.tsx` — Google sign-in button (Client Component)
-  - [ ] 6.3 `app/(auth)/callback/page.tsx` — callback page (Server Component)
-  - [ ] 6.4 `app/(auth)/callback/CallbackHandler.tsx` — handles token exchange on mount
+- [x] Task 6: Create login + callback pages (AC: #1, #5)
+  - [x] 6.1 `app/(auth)/login/page.tsx` — login page (Server Component)
+  - [x] 6.2 `app/(auth)/login/LoginButton.tsx` — Google sign-in button (Client Component)
+  - [x] 6.3 `app/(auth)/callback/page.tsx` — callback page (Server Component)
+  - [x] 6.4 `app/(auth)/callback/CallbackHandler.tsx` — handles token exchange on mount
 
-- [ ] Task 7: Update proxy.ts, api-client.ts, config.ts (AC: #4)
-  - [ ] 7.1 Add JWT_SECRET to web config.ts
-  - [ ] 7.2 Update proxy.ts with real JWT verification
-  - [ ] 7.3 Add 401 → silent refresh → retry logic to api-client.ts
-  - [ ] 7.4 Add JWT_SECRET to docker-compose.yml web service
+- [x] Task 7: Update proxy.ts, api-client.ts, config.ts (AC: #4)
+  - [x] 7.1 Add JWT_SECRET to web config.ts
+  - [x] 7.2 Update proxy.ts with real JWT verification
+  - [x] 7.3 Add 401 → silent refresh → retry logic to api-client.ts
+  - [x] 7.4 Add JWT_SECRET to docker-compose.yml web service
 
-- [ ] Task 8: Write tests (AC: #3, #4)
-  - [ ] 8.1 `tokenService.test.ts` — ~12 tests (sign, verify, generate, rotate, reuse detection)
-  - [ ] 8.2 `googleOAuth.test.ts` — ~10 tests (URL build, exchange, verify, findOrCreate)
-  - [ ] 8.3 `routes/auth.test.ts` — ~10 tests (all endpoints, cookie handling)
+- [x] Task 8: Write tests (AC: #3, #4)
+  - [x] 8.1 `tokenService.test.ts` — 15 tests (sign, verify, generate, rotate, reuse detection)
+  - [x] 8.2 `googleOAuth.test.ts` — 9 tests (URL build, exchange, verify, findOrCreate)
+  - [x] 8.3 `routes/auth.test.ts` — 9 tests (all endpoints via HTTP, cookie handling)
 
 ## Dev Notes
 
@@ -93,3 +93,65 @@ So that I can start using the application immediately without manual setup.
 7. **Google OAuth redirect_uri** — `${APP_URL}/callback` — must be registered in Google Cloud Console
 
 8. **Next.js 16** — `searchParams` is a Promise, must `await` in server components
+
+## Dev Agent Record
+
+### Implementation Plan
+- Tasks 1-5, 7.1-7.3: Implemented across 2 sessions (shared schemas, token service, Google OAuth, auth routes, BFF proxy, proxy.ts JWT verification, api-client silent refresh)
+- Task 6: Login/callback UI pages
+- Task 7.4: JWT_SECRET added to docker-compose.yml web service environment
+- Task 8: Test suite (33 auth tests total: 15 token, 9 OAuth, 9 routes)
+
+### Debug Log
+- **Stale shared dist**: `packages/shared/dist/constants/index.js` was missing the `AUTH` export because it was built before the constant was added. Running `pnpm --filter shared build` resolved all 8 tokenService test failures.
+- **ESM/CJS interop in route tests**: Original route tests used `require('shared/schemas')` which failed because the shared package barrel exports use `.js` extensions for ESM. Rewrote tests to mount a real Express app and make HTTP requests via Node's native `fetch`.
+- **cookie-parser phantom install**: The package was listed in `package.json` but not installed in `node_modules`. `pnpm --filter api install` resolved it.
+- **TypeScript strict mode**: Fixed `noUncheckedIndexedAccess` issues in array indexing (`memberships[0]!`, `token.split('.')[1]!`, `mock.calls[0]!`).
+- **Unused prop**: `LoginButton.tsx` declared `redirectPath` but never used it — fixed to pass as query param to `/api/auth/login`.
+- **jose in web**: `proxy.ts` imports `jose` for JWT verification but it wasn't a web dependency. Added `jose` to `apps/web/package.json`.
+
+### Completion Notes
+All 8 tasks complete. 79 total API tests passing (33 auth-specific). TypeScript type-check passes for all packages. Story implements full Google OAuth flow: consent redirect → callback → user/org creation → JWT + refresh token pair → httpOnly cookie storage → silent refresh → logout with token revocation.
+
+## File List
+
+### New files
+- `packages/shared/src/schemas/auth.ts` — JWT, callback, login response schemas
+- `packages/shared/src/types/auth.ts` — Auth type exports
+- `apps/api/src/services/auth/tokenService.ts` — JWT signing/verification, refresh token rotation
+- `apps/api/src/services/auth/googleOAuth.ts` — Google OAuth flow, user/org creation
+- `apps/api/src/services/auth/index.ts` — Auth service barrel export
+- `apps/api/src/routes/auth.ts` — Auth route handlers (4 endpoints)
+- `apps/api/src/services/auth/tokenService.test.ts` — 15 token service tests
+- `apps/api/src/services/auth/googleOAuth.test.ts` — 9 Google OAuth tests
+- `apps/api/src/routes/auth.test.ts` — 9 route integration tests (HTTP)
+- `apps/web/app/api/auth/login/route.ts` — BFF proxy: login
+- `apps/web/app/api/auth/callback/route.ts` — BFF proxy: callback
+- `apps/web/app/api/auth/refresh/route.ts` — BFF proxy: refresh
+- `apps/web/app/api/auth/logout/route.ts` — BFF proxy: logout
+- `apps/web/app/(auth)/login/page.tsx` — Login page
+- `apps/web/app/(auth)/login/LoginButton.tsx` — Google sign-in button
+- `apps/web/app/(auth)/callback/page.tsx` — Callback page
+- `apps/web/app/(auth)/callback/CallbackHandler.tsx` — Token exchange handler
+- `apps/web/lib/api-client.ts` — Client-side API client with silent refresh
+- `apps/web/lib/api-server.ts` — Server-side API client
+
+### Modified files
+- `packages/shared/src/constants/index.ts` — Added AUTH constant
+- `packages/shared/src/schemas/index.ts` — Added auth schema re-exports
+- `packages/shared/src/types/index.ts` — Added auth type re-exports
+- `packages/shared/package.json` — No change (exports already configured)
+- `apps/api/src/index.ts` — Added cookie-parser + auth routes mounting
+- `apps/api/src/config.ts` — Added GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, JWT_SECRET, APP_URL env vars
+- `apps/api/package.json` — Added cookie-parser, @types/cookie-parser
+- `apps/web/proxy.ts` — Added JWT verification for protected routes
+- `apps/web/lib/config.ts` — Added JWT_SECRET to web env schema
+- `apps/web/package.json` — Added jose dependency
+- `docker-compose.yml` — Added JWT_SECRET to web service environment
+
+## Change Log
+
+- **2026-02-24**: Tasks 1-5, 7.1-7.3 implemented — shared schemas, token service, Google OAuth, auth routes, BFF proxy, proxy.ts JWT verification, api-client silent refresh
+- **2026-02-24**: Tasks 6, 8.1-8.2 implemented — login/callback UI pages, token and OAuth tests
+- **2026-02-25**: Task 7.4 implemented — JWT_SECRET in docker-compose.yml
+- **2026-02-25**: Task 8.3 rewritten — route tests now use real Express app + HTTP requests (was mock-only). Fixed stale shared dist, ESM/CJS interop, TypeScript strict mode issues, unused prop, missing jose dep in web

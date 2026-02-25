@@ -44,7 +44,7 @@ development_status:
   epic-1: in-progress
   1-1-monorepo-scaffold-docker-development-environment: done
   1-2-database-schema-core-identity-tables: done
-  1-3-google-oauth-authentication-org-auto-creation: in-progress
+  1-3-google-oauth-authentication-org-auto-creation: review
   1-4-role-based-access-control-route-protection: backlog
   1-5-org-invite-link-system: backlog
   1-6-cross-cutting-infrastructure-foundation: backlog

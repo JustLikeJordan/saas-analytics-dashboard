@@ -72,7 +72,7 @@ describe('tokenService', () => {
         isAdmin: true,
       });
 
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = JSON.parse(atob(token.split('.')[1]!));
       expect(payload.sub).toBe('42');
       expect(payload.org_id).toBe(7);
       expect(payload.role).toBe('member');
@@ -176,7 +176,7 @@ describe('tokenService', () => {
       const result = await createTokenPair(1, 10, 'owner', false);
 
       expect(mockCreateRefreshToken).toHaveBeenCalledOnce();
-      const storedHash = mockCreateRefreshToken.mock.calls[0][0].tokenHash;
+      const storedHash = mockCreateRefreshToken.mock.calls[0]![0].tokenHash;
       expect(storedHash).not.toBe(result.refreshToken);
     });
   });

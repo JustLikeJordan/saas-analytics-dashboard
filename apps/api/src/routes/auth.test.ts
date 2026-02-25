@@ -1,5 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Request, Response } from 'express';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import express from 'express';
+import cookieParser from 'cookie-parser';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+
+// ── Mocks (must precede dynamic imports) ─────────────────────────
 
 const mockGenerateOAuthState = vi.fn();
 const mockBuildGoogleAuthUrl = vi.fn();
@@ -37,36 +42,64 @@ vi.mock('../lib/logger.js', () => ({
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
+    child: vi.fn().mockReturnValue({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }),
   },
 }));
 
-// We need to test the route handlers directly
-// Express 5 Router is tested by extracting the handler from the stack
-// Instead, we'll import the module and test through a mock Express setup
+// ── Test app setup ───────────────────────────────────────────────
 
-function createMockRes() {
-  const res = {
-    json: vi.fn().mockReturnThis(),
-    status: vi.fn().mockReturnThis(),
-    cookie: vi.fn().mockReturnThis(),
-    clearCookie: vi.fn().mockReturnThis(),
-  } as unknown as Response;
-  return res;
+const { default: authRouter } = await import('./auth.js');
+const { errorHandler } = await import('../middleware/errorHandler.js');
+const { correlationId } = await import('../middleware/correlationId.js');
+
+const app = express();
+app.use(correlationId);
+app.use(express.json());
+app.use(cookieParser());
+app.use(authRouter);
+app.use(errorHandler);
+
+let server: http.Server;
+let baseUrl: string;
+
+beforeAll(
+  () =>
+    new Promise<void>((resolve) => {
+      server = app.listen(0, () => {
+        const port = (server.address() as AddressInfo).port;
+        baseUrl = `http://127.0.0.1:${port}`;
+        resolve();
+      });
+    }),
+);
+
+afterAll(
+  () =>
+    new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    }),
+);
+
+// ── Helper ───────────────────────────────────────────────────────
+
+function parseCookies(res: globalThis.Response): Record<string, string> {
+  const cookies: Record<string, string> = {};
+  const raw = res.headers.getSetCookie?.() ?? [];
+  for (const c of raw) {
+    const pair = c.split(';')[0] ?? '';
+    const eqIdx = pair.indexOf('=');
+    const name = pair.slice(0, eqIdx).trim();
+    const value = pair.slice(eqIdx + 1).trim();
+    if (name) cookies[name] = value;
+  }
+  return cookies;
 }
 
-function createMockReq(overrides: Partial<Request> = {}) {
-  return {
-    body: {},
-    cookies: {},
-    ...overrides,
-  } as unknown as Request;
-}
-
-// Import the router module - handlers are attached to Express Router
-// We'll test by calling the route handler functions directly
-// For this, we need a reference to the actual handler functions
-// Since they're bound to a Router, we'll use a different approach:
-// Re-implement the core logic tests
+// ── Tests ────────────────────────────────────────────────────────
 
 describe('auth routes', () => {
   beforeEach(() => {
@@ -74,29 +107,24 @@ describe('auth routes', () => {
   });
 
   describe('GET /auth/google', () => {
-    it('returns a Google OAuth URL and sets state cookie', () => {
-      mockGenerateOAuthState.mockReturnValue('test-state-123');
-      mockBuildGoogleAuthUrl.mockReturnValue('https://accounts.google.com/...');
+    it('returns a Google OAuth URL and sets oauth_state cookie', async () => {
+      mockGenerateOAuthState.mockReturnValue('test-state-abc');
+      mockBuildGoogleAuthUrl.mockReturnValue('https://accounts.google.com/o/oauth2/v2/auth?...');
 
-      const req = createMockReq();
-      const res = createMockRes();
+      const res = await fetch(`${baseUrl}/auth/google`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (await res.json()) as any;
 
-      // Simulate the handler logic
-      const state = mockGenerateOAuthState();
-      const url = mockBuildGoogleAuthUrl(state);
-      res.cookie('oauth_state', state, expect.any(Object));
-      res.json({ data: { url } });
+      expect(res.status).toBe(200);
+      expect(body.data.url).toBe('https://accounts.google.com/o/oauth2/v2/auth?...');
 
-      expect(mockGenerateOAuthState).toHaveBeenCalled();
-      expect(mockBuildGoogleAuthUrl).toHaveBeenCalledWith('test-state-123');
-      expect(res.json).toHaveBeenCalledWith({
-        data: { url: 'https://accounts.google.com/...' },
-      });
+      const cookies = parseCookies(res);
+      expect(cookies.oauth_state).toBe('test-state-abc');
     });
   });
 
   describe('POST /auth/callback', () => {
-    it('processes callback and returns user data with cookies', async () => {
+    it('processes valid callback and sets token cookies', async () => {
       const mockUser = {
         id: 1,
         name: 'Marcus',
@@ -105,53 +133,90 @@ describe('auth routes', () => {
         isPlatformAdmin: false,
       };
       const mockOrg = { id: 10, name: "Marcus's Organization", slug: 'marcus-org' };
-      const mockMembership = { role: 'owner' };
 
       mockHandleGoogleCallback.mockResolvedValueOnce({
         user: mockUser,
         org: mockOrg,
-        membership: mockMembership,
+        membership: { role: 'owner' },
         isNewUser: true,
       });
-
       mockCreateTokenPair.mockResolvedValueOnce({
-        accessToken: 'jwt-token',
-        refreshToken: 'refresh-token',
+        accessToken: 'jwt-access-123',
+        refreshToken: 'refresh-raw-456',
       });
 
-      const result = await mockHandleGoogleCallback('auth-code');
-      const tokens = await mockCreateTokenPair(
-        result.user.id,
-        result.org.id,
-        result.membership.role,
-        result.user.isPlatformAdmin,
-      );
+      const res = await fetch(`${baseUrl}/auth/callback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: 'oauth_state=valid-state',
+        },
+        body: JSON.stringify({ code: 'google-auth-code', state: 'valid-state' }),
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (await res.json()) as any;
 
-      expect(mockHandleGoogleCallback).toHaveBeenCalledWith('auth-code');
+      expect(res.status).toBe(200);
+      expect(body.data.user.email).toBe('marcus@example.com');
+      expect(body.data.org.slug).toBe('marcus-org');
+      expect(body.data.isNewUser).toBe(true);
+
+      const cookies = parseCookies(res);
+      expect(cookies.access_token).toBe('jwt-access-123');
+      expect(cookies.refresh_token).toBe('refresh-raw-456');
+
+      expect(mockHandleGoogleCallback).toHaveBeenCalledWith('google-auth-code');
       expect(mockCreateTokenPair).toHaveBeenCalledWith(1, 10, 'owner', false);
-      expect(tokens.accessToken).toBe('jwt-token');
-      expect(tokens.refreshToken).toBe('refresh-token');
     });
 
-    it('rejects callback with mismatched state', () => {
-      const req = createMockReq({
-        body: { code: 'auth-code', state: 'state-from-google' },
-        cookies: { oauth_state: 'different-state' },
+    it('returns 401 when OAuth state does not match cookie', async () => {
+      const res = await fetch(`${baseUrl}/auth/callback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: 'oauth_state=server-state',
+        },
+        body: JSON.stringify({ code: 'auth-code', state: 'mismatched-state' }),
       });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (await res.json()) as any;
 
-      const stateMatches = req.body.state === req.cookies.oauth_state;
-      expect(stateMatches).toBe(false);
+      expect(res.status).toBe(401);
+      expect(body.error.code).toBe('AUTHENTICATION_ERROR');
     });
 
-    it('rejects callback with missing code', () => {
-      const { googleCallbackSchema } = require('shared/schemas');
-      const result = googleCallbackSchema.safeParse({ state: 'test' });
-      expect(result.success).toBe(false);
+    it('returns 400 when code is missing from callback body', async () => {
+      const res = await fetch(`${baseUrl}/auth/callback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: 'oauth_state=test-state',
+        },
+        body: JSON.stringify({ state: 'test-state' }),
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (await res.json()) as any;
+
+      expect(res.status).toBe(400);
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('returns 400 when state is missing from callback body', async () => {
+      const res = await fetch(`${baseUrl}/auth/callback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'auth-code' }),
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (await res.json()) as any;
+
+      expect(res.status).toBe(400);
+      expect(body.error.code).toBe('VALIDATION_ERROR');
     });
   });
 
   describe('POST /auth/refresh', () => {
-    it('rotates tokens and returns new pair', async () => {
+    it('rotates tokens and sets new cookies', async () => {
       mockRotateRefreshToken.mockResolvedValueOnce({
         accessToken: 'new-jwt',
         refreshToken: 'new-refresh',
@@ -159,50 +224,82 @@ describe('auth routes', () => {
         orgId: 10,
       });
 
-      const result = await mockRotateRefreshToken('old-refresh-token');
+      const res = await fetch(`${baseUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: { Cookie: 'refresh_token=old-refresh-token' },
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (await res.json()) as any;
 
-      expect(result.accessToken).toBe('new-jwt');
-      expect(result.refreshToken).toBe('new-refresh');
+      expect(res.status).toBe(200);
+      expect(body.data.success).toBe(true);
+
+      const cookies = parseCookies(res);
+      expect(cookies.access_token).toBe('new-jwt');
+      expect(cookies.refresh_token).toBe('new-refresh');
+
+      expect(mockRotateRefreshToken).toHaveBeenCalledWith('old-refresh-token');
     });
 
-    it('rejects when no refresh token cookie present', () => {
-      const req = createMockReq({ cookies: {} });
-      const hasRefreshToken = !!req.cookies?.refresh_token;
-      expect(hasRefreshToken).toBe(false);
+    it('returns 401 when no refresh_token cookie is present', async () => {
+      const res = await fetch(`${baseUrl}/auth/refresh`, {
+        method: 'POST',
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (await res.json()) as any;
+
+      expect(res.status).toBe(401);
+      expect(body.error.code).toBe('AUTHENTICATION_ERROR');
+      expect(body.error.message).toBe('Refresh token required');
     });
   });
 
   describe('POST /auth/logout', () => {
-    it('revokes token and clears cookies when refresh token present', async () => {
+    it('revokes refresh token and clears all auth cookies', async () => {
+      const rawToken = 'a'.repeat(64);
+      const { createHash } = await import('node:crypto');
+      const expectedHash = createHash('sha256').update(rawToken).digest('hex');
+
       mockFindByHash.mockResolvedValueOnce({ id: 5, userId: 1 });
       mockRevokeToken.mockResolvedValueOnce({});
 
-      const rawToken = 'a'.repeat(64);
-      const { createHash } = await import('node:crypto');
-      const hash = createHash('sha256').update(rawToken).digest('hex');
+      const res = await fetch(`${baseUrl}/auth/logout`, {
+        method: 'POST',
+        headers: { Cookie: `refresh_token=${rawToken}` },
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (await res.json()) as any;
 
-      const existing = await mockFindByHash(hash);
-      if (existing) {
-        await mockRevokeToken(existing.id);
-      }
-
-      expect(mockFindByHash).toHaveBeenCalledWith(hash);
+      expect(res.status).toBe(200);
+      expect(body.data.success).toBe(true);
+      expect(mockFindByHash).toHaveBeenCalledWith(expectedHash);
       expect(mockRevokeToken).toHaveBeenCalledWith(5);
+
+      const raw = res.headers.getSetCookie?.() ?? [];
+      const clearedNames = raw
+        .filter((c) => c.includes('Expires=Thu, 01 Jan 1970'))
+        .map((c) => c.split('=')[0]);
+      expect(clearedNames).toContain('access_token');
+      expect(clearedNames).toContain('refresh_token');
     });
 
-    it('handles logout gracefully when no refresh token', async () => {
-      const req = createMockReq({ cookies: {} });
-      const res = createMockRes();
+    it('clears cookies even when no refresh token is present', async () => {
+      const res = await fetch(`${baseUrl}/auth/logout`, {
+        method: 'POST',
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body = (await res.json()) as any;
 
-      const rawToken = req.cookies?.refresh_token;
-      if (!rawToken) {
-        res.clearCookie('access_token');
-        res.clearCookie('refresh_token');
-        res.json({ data: { success: true } });
-      }
+      expect(res.status).toBe(200);
+      expect(body.data.success).toBe(true);
+      expect(mockFindByHash).not.toHaveBeenCalled();
 
-      expect(res.clearCookie).toHaveBeenCalledTimes(2);
-      expect(res.json).toHaveBeenCalledWith({ data: { success: true } });
+      const raw = res.headers.getSetCookie?.() ?? [];
+      const clearedNames = raw
+        .filter((c) => c.includes('Expires=Thu, 01 Jan 1970'))
+        .map((c) => c.split('=')[0]);
+      expect(clearedNames).toContain('access_token');
+      expect(clearedNames).toContain('refresh_token');
     });
   });
 });
