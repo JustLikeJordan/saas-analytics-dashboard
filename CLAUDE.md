@@ -125,6 +125,28 @@ Every new or substantially modified code file gets a companion `<filename>_expla
 - **Update existing docs**: If modifying a file that already has `_explained.md`, update the doc to reflect changes.
 - **Reference example**: See `/interview-docs` skill and `references/example-output.md` for the full 8-section format with tone and depth expectations.
 
+## Prose Style — ALWAYS ON (humanizer)
+
+**MANDATORY for every session, all non-code text output. Do not wait for invocation.**
+
+All prose — `_explained.md` docs, commit messages, PR descriptions, comments, planning artifacts, conversation responses — must read like a human wrote it. Apply automatically. For full reference, invoke `/humanizer`.
+
+**Banned vocabulary** (swap or delete on sight): additionally, delve, crucial, pivotal, landscape (abstract), tapestry (abstract), testament, underscore (verb), vibrant, rich (figurative), profound, nestled, groundbreaking, renowned, breathtaking, showcase, foster, garner, interplay, intricate/intricacies, enduring, enhance.
+
+**Banned patterns**:
+- Copula avoidance: "serves as", "stands as", "boasts" — just use "is", "has", "are"
+- Superficial -ing phrases: "highlighting...", "underscoring...", "reflecting...", "ensuring..."
+- Rule of three: don't force ideas into groups of three
+- Negative parallelisms: "It's not just X; it's Y" — just say what it is
+- False ranges: "from X to Y, from A to B" — list the things plainly
+- Sycophantic tone: no "Great question!", "Absolutely!", "You're right!"
+- Generic positive conclusions: no "the future looks bright", "exciting times ahead"
+- Filler phrases: "in order to" → "to", "due to the fact that" → "because", "it is important to note that" → delete
+- Excessive hedging: "it could potentially possibly be argued" → "it may"
+- Em dash overuse, emoji decoration, excessive boldface, curly quotes
+
+**Do**: Vary sentence length. Have opinions. Use "I" when it fits. Be specific. Let some mess in.
+
 ## Testing
 
 - Vitest for unit/integration tests
