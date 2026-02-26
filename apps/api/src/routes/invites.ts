@@ -15,7 +15,14 @@ inviteRouter.get('/', roleGuard('owner'), async (req, res: Response) => {
 
   const invites = await getActiveInvitesForOrg(user.org_id);
 
-  res.json({ data: invites });
+  const safe = invites.map((inv) => ({
+    id: inv.id,
+    expiresAt: inv.expiresAt,
+    createdBy: inv.createdBy,
+    createdAt: inv.createdAt,
+  }));
+
+  res.json({ data: safe });
 });
 
 // POST /invites — owner-only, creates a new invite link
