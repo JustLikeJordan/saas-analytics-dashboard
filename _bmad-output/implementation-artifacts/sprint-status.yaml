@@ -48,7 +48,7 @@ development_status:
   1-4-role-based-access-control-route-protection: done
   1-5-org-invite-link-system: done
   1-6-cross-cutting-infrastructure-foundation: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: done
 
   # ── Epic 2: Data Pipeline & Visualization ──
   epic-2: backlog
