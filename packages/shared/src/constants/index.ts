@@ -18,6 +18,25 @@ export const INVITES = {
   TOKEN_BYTES: 32,
 } as const;
 
+// dot-notation past-tense — matches the pattern in analytics_events.event_name
+export const ANALYTICS_EVENTS = {
+  USER_SIGNED_UP: 'user.signed_up',
+  USER_SIGNED_IN: 'user.signed_in',
+  USER_SIGNED_OUT: 'user.signed_out',
+  ORG_CREATED: 'org.created',
+  ORG_INVITE_SENT: 'org.invite_sent',
+  ORG_INVITE_ACCEPTED: 'org.invite_accepted',
+  DATASET_UPLOADED: 'dataset.uploaded',
+  DATASET_DELETED: 'dataset.deleted',
+  AI_SUMMARY_REQUESTED: 'ai.summary_requested',
+  AI_SUMMARY_COMPLETED: 'ai.summary_completed',
+  SHARE_CREATED: 'share.created',
+  SHARE_VIEWED: 'share.viewed',
+} as const;
+
+export type AnalyticsEventName =
+  (typeof ANALYTICS_EVENTS)[keyof typeof ANALYTICS_EVENTS];
+
 export const AUTH = {
   ACCESS_TOKEN_EXPIRY: '15m',
   REFRESH_TOKEN_EXPIRY_DAYS: 7,

@@ -4,7 +4,7 @@
 
 Think of this file as the blueprint for a building. Before you pour concrete or run wires, you need a blueprint that shows every room, door, and connection. This file does exactly that for the database — it defines every table, every column, and every relationship between them, all in TypeScript code instead of raw SQL.
 
-**How to say it in an interview:** "This is the Drizzle ORM schema that defines the entire data model — users, organizations, memberships, and refresh tokens. It's a schema-as-code approach, meaning the database structure lives in TypeScript and is the single source of truth for migrations, queries, and type inference."
+**How to say it in an interview:** "This is the Drizzle ORM schema that defines the entire data model — users, organizations, memberships, refresh tokens, org invites, and analytics events. It's a schema-as-code approach, meaning the database structure lives in TypeScript and is the single source of truth for migrations, queries, and type inference."
 
 ---
 
@@ -54,9 +54,9 @@ Over alternative: Relying on application-level checks alone means a race conditi
 
 ## Section 3: Code walkthrough
 
-### Block 1: Imports (lines 1-12)
+### Block 1: Imports (lines 1-13)
 
-Imports Drizzle's PostgreSQL column types and the `relations` helper. Each import maps to a PostgreSQL concept — `pgTable` creates a table, `varchar` maps to `VARCHAR`, `timestamp` to `TIMESTAMP WITH TIME ZONE`, etc.
+Imports Drizzle's PostgreSQL column types and the `relations` helper. Each import maps to a PostgreSQL concept — `pgTable` creates a table, `varchar` maps to `VARCHAR`, `timestamp` to `TIMESTAMP WITH TIME ZONE`, `jsonb` to PostgreSQL's binary JSON type, etc.
 
 ### Block 2: Enum definition (line 14)
 
@@ -89,9 +89,28 @@ Stores hashed refresh tokens with expiration and revocation tracking. `revokedAt
 
 Only one index: on `userId`. The `tokenHash` column already has a unique constraint (which creates an implicit index), and lookups by hash are the hot path for token validation.
 
-### Block 7: Relations (lines 76-108)
+### Block 7: Org invites table (lines 55-75)
+
+Stores invite links for adding new members to an org. The interesting column is `tokenHash` — like refresh tokens, we store a hash of the invite token, not the raw value. `usedAt` and `usedBy` start as null and get filled when someone redeems the invite, giving you a full audit trail of who accepted, when.
+
+Two indexes: `org_id` for listing all invites in an org, `token_hash` for the redemption lookup path (which happens when a user clicks the invite link).
+
+### Block 8: Analytics events table (lines 95-114)
+
+An append-only event log for tracking user behavior across the platform. Each row records one thing that happened: who did it (`user_id`), in which org (`org_id`), what happened (`event_name`), and optional context (`metadata` as JSONB).
+
+The `metadata` column uses PostgreSQL's `jsonb` type — binary JSON that supports indexing and querying. It's nullable because not every event needs extra context. `user.signed_in` doesn't need metadata, but `dataset.uploaded` might include `{ rows: 1500, filename: "sales.csv" }`. JSONB avoids the alternative of adding nullable columns for every possible metadata field.
+
+Three indexes cover the primary query patterns:
+- `org_id` — "show me all events for this org" (admin dashboard, tenant-scoped queries)
+- `event_name` — "show me all dataset uploads across the system" (platform analytics)
+- `created_at` — "show me events from the last 7 days" (time-range filtering)
+
+### Block 9: Relations (lines 116-173)
 
 Drizzle relations are separate from foreign keys. Foreign keys enforce integrity at the database level. Relations tell Drizzle's query builder how to join tables when you write `db.query.users.findFirst({ with: { userOrgs: true } })`. They don't create database constraints — they're purely for the ORM's query API.
+
+The relation graph now spans six tables: `users` has `many` userOrgs, refreshTokens, createdInvites, and analyticsEvents. `orgs` has `many` userOrgs, refreshTokens, invites, and analyticsEvents. The `orgInvites` relation uses `relationName: 'inviteCreator'` to disambiguate which user foreign key it refers to (the creator, not the redeemer).
 
 ---
 
@@ -104,7 +123,8 @@ What breaks first under scale: The `user_orgs` table. In a system with millions 
 Known limitations:
 - No `updatedAt` on `orgs` — fine for now, but becomes an issue if org settings expand.
 - The `revokedAt` soft-delete on refresh tokens means the table only grows. You'd eventually need a cleanup job to purge expired tokens.
-- No Row Level Security (RLS) defined in this schema — tenant isolation is enforced in the query layer, not the database. This is a deliberate trade-off for simplicity at MVP scale.
+- `analytics_events` is append-only and will grow the fastest of all tables. Three separate indexes mean every INSERT touches three B-trees. At high volume, you'd consider time-based partitioning or moving to a dedicated event store.
+- The JSONB `metadata` column on analytics events is untyped at the database level — any valid JSON goes in. Schema validation happens at the application layer via the `trackEvent` service.
 
 **How to say it in an interview:** "The schema prioritizes correctness and simplicity for an MVP — database-level constraints for integrity, appropriate indexes for the expected query patterns, and a clean multi-tenant model. The main scale concern is the join table growth, which we'd address with caching before restructuring."
 
@@ -120,7 +140,7 @@ A pattern where your database structure is defined in application code (TypeScri
 
 ### Multi-tenancy (org-per-row)
 
-A way to serve multiple customers from a single database by tagging every row with a tenant identifier (`org_id`). This is the "shared database, shared schema" approach — the simplest and most cost-effective for SaaS. Appears in `userOrgs`, `refreshTokens` (both carry `orgId`).
+A way to serve multiple customers from a single database by tagging every row with a tenant identifier (`org_id`). This is the "shared database, shared schema" approach — the simplest and most cost-effective for SaaS. Appears in `userOrgs`, `refreshTokens`, `orgInvites`, and `analyticsEvents` (all carry `orgId`). RLS policies in separate migrations enforce isolation at the PostgreSQL level as defense-in-depth.
 
 **Interview-ready line:** "We use row-level multi-tenancy with `org_id` on every tenant-scoped table, enforced through query-layer filtering rather than database-level RLS, which keeps the schema simple for MVP while supporting migration to RLS later."
 
@@ -158,7 +178,7 @@ Red flag answer: "Because that's how you do many-to-many relationships." — Thi
 
 Context if you need it: The interviewer wants to see that you understand referential integrity and can trace through foreign key relationships.
 
-Strong answer: "Deleting an org triggers cascading deletes on `user_orgs` (removing all memberships) and `refresh_tokens` (invalidating all sessions for that org). The users themselves survive because the cascade is on `user_orgs`, not `users`. So the user still exists but loses access to that org."
+Strong answer: "Deleting an org triggers cascading deletes on `user_orgs` (removing all memberships), `refresh_tokens` (invalidating all sessions for that org), `org_invites` (revoking pending invites), and `analytics_events` (removing the org's event history). The users themselves survive because the cascade is on `user_orgs`, not `users`. So the user still exists but loses access to that org."
 
 Red flag answer: "It deletes everything related to the org." — Too vague. The interviewer wants to hear you trace the specific foreign key chains.
 

@@ -159,14 +159,13 @@ describe('rateLimiter', () => {
       //
       // This test explicitly asserts the response is a valid rate-limiter
       // response (200 or 429), never a 500 or connection timeout.
-      let server: http.Server;
       const result = await createTestApp((app) => {
         app.use(rateLimitPublic);
         app.get('/health-check', (_req: Request, res: Response) => {
           res.json({ data: { healthy: true } });
         });
       });
-      server = result.server;
+      const server = result.server;
 
       const res = await fetch(`${result.baseUrl}/health-check`);
       // 200 if under limit, 429 if memory fallback exhausted from earlier tests — both valid

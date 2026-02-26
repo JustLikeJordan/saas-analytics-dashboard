@@ -6,6 +6,7 @@ import {
   text,
   boolean,
   timestamp,
+  jsonb,
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
@@ -91,16 +92,39 @@ export const refreshTokens = pgTable(
   (table) => [index('idx_refresh_tokens_user_id').on(table.userId)],
 );
 
+export const analyticsEvents = pgTable(
+  'analytics_events',
+  {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    orgId: integer('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    eventName: varchar('event_name', { length: 100 }).notNull(),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_analytics_events_org_id').on(table.orgId),
+    index('idx_analytics_events_event_name').on(table.eventName),
+    index('idx_analytics_events_created_at').on(table.createdAt),
+  ],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   userOrgs: many(userOrgs),
   refreshTokens: many(refreshTokens),
   createdInvites: many(orgInvites, { relationName: 'inviteCreator' }),
+  analyticsEvents: many(analyticsEvents),
 }));
 
 export const orgsRelations = relations(orgs, ({ many }) => ({
   userOrgs: many(userOrgs),
   refreshTokens: many(refreshTokens),
   invites: many(orgInvites),
+  analyticsEvents: many(analyticsEvents),
 }));
 
 export const userOrgsRelations = relations(userOrgs, ({ one }) => ({
@@ -134,5 +158,16 @@ export const orgInvitesRelations = relations(orgInvites, ({ one }) => ({
     fields: [orgInvites.createdBy],
     references: [users.id],
     relationName: 'inviteCreator',
+  }),
+}));
+
+export const analyticsEventsRelations = relations(analyticsEvents, ({ one }) => ({
+  org: one(orgs, {
+    fields: [analyticsEvents.orgId],
+    references: [orgs.id],
+  }),
+  user: one(users, {
+    fields: [analyticsEvents.userId],
+    references: [users.id],
   }),
 }));
