@@ -29,7 +29,7 @@ app.use(
 );
 app.use(healthRouter);
 app.use(authRouter);
-app.use(publicInviteRouter);
+app.use(rateLimitPublic, publicInviteRouter);
 app.use(rateLimitPublic, protectedRouter);
 app.use(errorHandler);
 

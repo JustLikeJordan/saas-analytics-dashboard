@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 import { webEnv } from '@/lib/config';
 
-const PROTECTED_ROUTES = ['/upload', '/billing', '/admin'];
+const PROTECTED_ROUTES = ['/upload', '/billing', '/admin', '/settings'];
 
 function getJwtSecret(): Uint8Array | null {
   if (!webEnv.JWT_SECRET) return null;
@@ -41,5 +41,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/upload/:path*', '/billing/:path*', '/admin/:path*'],
+  matcher: ['/upload/:path*', '/billing/:path*', '/admin/:path*', '/settings/:path*'],
 };
