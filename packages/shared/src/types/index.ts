@@ -9,3 +9,10 @@ export type {
   GoogleCallback,
   LoginResponse,
 } from './auth.js';
+
+export type {
+  SourceType,
+  DemoModeState,
+  Dataset,
+  DataRow,
+} from './datasets.js';

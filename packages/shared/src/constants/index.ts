@@ -51,3 +51,15 @@ export const AUTH = {
   GOOGLE_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
   GOOGLE_SCOPES: 'openid email profile',
 } as const;
+
+export const SEED_ORG = {
+  slug: 'seed-demo',
+  name: 'Sunrise Cafe',
+} as const;
+
+export const DEMO_MODE_STATES = {
+  SEED_ONLY: 'seed_only',
+  SEED_PLUS_USER: 'seed_plus_user',
+  USER_ONLY: 'user_only',
+  EMPTY: 'empty',
+} as const;
