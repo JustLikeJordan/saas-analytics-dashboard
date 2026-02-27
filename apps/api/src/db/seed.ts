@@ -1,0 +1,169 @@
+// Standalone seed script — runs after migrations, before the Express app boots.
+// Same exceptions as migrate.ts:
+//   - process.env: config.ts validates ALL env vars. Seed runs before app context exists.
+//   - console.log: Pino is app-level. Seed output uses console.
+//   - Raw Drizzle calls: query functions import lib/db.ts → config.ts → crash.
+//     Seed script uses its own drizzle instance directly inside a transaction.
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { and, eq, sql } from 'drizzle-orm';
+import postgres from 'postgres';
+import { SEED_ORG } from 'shared/constants';
+
+import * as schema from './schema.js';
+
+const dbUrl = process.env.DATABASE_URL;
+if (!dbUrl) {
+  console.error('DATABASE_URL is required for seeding');
+  process.exit(1);
+}
+
+const client = postgres(dbUrl, { max: 1 });
+const db = drizzle(client, { schema });
+
+// 12 months of data for Sunrise Cafe — a fictional coffee shop.
+// Three deliberate anomalies baked in so the AI curation pipeline (Story 3.1)
+// has something worth interpreting.
+function buildSeedRows(orgId: number, datasetId: number) {
+  const months = Array.from({ length: 12 }, (_, i) => i); // 0–11
+
+  const rows: Array<{
+    orgId: number;
+    datasetId: number;
+    sourceType: 'csv';
+    category: string;
+    parentCategory: string;
+    date: Date;
+    amount: string;
+    label: string | null;
+  }> = [];
+
+  for (const m of months) {
+    const date = new Date(Date.UTC(2025, m, 15)); // mid-month
+
+    // Revenue: $12k–$18k baseline, December spike to $28k
+    const revenue = m === 11 ? '28000.00' : lerp('12000.00', '18000.00', m);
+    rows.push({
+      orgId, datasetId, sourceType: 'csv',
+      category: 'Revenue', parentCategory: 'Income',
+      date, amount: revenue, label: null,
+    });
+
+    // Payroll: $5.5k–$6.5k baseline, October anomaly at $9.2k
+    const payroll = m === 9 ? '9200.00' : lerp('5500.00', '6500.00', m);
+    rows.push({
+      orgId, datasetId, sourceType: 'csv',
+      category: 'Payroll', parentCategory: 'Expenses',
+      date, amount: payroll, label: null,
+    });
+
+    // Marketing: $800–$1200 baseline, Q3 (Jul/Aug/Sep) drops to $200–$300
+    const isQ3 = m >= 6 && m <= 8;
+    const marketing = isQ3
+      ? lerp('200.00', '300.00', m - 6)
+      : lerp('800.00', '1200.00', m);
+    rows.push({
+      orgId, datasetId, sourceType: 'csv',
+      category: 'Marketing', parentCategory: 'Expenses',
+      date, amount: marketing, label: null,
+    });
+
+    // Rent: flat $3000
+    rows.push({
+      orgId, datasetId, sourceType: 'csv',
+      category: 'Rent', parentCategory: 'Expenses',
+      date, amount: '3000.00', label: null,
+    });
+
+    // Supplies: $1.5k–$2.5k, roughly tracks revenue
+    const supplies = lerp('1500.00', '2500.00', m);
+    rows.push({
+      orgId, datasetId, sourceType: 'csv',
+      category: 'Supplies', parentCategory: 'Expenses',
+      date, amount: supplies, label: null,
+    });
+
+    // Utilities: $400–$600, winter months higher (reverse pattern)
+    const utilities = lerp('600.00', '400.00', m);
+    rows.push({
+      orgId, datasetId, sourceType: 'csv',
+      category: 'Utilities', parentCategory: 'Expenses',
+      date, amount: utilities, label: null,
+    });
+  }
+
+  return rows;
+}
+
+// Linear interpolation across 12 months — returns string amount.
+// monthIndex 0 → minVal, monthIndex 11 → maxVal.
+function lerp(minVal: string, maxVal: string, monthIndex: number): string {
+  const min = parseFloat(minVal);
+  const max = parseFloat(maxVal);
+  const t = monthIndex / 11;
+  return (min + (max - min) * t).toFixed(2);
+}
+
+async function seed() {
+  // Everything inside the transaction — RLS bypass must be active
+  // before we can query datasets (RLS blocks visibility without it)
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL app.is_admin = 'true'`);
+
+    // Idempotency: check if seed org + seed dataset already exist
+    const existing = await tx.query.orgs.findFirst({
+      where: eq(schema.orgs.slug, SEED_ORG.slug),
+    });
+
+    if (existing) {
+      const seedDataset = await tx.query.datasets.findFirst({
+        where: and(
+          eq(schema.datasets.orgId, existing.id),
+          eq(schema.datasets.isSeedData, true),
+        ),
+      });
+      if (seedDataset) {
+        console.info(`Seed data already exists for "${SEED_ORG.name}" — skipping`);
+        return;
+      }
+    }
+
+    // Upsert org — ON CONFLICT prevents race condition if two containers start simultaneously
+    const [org] = await tx
+      .insert(schema.orgs)
+      .values({ name: SEED_ORG.name, slug: SEED_ORG.slug })
+      .onConflictDoNothing({ target: schema.orgs.slug })
+      .returning();
+
+    // If upsert returned nothing, the org already existed — look it up
+    const fallbackOrg = org ?? await tx.query.orgs.findFirst({
+      where: eq(schema.orgs.slug, SEED_ORG.slug),
+    });
+    if (!fallbackOrg) throw new Error(`Seed org "${SEED_ORG.slug}" vanished between upsert and lookup`);
+    const orgId = fallbackOrg.id;
+
+    const [dataset] = await tx
+      .insert(schema.datasets)
+      .values({
+        orgId,
+        name: 'Sunrise Cafe — 2025 Financials',
+        sourceType: 'csv',
+        isSeedData: true,
+      })
+      .returning();
+
+    if (!dataset) throw new Error('Failed to create seed dataset');
+
+    const rows = buildSeedRows(orgId, dataset.id);
+    await tx.insert(schema.dataRows).values(rows);
+
+    console.info(`Seeded "${SEED_ORG.name}" org (id=${orgId}) with ${rows.length} data rows`);
+  });
+}
+
+seed()
+  .then(() => client.end())
+  .catch(async (err) => {
+    console.error('Seed failed:', err);
+    await client.end();
+    process.exit(1);
+  });

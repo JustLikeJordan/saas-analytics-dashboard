@@ -51,8 +51,8 @@ development_status:
   epic-1-retrospective: done
 
   # ── Epic 2: Data Pipeline & Visualization ──
-  epic-2: backlog
-  2-1-seed-data-demo-mode-foundation: backlog
+  epic-2: in-progress
+  2-1-seed-data-demo-mode-foundation: review
   2-2-csv-upload-validation: backlog
   2-3-csv-preview-confirmation: backlog
   2-4-sample-csv-template-download: backlog
