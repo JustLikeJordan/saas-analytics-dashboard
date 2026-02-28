@@ -103,6 +103,31 @@ describe('UploadDropzone', () => {
     expect(screen.getByText(/accepted: .csv up to 10mb/i)).toBeInTheDocument();
   });
 
+  it('renders template download link with correct href in default state', () => {
+    render(<UploadDropzone />);
+
+    const link = screen.getByRole('link', { name: /download sample template/i });
+    expect(link).toHaveAttribute('href', '/templates/sample-data.csv');
+    expect(link).toHaveAttribute('download', 'sample-data.csv');
+  });
+
+  it('renders template download link in error state', async () => {
+    render(<UploadDropzone />);
+
+    const bigFile = new File(['x'.repeat(11 * 1024 * 1024)], 'huge.csv', { type: 'text/csv' });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    simulateUpload(input, bigFile);
+
+    await waitFor(() => {
+      expect(screen.getByText(/file size exceeds 10mb/i)).toBeInTheDocument();
+    });
+
+    const links = screen.getAllByRole('link', { name: /download sample template/i });
+    const errorLink = links.find((l) => l.closest('[role="alert"]'));
+    expect(errorLink).toHaveAttribute('href', '/templates/sample-data.csv');
+    expect(errorLink).toHaveAttribute('download', 'sample-data.csv');
+  });
+
   it('has accessible file input hidden from tab order', () => {
     render(<UploadDropzone />);
 
