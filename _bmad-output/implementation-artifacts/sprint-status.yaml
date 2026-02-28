@@ -53,8 +53,8 @@ development_status:
   # ── Epic 2: Data Pipeline & Visualization ──
   epic-2: in-progress
   2-1-seed-data-demo-mode-foundation: done
-  2-2-csv-upload-validation: review
-  2-3-csv-preview-confirmation: in-progress
+  2-2-csv-upload-validation: done
+  2-3-csv-preview-confirmation: done
   2-4-sample-csv-template-download: backlog
   2-5-demo-to-real-data-transition: backlog
   2-6-interactive-dashboard-charts: backlog

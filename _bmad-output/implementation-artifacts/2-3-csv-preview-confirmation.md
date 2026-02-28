@@ -1,6 +1,6 @@
 # Story 2.3: CSV Preview & Confirmation
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -18,59 +18,59 @@ So that I can verify the data looks correct and catch mistakes early.
 
 ## Tasks / Subtasks
 
-- [ ] Task 0: Read and understand existing code touched by this story (AC: all)
-  - [ ] 0a. Read `UploadDropzone.tsx`, `datasets.ts` (route), `normalizer.ts`, `csvAdapter.ts`, `dataRows.ts`, `datasets.ts` (queries), shared types/schemas/constants
-  - [ ] 0b. Read `apps/web/app/api/datasets/route.ts` (BFF proxy)
-  - [ ] 0c. Trace the full data flow: browser → BFF proxy → Express POST /datasets → csvAdapter → normalizer → preview response → UploadDropzone state='preview'
+- [x] Task 0: Read and understand existing code touched by this story (AC: all)
+  - [x] 0a. Read `UploadDropzone.tsx`, `datasets.ts` (route), `normalizer.ts`, `csvAdapter.ts`, `dataRows.ts`, `datasets.ts` (queries), shared types/schemas/constants
+  - [x] 0b. Read `apps/web/app/api/datasets/route.ts` (BFF proxy)
+  - [x] 0c. Trace the full data flow: browser → BFF proxy → Express POST /datasets → csvAdapter → normalizer → preview response → UploadDropzone state='preview'
 
-- [ ] Task 1: Add confirm endpoint — `POST /datasets/confirm` (AC: 2)
-  - [ ] 1a. Add `DATASET_CONFIRMED` to `ANALYTICS_EVENTS` in `packages/shared/src/constants/index.ts`
-  - [ ] 1b. Add `confirmDatasetSchema` Zod schema in `packages/shared/src/schemas/datasets.ts` — validates `{ fileName: string, headers: string[], rows: ParsedRow[], rowCount: number }`
-  - [ ] 1c. Add `POST /confirm` handler to `apps/api/src/routes/datasets.ts`:
-    - Accept JSON body with preview data (headers, rows from original parse — **not** re-uploaded file)
-    - Call `normalizeRows(rows, headers)` to transform
-    - Call `createDataset(orgId, { name: fileName, sourceType: 'csv', uploadedBy: userId })`
-    - Call `insertBatch(orgId, dataset.id, normalizedRows)`
-    - Fire `trackEvent(orgId, userId, ANALYTICS_EVENTS.DATASET_CONFIRMED, { datasetId, rowCount })`
-    - Return `{ data: { datasetId: dataset.id, rowCount: normalizedRows.length } }`
-  - [ ] 1d. Add structured Pino logging: `logger.info({ orgId, userId, datasetId, rowCount }, 'Dataset confirmed and persisted')`
+- [x] Task 1: Add confirm endpoint — `POST /datasets/confirm` (AC: 2)
+  - [x] 1a. Add `DATASET_CONFIRMED` to `ANALYTICS_EVENTS` in `packages/shared/src/constants/index.ts`
+  - [x] 1b. ~~Add `confirmDatasetSchema`~~ — Not needed: confirm endpoint re-sends the file as multipart (recommended approach from dev notes), so no JSON body schema required. TOCTOU protection via HMAC-signed preview token instead.
+  - [x] 1c. Add `POST /confirm` handler to `apps/api/src/routes/datasets.ts`:
+    - Accepts multipart file re-upload (reuses multer config)
+    - Verifies HMAC-signed preview token (TOCTOU protection)
+    - Re-parses with `csvAdapter.parse()`, validates headers
+    - Calls `normalizeRows()`, `createDataset()`, `insertBatch()`
+    - Fires `trackEvent(orgId, userId, ANALYTICS_EVENTS.DATASET_CONFIRMED, { datasetId, rowCount })`
+    - Returns `{ data: { datasetId: dataset.id, rowCount: normalizedRows.length } }`
+  - [x] 1d. Add structured Pino logging: `logger.info({ orgId, userId, datasetId, rowCount }, 'Dataset confirmed and persisted')`
 
-- [ ] Task 2: Add BFF proxy route for confirm (AC: 2)
-  - [ ] 2a. Extend `apps/web/app/api/datasets/route.ts` or create `apps/web/app/api/datasets/confirm/route.ts` — proxy POST to Express `/datasets/confirm`
-  - [ ] 2b. Forward cookies and Content-Type (JSON this time, not multipart)
+- [x] Task 2: Add BFF proxy route for confirm (AC: 2)
+  - [x] 2a. Created `apps/web/app/api/datasets/confirm/route.ts` — proxy POST to Express `/datasets/confirm`
+  - [x] 2b. Forwards cookies and Content-Type (multipart, same streaming pattern as upload proxy)
 
-- [ ] Task 3: Build `CsvPreview` component (AC: 1)
-  - [ ] 3a. Create `apps/web/app/upload/CsvPreview.tsx` — client component
-  - [ ] 3b. Props: `previewData: CsvPreviewData`, `onConfirm: () => void`, `onCancel: () => void`, `isConfirming: boolean`
-  - [ ] 3c. Render semantic HTML `<table>` (NOT shadcn/ui Table component) with:
+- [x] Task 3: Build `CsvPreview` component (AC: 1)
+  - [x] 3a. Create `apps/web/app/upload/CsvPreview.tsx` — client component
+  - [x] 3b. Props: `previewData: CsvPreviewData`, `onConfirm: () => void`, `onCancel: () => void`, `isConfirming: boolean`
+  - [x] 3c. Render semantic HTML `<table>` (NOT shadcn/ui Table component) with:
     - Column headers highlighted `text-primary` with type badge (date/number/text) next to each
     - First 5 sample rows
     - Total row count badge ("847 rows detected") as `<caption>`
     - Warnings list (if any) above the table
-  - [ ] 3d. Below table: "Upload {N} rows" primary Button + "Cancel" text link
-  - [ ] 3e. During confirmation: Button shows loading spinner + disabled state, text changes to "Uploading..."
-  - [ ] 3f. Accessibility: `<caption>` element "Preview of uploaded data — X rows detected", `<th scope="col">` on headers, keyboard navigable confirm/cancel
+  - [x] 3d. Below table: "Upload {N} rows" primary Button + "Cancel" text link
+  - [x] 3e. During confirmation: Button shows loading spinner (Loader2) + disabled state, text changes to "Uploading..."
+  - [x] 3f. Accessibility: `<caption>` element "Preview of uploaded data — X rows detected", `<th scope="col">` on headers, keyboard navigable confirm/cancel
 
-- [ ] Task 4: Wire CsvPreview into UploadDropzone state machine (AC: 1, 2, 3)
-  - [ ] 4a. Replace the placeholder preview state content in `UploadDropzone.tsx` with `<CsvPreview>` component
-  - [ ] 4b. Implement `handleConfirm`:
-    - POST to `/api/datasets/confirm` with `{ fileName, headers, rows: previewData.sampleRows? }` — **IMPORTANT**: Send ALL parsed rows, not just sample rows. Store full `parseResult.rows` from the upload response, or re-send original file. See Dev Notes for the data flow decision.
+- [x] Task 4: Wire CsvPreview into UploadDropzone state machine (AC: 1, 2, 3)
+  - [x] 4a. Replace the placeholder preview state content in `UploadDropzone.tsx` with `<CsvPreview>` component
+  - [x] 4b. Implement `handleConfirm`:
+    - Re-sends original file via FormData + previewToken to `/api/datasets/confirm`
     - On success: transition to `success` state, start 3-second redirect countdown, then `router.push('/dashboard')`
     - On error: transition to `error` state with server error message
-  - [ ] 4c. Implement `handleCancel`: transition to `default` state, preserve `lastFile` reference
-  - [ ] 4d. Build success state content: green CheckCircle icon, "{N} transactions uploaded!", "Redirecting to dashboard in {countdown}..." text
-  - [ ] 4e. Add `useRouter` from `next/navigation` for redirect
+  - [x] 4c. Implement `handleCancel`: transition to `default` state, preserve `lastFile` reference
+  - [x] 4d. Build success state content: green CheckCircle2 icon, "{N} transactions uploaded!", "Redirecting to dashboard in {countdown}..." text
+  - [x] 4e. Add `useRouter` from `next/navigation` for redirect
 
-- [ ] Task 5: Write tests (AC: all)
-  - [ ] 5a. `CsvPreview.test.tsx` — renders table with headers, sample rows, row count badge, column type badges, warnings; confirm/cancel callbacks fire; loading state disables button
-  - [ ] 5b. `UploadDropzone.test.tsx` — add tests for: preview→confirm→success flow, preview→cancel→default flow, success state shows countdown, error during confirm shows error state
-  - [ ] 5c. `datasets.test.ts` — add tests for POST /confirm: valid payload persists data and returns datasetId, invalid payload returns 400, missing auth returns 401, trackEvent fires on success
-  - [ ] 5d. Run full test suite — ensure 0 regressions
+- [x] Task 5: Write tests (AC: all)
+  - [x] 5a. `CsvPreview.test.tsx` — renders table with headers, sample rows, row count badge, column type badges, warnings; confirm/cancel callbacks fire; loading state disables button
+  - [x] 5b. `UploadDropzone.test.tsx` — add tests for: preview→confirm→success flow, preview→cancel→default flow, success state shows countdown, error during confirm shows error state
+  - [x] 5c. `datasets.test.ts` — add tests for POST /confirm: valid payload persists data and returns datasetId, invalid payload returns 400, missing auth returns 401, trackEvent fires on success
+  - [x] 5d. Run full test suite — 0 regressions (222 tests pass)
 
-- [ ] Task 6: Lint, type-check, verify (AC: all)
-  - [ ] 6a. `pnpm lint` — clean
-  - [ ] 6b. `pnpm type-check` — clean
-  - [ ] 6c. `pnpm test` — all tests pass (existing + new)
+- [x] Task 6: Lint, type-check, verify (AC: all)
+  - [x] 6a. `pnpm lint` — clean
+  - [x] 6b. `pnpm type-check` — clean
+  - [x] 6c. `pnpm test` — all tests pass (28 web + 194 API = 222 total)
 
 ## Dev Notes
 
@@ -205,12 +205,40 @@ packages/shared/src/
 
 ### Agent Model Used
 
-(to be filled by dev agent)
+Claude Opus 4.6
 
 ### Debug Log References
 
+None — implementation completed without blocking issues.
+
 ### Completion Notes List
+
+- **confirmDatasetSchema omitted** — The story spec called for a JSON body schema, but the recommended approach (re-sending the file as multipart) made it unnecessary. The HMAC-signed preview token provides stronger validation than a JSON schema would.
+- **TOCTOU protection added** — Not in the original story spec but implemented during development. The preview endpoint signs a token with SHA-256 file hash + org ID + timestamp. The confirm endpoint verifies via timing-safe HMAC comparison. Stateless — no Redis/session needed.
+- **Story file was stale** — Sprint status showed "done" but story file had `in-progress` status and unchecked tasks. Fixed during post-implementation audit.
+- **Missing _explained.md docs** — `CsvPreview.tsx_explained.md` created, `UploadDropzone.tsx_explained.md` updated to cover Story 2.3 additions (confirm flow, cancel, success state, countdown, TOCTOU).
 
 ### File List
 
+**New files:**
+- `apps/web/app/upload/CsvPreview.tsx` — Preview table component (104 lines)
+- `apps/web/app/upload/CsvPreview.test.tsx` — Component tests
+- `apps/web/app/api/datasets/confirm/route.ts` — BFF proxy for confirm endpoint
+- `apps/web/app/upload/CsvPreview.tsx_explained.md` — Interview docs
+
+**Modified files:**
+- `apps/api/src/routes/datasets.ts` — Added POST /confirm handler with TOCTOU protection
+- `apps/web/app/upload/UploadDropzone.tsx` — Wired CsvPreview, confirm/cancel/success flows, countdown redirect
+- `packages/shared/src/constants/index.ts` — Added DATASET_CONFIRMED analytics event
+- `apps/web/app/upload/UploadDropzone.tsx_explained.md` — Updated for Story 2.3
+
 ### Change Log
+
+- feat: add POST /datasets/confirm endpoint with HMAC-signed preview token verification
+- feat: add CsvPreview component with semantic table, type badges, warnings
+- feat: wire confirm/cancel/success flows into UploadDropzone FSM
+- feat: add 3-second auto-redirect countdown on successful confirm
+- feat: add BFF proxy route for /datasets/confirm
+- feat: add DATASET_CONFIRMED analytics event
+- docs: create CsvPreview.tsx_explained.md
+- docs: update UploadDropzone.tsx_explained.md for Story 2.3

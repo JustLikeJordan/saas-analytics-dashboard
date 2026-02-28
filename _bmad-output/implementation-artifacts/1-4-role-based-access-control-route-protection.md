@@ -22,48 +22,48 @@ So that unauthorized users cannot access restricted functionality.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create `authMiddleware.ts` — JWT extraction + verification (AC: #2)
-  - [ ] 1.1 Read `access_token` cookie from request (via cookie-parser, already mounted)
-  - [ ] 1.2 Call `verifyAccessToken()` from `services/auth/tokenService.ts` (already exists)
-  - [ ] 1.3 Attach parsed JWT claims to `req.user` — define `AuthenticatedRequest` type extending Express Request
-  - [ ] 1.4 Throw `AuthenticationError` on missing/invalid token
-  - [ ] 1.5 Export as named middleware function, not default
+- [x] Task 1: Create `authMiddleware.ts` — JWT extraction + verification (AC: #2)
+  - [x] 1.1 Read `access_token` cookie from request (via cookie-parser, already mounted)
+  - [x] 1.2 Call `verifyAccessToken()` from `services/auth/tokenService.ts` (already exists)
+  - [x] 1.3 Attach parsed JWT claims to `req.user` — define `AuthenticatedRequest` type extending Express Request
+  - [x] 1.4 Throw `AuthenticationError` on missing/invalid token
+  - [x] 1.5 Export as named middleware function, not default
 
-- [ ] Task 2: Create `roleGuard.ts` — role-based authorization middleware factory (AC: #1, #2)
-  - [ ] 2.1 `roleGuard('owner')` — checks `req.user.role === 'owner'`, throws `AuthorizationError` otherwise
-  - [ ] 2.2 `roleGuard('admin')` — checks `req.user.isAdmin === true`, throws `AuthorizationError` otherwise
-  - [ ] 2.3 `roleGuard('member')` — passes for any authenticated user (owner or member)
-  - [ ] 2.4 Must be chained AFTER `authMiddleware` — reads from `req.user`, not cookies directly
+- [x] Task 2: Create `roleGuard.ts` — role-based authorization middleware factory (AC: #1, #2)
+  - [x] 2.1 `roleGuard('owner')` — checks `req.user.role === 'owner'`, throws `AuthorizationError` otherwise
+  - [x] 2.2 `roleGuard('admin')` — checks `req.user.isAdmin === true`, throws `AuthorizationError` otherwise
+  - [x] 2.3 `roleGuard('member')` — passes for any authenticated user (owner or member)
+  - [x] 2.4 Must be chained AFTER `authMiddleware` — reads from `req.user`, not cookies directly
 
-- [ ] Task 3: Create `rateLimiter.ts` — 3-tier Redis-backed rate limiting (AC: #5)
-  - [ ] 3.1 Install `rate-limiter-flexible` in `apps/api`
-  - [ ] 3.2 Create 3 `RateLimiterRedis` instances: `authLimiter` (10 pts/60s by IP), `aiLimiter` (5 pts/60s by userId), `publicLimiter` (60 pts/60s by IP)
-  - [ ] 3.3 Add `enableOfflineQueue: false` to the ioredis constructor options in `apps/api/src/lib/redis.ts` — it is currently missing. Without this, rate-limiter calls queue indefinitely when Redis is down instead of fast-failing to the insurance limiter. This is required for NFR14 fail-open behavior.
-  - [ ] 3.4 Use existing `redis` ioredis client from `lib/redis.ts` as `storeClient`
-  - [ ] 3.5 Configure `RateLimiterMemory` as `insuranceLimiter` for each — fail-open when Redis is down
-  - [ ] 3.6 Import `RATE_LIMITS` from `shared/constants` for point/duration values — do NOT hardcode. The constant already exists with all 3 tiers defined.
-  - [ ] 3.7 Export `rateLimitAuth`, `rateLimitAi`, `rateLimitPublic` as Express middleware functions
-  - [ ] 3.8 Return 429 with `{ error: { code: 'RATE_LIMITED', message: 'Too many requests' } }` and `Retry-After` header
+- [x] Task 3: Create `rateLimiter.ts` — 3-tier Redis-backed rate limiting (AC: #5)
+  - [x] 3.1 Install `rate-limiter-flexible` in `apps/api`
+  - [x] 3.2 Create 3 `RateLimiterRedis` instances: `authLimiter` (10 pts/60s by IP), `aiLimiter` (5 pts/60s by userId), `publicLimiter` (60 pts/60s by IP)
+  - [x] 3.3 Add `enableOfflineQueue: false` to the ioredis constructor options in `apps/api/src/lib/redis.ts` — it is currently missing. Without this, rate-limiter calls queue indefinitely when Redis is down instead of fast-failing to the insurance limiter. This is required for NFR14 fail-open behavior.
+  - [x] 3.4 Use existing `redis` ioredis client from `lib/redis.ts` as `storeClient`
+  - [x] 3.5 Configure `RateLimiterMemory` as `insuranceLimiter` for each — fail-open when Redis is down
+  - [x] 3.6 Import `RATE_LIMITS` from `shared/constants` for point/duration values — do NOT hardcode. The constant already exists with all 3 tiers defined.
+  - [x] 3.7 Export `rateLimitAuth`, `rateLimitAi`, `rateLimitPublic` as Express middleware functions
+  - [x] 3.8 Return 429 with `{ error: { code: 'RATE_LIMITED', message: 'Too many requests' } }` and `Retry-After` header
 
-- [ ] Task 4: Mount middleware in `index.ts` + create protected router (AC: #2, #5)
-  - [ ] 4.1 The current `index.ts` chain is: `correlationId → json → cookieParser → pinoHttp → healthRouter → authRouter → errorHandler`. Do NOT reorder the existing middleware — insert new middleware at the correct positions.
-  - [ ] 4.2 Add `rateLimitPublic` AFTER `pinoHttp` and BEFORE route handlers (so rate-limited requests are still logged)
-  - [ ] 4.3 Add `rateLimitAuth` as route-level middleware on `authRouter` (not global — only auth endpoints)
-  - [ ] 4.4 Keep auth routes public (no authMiddleware — they handle their own auth)
-  - [ ] 4.5 Create `apps/api/src/routes/protected.ts` — a Router with `authMiddleware` pre-applied. Future stories mount their routes on this router. Export it and mount in `index.ts` AFTER authRouter.
-  - [ ] 4.6 Final `index.ts` chain MUST be: `correlationId → [stripe webhook placeholder] → json → cookieParser → pinoHttp → rateLimitPublic → healthRouter → authRouter (with rateLimitAuth) → protectedRouter (with authMiddleware) → errorHandler`
+- [x] Task 4: Mount middleware in `index.ts` + create protected router (AC: #2, #5)
+  - [x] 4.1 The current `index.ts` chain is: `correlationId → json → cookieParser → pinoHttp → healthRouter → authRouter → errorHandler`. Do NOT reorder the existing middleware — insert new middleware at the correct positions.
+  - [x] 4.2 Add `rateLimitPublic` AFTER `pinoHttp` and BEFORE route handlers (so rate-limited requests are still logged)
+  - [x] 4.3 Add `rateLimitAuth` as route-level middleware on `authRouter` (not global — only auth endpoints)
+  - [x] 4.4 Keep auth routes public (no authMiddleware — they handle their own auth)
+  - [x] 4.5 Create `apps/api/src/routes/protected.ts` — a Router with `authMiddleware` pre-applied. Future stories mount their routes on this router. Export it and mount in `index.ts` AFTER authRouter.
+  - [x] 4.6 Final `index.ts` chain MUST be: `correlationId → [stripe webhook placeholder] → json → cookieParser → pinoHttp → rateLimitPublic → healthRouter → authRouter (with rateLimitAuth) → protectedRouter (with authMiddleware) → errorHandler`
 
-- [ ] Task 5: Harden `api-server.ts` error handling (AC: #3)
-  - [ ] 5.1 `api-server.ts` already exists — verify it forwards cookies from Server Component context via `cookies()` async API
-  - [ ] 5.2 The current error path is `throw new Error('API error: 401 Unauthorized')` — this loses the structured error body entirely. Fix: parse the response body as `{ error: { code: string, message: string, details?: unknown } }`. Throw a typed error that exposes `code` and `message` — match the `ApiError` interface already defined in `api-client.ts`. Handle non-JSON bodies (network timeouts) with fallback code `NETWORK_ERROR`.
-  - [ ] 5.3 Both clients (`api-client.ts` and `api-server.ts`) already exist — this task is hardening `api-server.ts` only. Do not modify `api-client.ts`.
+- [x] Task 5: Harden `api-server.ts` error handling (AC: #3)
+  - [x] 5.1 `api-server.ts` already exists — verify it forwards cookies from Server Component context via `cookies()` async API
+  - [x] 5.2 The current error path is `throw new Error('API error: 401 Unauthorized')` — this loses the structured error body entirely. Fix: parse the response body as `{ error: { code: string, message: string, details?: unknown } }`. Throw a typed error that exposes `code` and `message` — match the `ApiError` interface already defined in `api-client.ts`. Handle non-JSON bodies (network timeouts) with fallback code `NETWORK_ERROR`.
+  - [x] 5.3 Both clients (`api-client.ts` and `api-server.ts`) already exist — this task is hardening `api-server.ts` only. Do not modify `api-client.ts`.
 
-- [ ] Task 6: Create test infrastructure + write tests (AC: #1-5)
-  - [ ] 6.1 Create `apps/api/src/test/helpers/testApp.ts` — Express app factory with correlationId, cookieParser, errorHandler pre-mounted. Accepts a callback to mount test-specific middleware and routes. This is the shared test infrastructure for all future middleware and route tests. Story 1.3 built tests inline — this story establishes the reusable pattern.
-  - [ ] 6.2 `authMiddleware.test.ts` (4+ tests) — valid token attaches user, missing token → 401, expired token → 401, malformed token → 401
-  - [ ] 6.3 `roleGuard.test.ts` (5+ tests) — owner passes owner check, member fails owner check, admin passes admin check, non-admin fails admin check, member passes member check
-  - [ ] 6.4 `rateLimiter.test.ts` (7+ tests) — one per limiter tier (auth, AI, public) for over-limit → 429 with Retry-After, one per tier for pass-through, one for Redis-unavailable fail-open (mock ioredis error, verify request still succeeds via insurance limiter)
-  - [ ] 6.5 Integration test: full request through authMiddleware → roleGuard → route handler → response, using the testApp factory
+- [x] Task 6: Create test infrastructure + write tests (AC: #1-5)
+  - [x] 6.1 Create `apps/api/src/test/helpers/testApp.ts` — Express app factory with correlationId, cookieParser, errorHandler pre-mounted. Accepts a callback to mount test-specific middleware and routes. This is the shared test infrastructure for all future middleware and route tests. Story 1.3 built tests inline — this story establishes the reusable pattern.
+  - [x] 6.2 `authMiddleware.test.ts` (4+ tests) — valid token attaches user, missing token → 401, expired token → 401, malformed token → 401
+  - [x] 6.3 `roleGuard.test.ts` (5+ tests) — owner passes owner check, member fails owner check, admin passes admin check, non-admin fails admin check, member passes member check
+  - [x] 6.4 `rateLimiter.test.ts` (7+ tests) — one per limiter tier (auth, AI, public) for over-limit → 429 with Retry-After, one per tier for pass-through, one for Redis-unavailable fail-open (mock ioredis error, verify request still succeeds via insurance limiter)
+  - [x] 6.5 Integration test: full request through authMiddleware → roleGuard → route handler → response, using the testApp factory
 
 ## Dev Notes
 

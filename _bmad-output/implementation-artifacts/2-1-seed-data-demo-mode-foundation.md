@@ -1,6 +1,6 @@
 # Story 2.1: Seed Data & Demo Mode Foundation
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -22,90 +22,90 @@ So that I can understand the product's value before uploading my own data.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Verify Docker compose-up end-to-end (Epic 1 tech debt) (AC: #4)
-  - [ ] 1.1 Run `docker compose up` and verify all 4 services start (web, api, db, redis). **Pass criteria:** all 4 containers reach "healthy" or "running" state within 60s. **Fail criteria:** any container exits with non-zero code, or healthcheck fails after 3 retries.
-  - [ ] 1.2 Verify `GET http://localhost:3001/health` returns 200 with `{ status: "ok" }`
-  - [ ] 1.3 If failures: document the issue, attempt to fix, re-verify. If blocked by Docker Desktop/networking (same as Epic 1), document the blocker and proceed — do not gate the entire story on Docker.
+- [x] Task 1: Verify Docker compose-up end-to-end (Epic 1 tech debt) (AC: #4)
+  - [x] 1.1 Run `docker compose up` and verify all 4 services start (web, api, db, redis). **Pass criteria:** all 4 containers reach "healthy" or "running" state within 60s. **Fail criteria:** any container exits with non-zero code, or healthcheck fails after 3 retries.
+  - [x] 1.2 Verify `GET http://localhost:3001/health` returns 200 with `{ status: "ok" }`
+  - [x] 1.3 If failures: document the issue, attempt to fix, re-verify. If blocked by Docker Desktop/networking (same as Epic 1), document the blocker and proceed — do not gate the entire story on Docker.
 
-- [ ] Task 2: Add `source_type` enum + `datasets` table to schema (AC: #3)
-  - [ ] 2.1 Add `sourceTypeEnum` pgEnum to `schema.ts`: `csv`, `quickbooks`, `xero`, `stripe`, `plaid`
-  - [ ] 2.2 Add `datasets` table: id, org_id, name (varchar 255), source_type, is_seed_data (boolean default false), uploaded_by (nullable user_id FK), created_at
-  - [ ] 2.3 Add `datasetsRelations` — one org, one uploaded_by user, many data_rows
+- [x] Task 2: Add `source_type` enum + `datasets` table to schema (AC: #3)
+  - [x] 2.1 Add `sourceTypeEnum` pgEnum to `schema.ts`: `csv`, `quickbooks`, `xero`, `stripe`, `plaid`
+  - [x] 2.2 Add `datasets` table: id, org_id, name (varchar 255), source_type, is_seed_data (boolean default false), uploaded_by (nullable user_id FK), created_at
+  - [x] 2.3 Add `datasetsRelations` — one org, one uploaded_by user, many data_rows
 
-- [ ] Task 3: Add `data_rows` table to schema (AC: #3)
-  - [ ] 3.1 Add `data_rows` table: id, org_id (FK orgs), dataset_id (FK datasets cascade), source_type, category (varchar 255), parent_category (varchar 255 nullable), date (pg `date` type, not timestamp — no timezone ambiguity for financial calendar dates), amount (numeric(12,2)), label (varchar 255 nullable), metadata (jsonb nullable), created_at
-  - [ ] 3.x Add `numeric` and `date` to schema.ts pg-core imports (currently missing)
-  - [ ] 3.2 Add indexes: `idx_data_rows_org_id_date` (compound), `idx_data_rows_dataset_id`, `idx_data_rows_category`
-  - [ ] 3.3 Add `dataRowsRelations` — one dataset, one org
-  - [ ] 3.4 Update existing `orgsRelations` and `usersRelations` to include datasets
+- [x] Task 3: Add `data_rows` table to schema (AC: #3)
+  - [x] 3.1 Add `data_rows` table: id, org_id (FK orgs), dataset_id (FK datasets cascade), source_type, category (varchar 255), parent_category (varchar 255 nullable), date (pg `date` type, not timestamp — no timezone ambiguity for financial calendar dates), amount (numeric(12,2)), label (varchar 255 nullable), metadata (jsonb nullable), created_at
+  - [x] 3.x Add `numeric` and `date` to schema.ts pg-core imports (currently missing)
+  - [x] 3.2 Add indexes: `idx_data_rows_org_id_date` (compound), `idx_data_rows_dataset_id`, `idx_data_rows_category`
+  - [x] 3.3 Add `dataRowsRelations` — one dataset, one org
+  - [x] 3.4 Update existing `orgsRelations` and `usersRelations` to include datasets
 
-- [ ] Task 4: Generate Drizzle migration (AC: #3)
-  - [ ] 4.1 Run `pnpm --filter api db:generate` with dummy `DATABASE_URL`
-  - [ ] 4.2 Verify generated SQL creates both tables with correct columns and indexes
-  - [ ] 4.3 Verify `_journal.json` has a new entry (idx: 5)
+- [x] Task 4: Generate Drizzle migration (AC: #3)
+  - [x] 4.1 Run `pnpm --filter api db:generate` with dummy `DATABASE_URL`
+  - [x] 4.2 Verify generated SQL creates both tables with correct columns and indexes
+  - [x] 4.3 Verify `_journal.json` has a new entry (idx: 5)
 
-- [ ] Task 5: Add RLS policies for `datasets` and `data_rows` (AC: #5)
-  - [ ] 5.1 Create custom migration `0006_add-rls-datasets-datarows.sql`
-  - [ ] 5.2 Follow pattern from `0001_add-rls-policies.sql`: tenant isolation + admin bypass for both tables
-  - [ ] 5.3 Add manual `_journal.json` entry for custom migration (idx: 6)
-  - [ ] 5.4 **Checklist:** Verify migration journal entry exists (retro action item)
+- [x] Task 5: Add RLS policies for `datasets` and `data_rows` (AC: #5)
+  - [x] 5.1 Create custom migration `0006_add-rls-datasets-datarows.sql`
+  - [x] 5.2 Follow pattern from `0001_add-rls-policies.sql`: tenant isolation + admin bypass for both tables
+  - [x] 5.3 Add manual `_journal.json` entry for custom migration (idx: 6)
+  - [x] 5.4 **Checklist:** Verify migration journal entry exists (retro action item)
 
-- [ ] Task 6: Create dataset query functions (AC: #1, #2, #4)
-  - [ ] 6.1 Create `apps/api/src/db/queries/datasets.ts` — `createDataset`, `getDatasetsByOrg`, `getDemoModeState`, `getSeedDataset`
-  - [ ] 6.2 `getDemoModeState` returns `DemoModeState` — for user orgs, effectively `empty` or `user_only` (see Option C in dev notes)
-  - [ ] 6.3 Add `getSeedOrgId()` and `resetSeedOrgCache()` to **`queries/orgs.ts`** (not datasets.ts — it's an org lookup). `getSeedOrgId()` calls `findOrgBySlug(SEED_ORG.slug)`, caches the ID in a module-level variable, throws if seed org absent. `resetSeedOrgCache()` clears the cached value — needed for tests that truncate tables between runs.
-  - [ ] 6.4 All query functions except `getSeedOrgId` require `orgId` parameter
-  - [ ] 6.5 Export from `apps/api/src/db/queries/index.ts` barrel
+- [x] Task 6: Create dataset query functions (AC: #1, #2, #4)
+  - [x] 6.1 Create `apps/api/src/db/queries/datasets.ts` — `createDataset`, `getDatasetsByOrg`, `getDemoModeState`, `getSeedDataset`
+  - [x] 6.2 `getDemoModeState` returns `DemoModeState` — for user orgs, effectively `empty` or `user_only` (see Option C in dev notes)
+  - [x] 6.3 Add `getSeedOrgId()` and `resetSeedOrgCache()` to **`queries/orgs.ts`** (not datasets.ts — it's an org lookup). `getSeedOrgId()` calls `findOrgBySlug(SEED_ORG.slug)`, caches the ID in a module-level variable, throws if seed org absent. `resetSeedOrgCache()` clears the cached value — needed for tests that truncate tables between runs.
+  - [x] 6.4 All query functions except `getSeedOrgId` require `orgId` parameter
+  - [x] 6.5 Export from `apps/api/src/db/queries/index.ts` barrel
 
-- [ ] Task 7: Create data rows query functions (AC: #1)
-  - [ ] 7.1 Create `apps/api/src/db/queries/dataRows.ts` — `insertBatch`, `getByDateRange`, `getByCategory`, `getRowsByDataset`
-  - [ ] 7.2 All query functions require `orgId` parameter
-  - [ ] 7.3 `getByDateRange` and `getByCategory` accept optional `datasetIds` filter — caller decides which datasets to include (demo mode logic stays in service layer, not here)
-  - [ ] 7.4 Export from `apps/api/src/db/queries/index.ts` barrel
+- [x] Task 7: Create data rows query functions (AC: #1)
+  - [x] 7.1 Create `apps/api/src/db/queries/dataRows.ts` — `insertBatch`, `getByDateRange`, `getByCategory`, `getRowsByDataset`
+  - [x] 7.2 All query functions require `orgId` parameter
+  - [x] 7.3 `getByDateRange` and `getByCategory` accept optional `datasetIds` filter — caller decides which datasets to include (demo mode logic stays in service layer, not here)
+  - [x] 7.4 Export from `apps/api/src/db/queries/index.ts` barrel
 
-- [ ] Task 8: Create shared schemas for datasets (AC: #3)
-  - [ ] 8.1 Create `packages/shared/src/schemas/datasets.ts` — `sourceTypeSchema`, `datasetSchema`, `dataRowSchema`, `demoModeStateSchema`
-  - [ ] 8.2 Export types from `packages/shared/src/types/index.ts`
-  - [ ] 8.3 Re-export from `packages/shared/src/schemas/index.ts`
-  - [ ] 8.4 Rebuild shared: `pnpm --filter shared build`
+- [x] Task 8: Create shared schemas for datasets (AC: #3)
+  - [x] 8.1 Create `packages/shared/src/schemas/datasets.ts` — `sourceTypeSchema`, `datasetSchema`, `dataRowSchema`, `demoModeStateSchema`
+  - [x] 8.2 Export types from `packages/shared/src/types/index.ts`
+  - [x] 8.3 Re-export from `packages/shared/src/schemas/index.ts`
+  - [x] 8.4 Rebuild shared: `pnpm --filter shared build`
 
-- [ ] Task 9: Create seed data script (AC: #1, #4)
-  - [ ] 9.1 Create `apps/api/src/db/seed.ts` — **own DB connection** (same pattern as `migrate.ts`). Cannot import `lib/db.ts` because it imports `config.ts`, which Zod-validates ALL env vars (CLAUDE_API_KEY, STRIPE_SECRET_KEY, etc.) and crashes when they're absent. Seed script reads `process.env.DATABASE_URL` directly and creates a standalone `drizzle()` instance with the schema import. Same exception comment as migrate.ts.
-  - [ ] 9.2 Design 12 months of realistic small-business financial data (revenue, expenses, payroll, marketing, rent, supplies)
-  - [ ] 9.3 Include deliberate anomalies: (a) seasonal revenue spike in December, (b) marketing spend drop in Q3, (c) unusual payroll-to-revenue ratio in one month
-  - [ ] 9.4 Seed into a dedicated org identified by slug (`seed-demo`) — created if absent via upsert (`ON CONFLICT (slug) DO NOTHING`), looked up by slug on subsequent runs. Upsert prevents race condition if two containers start simultaneously. Anonymous dashboard queries find seed data via this slug, not a hardcoded org_id.
-  - [ ] 9.5 Idempotent: look up org by slug, check if seed dataset exists before inserting — skip gracefully if already seeded
-  - [ ] 9.6 RLS bypass: all seed inserts run inside a **single transaction** that begins with `SET LOCAL app.is_admin = 'true'`. `SET LOCAL` scopes the admin flag to the transaction only. The transaction wrapper also provides connection affinity — `SET LOCAL` and subsequent inserts must share the same DB connection. Seed script uses raw Drizzle `db.insert()` calls directly (not query module functions from `db/queries/`) because: (a) query functions import `lib/db.ts` which triggers `config.ts` validation, (b) the seed script's standalone db instance can't be injected into query functions without an optional tx parameter on every function. Direct Drizzle calls inside the seed script's own transaction are simpler and correct.
-  - [ ] 9.7 All seed data `amount` values must be **strings** (e.g., `'12500.00'`, not `12500`). Drizzle's `numeric` type maps to PostgreSQL `NUMERIC` which requires string input — passing numbers silently truncates or errors.
-  - [ ] 9.8 Log seed actions via console (not Pino — same reasoning as migrate.ts: Pino is app-level, seed runs before Express boots)
+- [x] Task 9: Create seed data script (AC: #1, #4)
+  - [x] 9.1 Create `apps/api/src/db/seed.ts` — **own DB connection** (same pattern as `migrate.ts`). Cannot import `lib/db.ts` because it imports `config.ts`, which Zod-validates ALL env vars (CLAUDE_API_KEY, STRIPE_SECRET_KEY, etc.) and crashes when they're absent. Seed script reads `process.env.DATABASE_URL` directly and creates a standalone `drizzle()` instance with the schema import. Same exception comment as migrate.ts.
+  - [x] 9.2 Design 12 months of realistic small-business financial data (revenue, expenses, payroll, marketing, rent, supplies)
+  - [x] 9.3 Include deliberate anomalies: (a) seasonal revenue spike in December, (b) marketing spend drop in Q3, (c) unusual payroll-to-revenue ratio in one month
+  - [x] 9.4 Seed into a dedicated org identified by slug (`seed-demo`) — created if absent via upsert (`ON CONFLICT (slug) DO NOTHING`), looked up by slug on subsequent runs. Upsert prevents race condition if two containers start simultaneously. Anonymous dashboard queries find seed data via this slug, not a hardcoded org_id.
+  - [x] 9.5 Idempotent: look up org by slug, check if seed dataset exists before inserting — skip gracefully if already seeded
+  - [x] 9.6 RLS bypass: all seed inserts run inside a **single transaction** that begins with `SET LOCAL app.is_admin = 'true'`. `SET LOCAL` scopes the admin flag to the transaction only. The transaction wrapper also provides connection affinity — `SET LOCAL` and subsequent inserts must share the same DB connection. Seed script uses raw Drizzle `db.insert()` calls directly (not query module functions from `db/queries/`) because: (a) query functions import `lib/db.ts` which triggers `config.ts` validation, (b) the seed script's standalone db instance can't be injected into query functions without an optional tx parameter on every function. Direct Drizzle calls inside the seed script's own transaction are simpler and correct.
+  - [x] 9.7 All seed data `amount` values must be **strings** (e.g., `'12500.00'`, not `12500`). Drizzle's `numeric` type maps to PostgreSQL `NUMERIC` which requires string input — passing numbers silently truncates or errors.
+  - [x] 9.8 Log seed actions via console (not Pino — same reasoning as migrate.ts: Pino is app-level, seed runs before Express boots)
 
-- [ ] Task 10: Update Docker entrypoint to run seed (AC: #1)
-  - [ ] 10.1 Add seed script execution after migrations in `entrypoint.sh`: `echo "Running seed..." && npx tsx src/db/seed.ts` (same tsx runner as migrate.ts). Place after the migration line and before the server start line.
-  - [ ] 10.2 Ensure seed script handles the case where DB is already seeded (idempotent — logs "already seeded" and exits 0)
+- [x] Task 10: Update Docker entrypoint to run seed (AC: #1)
+  - [x] 10.1 Add seed script execution after migrations in `entrypoint.sh`: `echo "Running seed..." && npx tsx src/db/seed.ts` (same tsx runner as migrate.ts). Place after the migration line and before the server start line.
+  - [x] 10.2 Ensure seed script handles the case where DB is already seeded (idempotent — logs "already seeded" and exits 0)
 
-- [ ] Task 11: Add demo mode constants to shared package (AC: #2)
-  - [ ] 11.1 Add `DEMO_MODE_STATES` constant to `packages/shared/src/constants/index.ts`
-  - [ ] 11.2 Add `SEED_ORG` constant (`{ slug: 'seed-demo', name: 'Sunrise Cafe' }`) for seed data org identification
-  - [ ] 11.3 Rebuild shared: `pnpm --filter shared build`
+- [x] Task 11: Add demo mode constants to shared package (AC: #2)
+  - [x] 11.1 Add `DEMO_MODE_STATES` constant to `packages/shared/src/constants/index.ts`
+  - [x] 11.2 Add `SEED_ORG` constant (`{ slug: 'seed-demo', name: 'Sunrise Cafe' }`) for seed data org identification
+  - [x] 11.3 Rebuild shared: `pnpm --filter shared build`
 
-- [ ] Task 12: Write tests (AC: #1, #2, #3, #5)
-  - [ ] 12.0 Add `vitest` as devDependency to `packages/shared` + create `vitest.config.ts` (Epic 1 retro tech debt #2 — `pnpm test` fails at root without this)
-  - [ ] 12.1 Unit tests for `getDemoModeState` — test `empty` and `user_only` states (the two states user orgs hit under Option C)
-  - [ ] 12.2 Unit tests for `getSeedOrgId` + `resetSeedOrgCache` in `orgs.test.ts` — cache behavior, cache reset, throws when absent
-  - [ ] 12.3 Unit tests for `getSeedDataset` — returns seed dataset when present, null when absent
-  - [ ] 12.4 Unit tests for `createDataset` — verify org_id and is_seed_data are set
-  - [ ] 12.5 Unit tests for `insertBatch` — verify bulk insertion
-  - [ ] 12.6 Unit tests for seed script — verify idempotency, verify RLS bypass (`SET LOCAL app.is_admin`), verify 72 rows generated, verify amounts are strings, verify anomaly data points present
-  - [ ] 12.7 Schema validation tests for shared dataset schemas (in `packages/shared/` — now possible with vitest added)
+- [x] Task 12: Write tests (AC: #1, #2, #3, #5)
+  - [x] 12.0 Add `vitest` as devDependency to `packages/shared` + create `vitest.config.ts` (Epic 1 retro tech debt #2 — `pnpm test` fails at root without this)
+  - [x] 12.1 Unit tests for `getDemoModeState` — test `empty` and `user_only` states (the two states user orgs hit under Option C)
+  - [x] 12.2 Unit tests for `getSeedOrgId` + `resetSeedOrgCache` in `orgs.test.ts` — cache behavior, cache reset, throws when absent
+  - [x] 12.3 Unit tests for `getSeedDataset` — returns seed dataset when present, null when absent
+  - [x] 12.4 Unit tests for `createDataset` — verify org_id and is_seed_data are set
+  - [x] 12.5 Unit tests for `insertBatch` — verify bulk insertion
+  - [x] 12.6 Unit tests for seed script — verify idempotency, verify RLS bypass (`SET LOCAL app.is_admin`), verify 72 rows generated, verify amounts are strings, verify anomaly data points present
+  - [x] 12.7 Schema validation tests for shared dataset schemas (in `packages/shared/` — now possible with vitest added)
 
-- [ ] Task 13: Generate `_explained.md` docs for new files
+- [x] Task 13: Generate `_explained.md` docs for new files
 
-- [ ] Task 14: Verify lint + type-check pass
-  - [ ] 14.1 `pnpm turbo lint`
-  - [ ] 14.2 `pnpm turbo type-check`
-  - [ ] 14.3 `pnpm test`
+- [x] Task 14: Verify lint + type-check pass
+  - [x] 14.1 `pnpm turbo lint`
+  - [x] 14.2 `pnpm turbo type-check`
+  - [x] 14.3 `pnpm test`
 
-- [ ] Task 15: Update sprint status
+- [x] Task 15: Update sprint status
 
 ## Dev Notes
 
@@ -479,3 +479,51 @@ Task numbering doesn't imply strict ordering. Dependencies require this sequence
 - [Source: apps/api/src/db/schema.ts — existing table definition pattern]
 - [Source: apps/api/drizzle/migrations/0001_add-rls-policies.sql — RLS pattern]
 - [Source: apps/api/src/db/queries/orgInvites.ts — query function pattern]
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 4.6
+
+### Debug Log References
+
+- Drizzle migration generation required dummy DATABASE_URL — used `DATABASE_URL=postgres://x@x/x pnpm --filter api db:generate`
+- Custom RLS migration needed manual `_journal.json` entry (idx: 6) — verified present
+- Shared package rebuild required after adding dataset schemas/constants
+
+### Completion Notes List
+
+- All 15 task groups implemented (Tasks 1-15)
+- Docker compose-up verification (Task 1) documented — Epic 1 tech debt item addressed
+- Schema: `sourceTypeEnum` pgEnum + `datasets` + `data_rows` tables added to `schema.ts`
+- Drizzle migration `0005_*.sql` auto-generated for schema changes
+- Custom RLS migration `0006_add-rls-datasets-datarows.sql` created with tenant isolation + admin bypass
+- Query functions: 4 in `datasets.ts`, 4 in `dataRows.ts`, 2 added to `orgs.ts` (`getSeedOrgId`, `resetSeedOrgCache`)
+- Seed script (`seed.ts`): standalone DB connection, 72 rows (12 months x 6 categories), idempotent, RLS bypass via `SET LOCAL app.is_admin = 'true'`
+- Shared package: `sourceTypeSchema`, `demoModeStateSchema`, `datasetSchema`, `dataRowSchema` + `DEMO_MODE_STATES`, `SEED_ORG` constants
+- Demo mode: 4-state enum implemented, user orgs effectively hit `empty` or `user_only` under Option C
+- All amounts stored as strings per Drizzle numeric(12,2) convention
+- `entrypoint.sh` updated to run seed after migrations
+- Vitest added to `packages/shared` (Epic 1 retro tech debt #2)
+
+### File List
+
+**New files:**
+- `apps/api/src/db/queries/datasets.ts` — createDataset, getDatasetsByOrg, getDemoModeState, getSeedDataset
+- `apps/api/src/db/queries/dataRows.ts` — insertBatch, getByDateRange, getByCategory, getRowsByDataset
+- `apps/api/src/db/seed.ts` — standalone seed script with own DB connection
+- `apps/api/drizzle/migrations/0005_*.sql` — datasets + data_rows schema migration
+- `apps/api/drizzle/migrations/0006_add-rls-datasets-datarows.sql` — RLS policies
+- `packages/shared/src/schemas/datasets.ts` — Zod schemas for dataset types
+- `packages/shared/src/types/datasets.ts` — TypeScript types inferred from schemas
+- Test files for queries and seed script
+
+**Modified files:**
+- `apps/api/src/db/schema.ts` — added sourceTypeEnum, datasets, data_rows tables + relations
+- `apps/api/src/db/queries/orgs.ts` — added getSeedOrgId, resetSeedOrgCache
+- `apps/api/src/db/queries/index.ts` — added dataset + dataRow query exports
+- `apps/api/entrypoint.sh` — added seed.ts execution
+- `packages/shared/src/constants/index.ts` — added DEMO_MODE_STATES, SEED_ORG
+- `packages/shared/src/schemas/index.ts` — added dataset schema exports
+- `packages/shared/src/types/index.ts` — added dataset type exports

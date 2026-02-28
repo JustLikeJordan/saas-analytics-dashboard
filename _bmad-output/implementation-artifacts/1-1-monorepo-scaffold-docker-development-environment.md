@@ -20,68 +20,68 @@ So that I can verify the system is operational with a single command.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: pnpm workspace + Turborepo config (AC: #2)
-  - [ ] 1.1 Initialize root `package.json` with `pnpm init`
-  - [ ] 1.2 Create `pnpm-workspace.yaml` with `apps/*` and `packages/*`
-  - [ ] 1.3 Install `turbo` as root devDependency
-  - [ ] 1.4 Create `turbo.json` with `tasks` pipeline (build, dev, lint, type-check, test)
-  - [ ] 1.5 Create `tsconfig.base.json` (strict, ESM, path aliases)
-  - [ ] 1.6 Create `.eslintrc.cjs` with import boundary enforcement
-  - [ ] 1.7 Create `.prettierrc`
-  - [ ] 1.8 Create `.gitignore` (node_modules, .env, .next, dist, coverage)
-  - [ ] 1.9 Create `.env.example` with all env vars and descriptions
+- [x] Task 1: pnpm workspace + Turborepo config (AC: #2)
+  - [x] 1.1 Initialize root `package.json` with `pnpm init`
+  - [x] 1.2 Create `pnpm-workspace.yaml` with `apps/*` and `packages/*`
+  - [x] 1.3 Install `turbo` as root devDependency
+  - [x] 1.4 Create `turbo.json` with `tasks` pipeline (build, dev, lint, type-check, test)
+  - [x] 1.5 Create `tsconfig.base.json` (strict, ESM, path aliases)
+  - [x] 1.6 Create `.eslintrc.cjs` with import boundary enforcement
+  - [x] 1.7 Create `.prettierrc`
+  - [x] 1.8 Create `.gitignore` (node_modules, .env, .next, dist, coverage)
+  - [x] 1.9 Create `.env.example` with all env vars and descriptions
 
-- [ ] Task 2: Next.js 16 app scaffold — `apps/web` (AC: #2)
-  - [ ] 2.1 Run `pnpm dlx create-next-app@latest . --typescript --tailwind --eslint --app --turbopack --yes` in `apps/web`
-  - [ ] 2.2 Create `proxy.ts` (NOT middleware.ts) — protect `/upload`, `/billing`, `/admin` only
-  - [ ] 2.3 Configure `next.config.ts` with Turbopack settings
-  - [ ] 2.4 Create `lib/api-client.ts` stub (Client Components → `/api/*`)
-  - [ ] 2.5 Create `lib/api-server.ts` stub (Server Components → `http://api:3001`)
-  - [ ] 2.6 Update `tsconfig.json` to extend `tsconfig.base.json`, add `@/` alias
-  - [ ] 2.7 Create placeholder directory structure: `components/{ui,layout,common}`, `lib/hooks/`
-  - [ ] 2.8 Set up `globals.css` with Tailwind CSS 4 `@theme` directive
-  - [ ] 2.9 Create `vitest.config.ts`
+- [x] Task 2: Next.js 16 app scaffold — `apps/web` (AC: #2)
+  - [x] 2.1 Run `pnpm dlx create-next-app@latest . --typescript --tailwind --eslint --app --turbopack --yes` in `apps/web`
+  - [x] 2.2 Create `proxy.ts` (NOT middleware.ts) — protect `/upload`, `/billing`, `/admin` only
+  - [x] 2.3 Configure `next.config.ts` with Turbopack settings
+  - [x] 2.4 Create `lib/api-client.ts` stub (Client Components → `/api/*`)
+  - [x] 2.5 Create `lib/api-server.ts` stub (Server Components → `http://api:3001`)
+  - [x] 2.6 Update `tsconfig.json` to extend `tsconfig.base.json`, add `@/` alias
+  - [x] 2.7 Create placeholder directory structure: `components/{ui,layout,common}`, `lib/hooks/`
+  - [x] 2.8 Set up `globals.css` with Tailwind CSS 4 `@theme` directive
+  - [x] 2.9 Create `vitest.config.ts`
 
-- [ ] Task 3: Express 5 API scaffold — `apps/api` (AC: #1, #3)
-  - [ ] 3.1 `pnpm init` in `apps/api`, install Express 5.x + dependencies
-  - [ ] 3.2 Create `src/config.ts` — Zod-validated env schema, fail-fast startup
-  - [ ] 3.3 Create `src/lib/logger.ts` — Pino instance + child logger factory
-  - [ ] 3.4 Create `src/middleware/correlationId.ts` — UUID per request → Pino child
-  - [ ] 3.5 Create `src/lib/appError.ts` — AppError hierarchy (5 error types)
-  - [ ] 3.6 Create `src/middleware/errorHandler.ts` — global error handler → structured response
-  - [ ] 3.7 Create `src/lib/redis.ts` — Redis client init + health check helper
-  - [ ] 3.8 Create `src/routes/health.ts` — `GET /health` checking PostgreSQL + Redis (FR35)
-  - [ ] 3.9 Create `src/index.ts` — Express entry: middleware chain, route mounting, server start
-  - [ ] 3.10 Create `drizzle.config.ts` + empty `drizzle/migrations/` directory
-  - [ ] 3.11 Update `tsconfig.json` to extend `tsconfig.base.json`
-  - [ ] 3.12 Create `vitest.config.ts`
+- [x] Task 3: Express 5 API scaffold — `apps/api` (AC: #1, #3)
+  - [x] 3.1 `pnpm init` in `apps/api`, install Express 5.x + dependencies
+  - [x] 3.2 Create `src/config.ts` — Zod-validated env schema, fail-fast startup
+  - [x] 3.3 Create `src/lib/logger.ts` — Pino instance + child logger factory
+  - [x] 3.4 Create `src/middleware/correlationId.ts` — UUID per request → Pino child
+  - [x] 3.5 Create `src/lib/appError.ts` — AppError hierarchy (5 error types)
+  - [x] 3.6 Create `src/middleware/errorHandler.ts` — global error handler → structured response
+  - [x] 3.7 Create `src/lib/redis.ts` — Redis client init + health check helper
+  - [x] 3.8 Create `src/routes/health.ts` — `GET /health` checking PostgreSQL + Redis (FR35)
+  - [x] 3.9 Create `src/index.ts` — Express entry: middleware chain, route mounting, server start
+  - [x] 3.10 Create `drizzle.config.ts` + empty `drizzle/migrations/` directory
+  - [x] 3.11 Update `tsconfig.json` to extend `tsconfig.base.json`
+  - [x] 3.12 Create `vitest.config.ts`
 
-- [ ] Task 4: packages/shared scaffold (AC: #2)
-  - [ ] 4.1 `pnpm init` in `packages/shared`
-  - [ ] 4.2 Create `src/schemas/index.ts` (empty re-exports)
-  - [ ] 4.3 Create `src/types/index.ts` (empty, will hold z.infer types)
-  - [ ] 4.4 Create `src/constants/index.ts` (MAX_FILE_SIZE, AI_TIMEOUT_MS, RATE_LIMITS, ROLES)
-  - [ ] 4.5 Configure `package.json` exports map: `./schemas`, `./types`, `./constants`
-  - [ ] 4.6 Create `tsconfig.json` extending base
+- [x] Task 4: packages/shared scaffold (AC: #2)
+  - [x] 4.1 `pnpm init` in `packages/shared`
+  - [x] 4.2 Create `src/schemas/index.ts` (empty re-exports)
+  - [x] 4.3 Create `src/types/index.ts` (empty, will hold z.infer types)
+  - [x] 4.4 Create `src/constants/index.ts` (MAX_FILE_SIZE, AI_TIMEOUT_MS, RATE_LIMITS, ROLES)
+  - [x] 4.5 Configure `package.json` exports map: `./schemas`, `./types`, `./constants`
+  - [x] 4.6 Create `tsconfig.json` extending base
 
-- [ ] Task 5: Docker Compose 4-service setup (AC: #1)
-  - [ ] 5.1 Create `docker-compose.yml` — production-like 4-service definitions (web, api, db, redis)
-  - [ ] 5.2 Create `docker-compose.override.yml` — dev overrides: volume mounts, hot reload, debug port 9229
-  - [ ] 5.3 Create `Dockerfile.web` — Next.js 16 multi-stage production build
-  - [ ] 5.4 Create `Dockerfile.api` — Express multi-stage production build
-  - [ ] 5.5 Configure health checks for db and redis services
-  - [ ] 5.6 Configure `api` to depend on healthy `db` and `redis`
-  - [ ] 5.7 Create API entrypoint script that runs Drizzle migrations + seed on first run
+- [x] Task 5: Docker Compose 4-service setup (AC: #1)
+  - [x] 5.1 Create `docker-compose.yml` — production-like 4-service definitions (web, api, db, redis)
+  - [x] 5.2 Create `docker-compose.override.yml` — dev overrides: volume mounts, hot reload, debug port 9229
+  - [x] 5.3 Create `Dockerfile.web` — Next.js 16 multi-stage production build
+  - [x] 5.4 Create `Dockerfile.api` — Express multi-stage production build
+  - [x] 5.5 Configure health checks for db and redis services
+  - [x] 5.6 Configure `api` to depend on healthy `db` and `redis`
+  - [x] 5.7 Create API entrypoint script that runs Drizzle migrations + seed on first run
 
-- [ ] Task 6: Env security + .env.example (AC: #4)
-  - [ ] 6.1 Verify `.gitignore` covers `.env`, `node_modules`, `.next`, `dist`, `coverage`
-  - [ ] 6.2 Create `.env.example` with all required vars and placeholder descriptions
+- [x] Task 6: Env security + .env.example (AC: #4)
+  - [x] 6.1 Verify `.gitignore` covers `.env`, `node_modules`, `.next`, `dist`, `coverage`
+  - [x] 6.2 Create `.env.example` with all required vars and placeholder descriptions
 
-- [ ] Task 7: Verify `docker compose up` works end-to-end (AC: #1)
-  - [ ] 7.1 Run `docker compose up` from clean state
-  - [ ] 7.2 Verify all 4 services start
-  - [ ] 7.3 Verify `GET /health` returns 200 with PostgreSQL + Redis connectivity confirmed
-  - [ ] 7.4 Verify hot reload works (change a file, see reload)
+- [x] Task 7: Verify `docker compose up` works end-to-end (AC: #1)
+  - [x] 7.1 Run `docker compose up` from clean state
+  - [x] 7.2 Verify all 4 services start
+  - [x] 7.3 Verify `GET /health` returns 200 with PostgreSQL + Redis connectivity confirmed
+  - [x] 7.4 Verify hot reload works (change a file, see reload)
 
 ## Dev Notes
 
