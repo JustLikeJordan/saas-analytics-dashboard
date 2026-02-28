@@ -4,6 +4,7 @@ const mockFindMany = vi.fn();
 const mockFindFirst = vi.fn();
 const mockReturning = vi.fn();
 const mockValues = vi.fn(() => ({ returning: mockReturning }));
+const mockDeleteWhere = vi.fn();
 
 vi.mock('../../lib/db.js', () => ({
   db: {
@@ -14,10 +15,11 @@ vi.mock('../../lib/db.js', () => ({
       },
     },
     insert: vi.fn().mockReturnValue({ values: mockValues }),
+    delete: vi.fn().mockReturnValue({ where: mockDeleteWhere }),
   },
 }));
 
-const { createDataset, getDatasetsByOrg, getUserOrgDemoState, getSeedDataset } =
+const { createDataset, getDatasetsByOrg, getUserOrgDemoState, getSeedDataset, deleteSeedDatasets } =
   await import('./datasets.js');
 
 describe('datasets queries', () => {
@@ -80,6 +82,39 @@ describe('datasets queries', () => {
       const state = await getUserOrgDemoState(10);
 
       expect(state).toBe('user_only');
+    });
+
+    it('uses a custom transaction client when provided', async () => {
+      const txFindFirst = vi.fn().mockResolvedValueOnce({ id: 1, isSeedData: false });
+      const txClient = { query: { datasets: { findFirst: txFindFirst } } };
+
+      const state = await getUserOrgDemoState(10, txClient as never);
+
+      expect(state).toBe('user_only');
+      expect(txFindFirst).toHaveBeenCalledOnce();
+      expect(mockFindFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteSeedDatasets', () => {
+    it('deletes via the default db client', async () => {
+      const { db } = await import('../../lib/db.js');
+      await deleteSeedDatasets(10);
+
+      expect(db.delete).toHaveBeenCalledOnce();
+      expect(mockDeleteWhere).toHaveBeenCalledOnce();
+    });
+
+    it('uses a custom transaction client when provided', async () => {
+      const txDeleteWhere = vi.fn();
+      const txClient = { delete: vi.fn().mockReturnValue({ where: txDeleteWhere }) };
+
+      await deleteSeedDatasets(10, txClient as never);
+
+      expect(txClient.delete).toHaveBeenCalledOnce();
+      expect(txDeleteWhere).toHaveBeenCalledOnce();
+      const { db } = await import('../../lib/db.js');
+      expect(db.delete).not.toHaveBeenCalled();
     });
   });
 

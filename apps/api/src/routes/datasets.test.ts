@@ -5,6 +5,8 @@ import { validCsv, missingColumn, emptyFile, mixedCaseHeaders } from '../test/fi
 const mockVerifyAccessToken = vi.fn();
 const mockTrackEvent = vi.fn();
 const mockCreateDataset = vi.fn();
+const mockDeleteSeedDatasets = vi.fn();
+const mockGetUserOrgDemoState = vi.fn();
 const mockInsertBatch = vi.fn();
 
 vi.mock('../services/auth/tokenService.js', () => ({
@@ -33,6 +35,8 @@ vi.mock('../lib/logger.js', () => ({
 
 vi.mock('../db/queries/datasets.js', () => ({
   createDataset: mockCreateDataset,
+  deleteSeedDatasets: mockDeleteSeedDatasets,
+  getUserOrgDemoState: mockGetUserOrgDemoState,
 }));
 
 vi.mock('../db/queries/dataRows.js', () => ({
@@ -40,7 +44,7 @@ vi.mock('../db/queries/dataRows.js', () => ({
 }));
 
 vi.mock('../lib/db.js', () => ({
-  db: { transaction: vi.fn(async (fn: Function) => fn({})) },
+  db: { transaction: vi.fn(async (fn: (tx: Record<string, unknown>) => unknown) => fn({})) },
 }));
 
 const { createTestApp } = await import('../test/helpers/testApp.js');
@@ -72,7 +76,7 @@ interface ErrorBody {
 }
 
 interface ConfirmBody {
-  data: { datasetId: number; rowCount: number };
+  data: { datasetId: number; rowCount: number; demoState: string };
 }
 
 let server: http.Server;
@@ -248,6 +252,8 @@ describe('POST /datasets/confirm', () => {
   beforeEach(() => {
     mockCreateDataset.mockResolvedValue({ id: 7, orgId: 10, name: 'test.csv' });
     mockInsertBatch.mockResolvedValue([]);
+    mockDeleteSeedDatasets.mockResolvedValue(undefined);
+    mockGetUserOrgDemoState.mockResolvedValue('user_only');
   });
 
   it('persists data with valid preview token', async () => {
@@ -299,6 +305,25 @@ describe('POST /datasets/confirm', () => {
       'dataset.confirmed',
       expect.objectContaining({ datasetId: 7, rowCount: 3 }),
     );
+  });
+
+  it('includes demoState in confirm response', async () => {
+    const token = await getPreviewToken(validCsv);
+    mockVerifyAccessToken.mockResolvedValueOnce(userPayload());
+
+    const res = await confirmCsv(validCsv, 'test.csv', token);
+    const body = (await res.json()) as ConfirmBody;
+
+    expect(body.data.demoState).toBe('user_only');
+  });
+
+  it('calls deleteSeedDatasets within the transaction', async () => {
+    const token = await getPreviewToken(validCsv);
+    mockVerifyAccessToken.mockResolvedValueOnce(userPayload());
+
+    await confirmCsv(validCsv, 'test.csv', token);
+
+    expect(mockDeleteSeedDatasets).toHaveBeenCalledWith(10, expect.anything());
   });
 
   it('rejects when preview token is missing', async () => {
