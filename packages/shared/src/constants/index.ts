@@ -33,6 +33,7 @@ export const ANALYTICS_EVENTS = {
   AI_SUMMARY_COMPLETED: 'ai.summary_completed',
   SHARE_CREATED: 'share.created',
   SHARE_VIEWED: 'share.viewed',
+  DASHBOARD_VIEWED: 'dashboard.viewed',
 } as const;
 
 export type AnalyticsEventName =
@@ -62,6 +63,15 @@ export const CSV_REQUIRED_COLUMNS = ['date', 'amount', 'category'] as const;
 export const CSV_OPTIONAL_COLUMNS = ['label', 'parent_category'] as const;
 export const CSV_MAX_ROWS = 50_000;
 export const ACCEPTED_FILE_TYPES = ['.csv', 'text/csv', 'application/vnd.ms-excel'] as const;
+
+export const CHART_CONFIG = {
+  ANIMATION_DURATION_MS: 500,
+  ANIMATION_EASING: 'ease-in-out' as const,
+  SKELETON_PULSE_MS: 1500,
+  RESIZE_DEBOUNCE_MS: 200,
+  LAZY_THRESHOLD: 0.1,
+  SKELETON_FADE_MS: 150,
+} as const;
 
 export const DEMO_MODE_STATES = {
   SEED_ONLY: 'seed_only',
