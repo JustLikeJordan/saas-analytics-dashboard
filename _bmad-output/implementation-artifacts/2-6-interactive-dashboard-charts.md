@@ -503,3 +503,33 @@ Claude Opus 4.6 (claude-opus-4-6)
 - `pnpm test`: 291 pass (210 API + 81 web), 0 fail
 - `pnpm type-check`: clean
 - `pnpm lint`: clean
+
+## Senior Developer Review #2 (AI)
+
+**Reviewer:** Claude Opus 4.6 — 2026-02-28
+**Outcome:** Approved (after fixes)
+
+### Issues Found and Fixed (7 total: 3 HIGH, 4 MEDIUM)
+
+**HIGH — Fixed:**
+1. `getMonth()` 0-based key producing invalid ISO months (`"2025-00"`) — fixed with `getMonth() + 1` and adjusted decode
+2. `aria-live="assertive"` on chart tooltips spamming screen readers — changed to `"polite"` on both RevenueTooltip and ExpenseTooltip
+3. No focus trap in Sheet overlay — keyboard users could Tab out of modal dialog. Added focus trap with Tab/Shift+Tab cycling and focus restore on close
+
+**MEDIUM — Fixed:**
+4. `computeTrend` returned 0 for `prev=0, last<0` — now returns -100 so TrendBadge correctly shows decline
+5. `useReducedMotion` created new `matchMedia` per call — refactored to module-level singleton
+6. SWR `revalidateOnFocus: false` prevented data refresh after upload — re-enabled
+7. Custom tooltip components had zero test coverage — exported RevenueTooltip/ExpenseTooltip and added 8 tests (4 per tooltip)
+
+**FALSE POSITIVE (dismissed):**
+- `dashboard.viewed` analytics event "missing" — reviewer grepped `apps/web` only. Event fires server-side in `apps/api/src/routes/dashboard.ts:42` for authenticated users. Task 7 notes partial FR40 coverage.
+
+**LOW — Not fixed (non-blocking):**
+- Unbounded query on public endpoint (charts.ts:19-22) — documented trade-off, future story
+- ChartErrorBoundary `componentDidCatch` — deferred to Sentry integration
+
+### Post-Fix Verification
+- `pnpm test`: 301 pass (211 API + 90 web), 0 fail
+- `pnpm type-check`: clean
+- `pnpm lint`: clean
