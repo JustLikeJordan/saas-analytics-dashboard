@@ -136,9 +136,20 @@ export const csvAdapter: DataSourceAdapter = {
       relax_column_count: true,
     });
 
-    // Extract raw headers from the first line
-    const headerLine = content.split(/\r?\n/)[0] ?? '';
-    const rawHeaders = headerLine.split(',').map((h) => h.trim());
+    // csv-parse handles quoted headers correctly (e.g. "Revenue, Q1")
+    // — naive split(',') would break on those
+    let rawHeaders: string[];
+    if (records.length > 0) {
+      rawHeaders = Object.keys(records[0]!);
+    } else {
+      const headerRows: string[][] = parse(content, {
+        columns: false,
+        to: 1,
+        skip_empty_lines: true,
+        trim: true,
+      });
+      rawHeaders = headerRows[0] ?? [];
+    }
 
     if (records.length === 0) {
       return {

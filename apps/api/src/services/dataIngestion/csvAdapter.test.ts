@@ -13,6 +13,7 @@ import {
   trailingNewlines,
   partiallyValid,
   mostlyInvalid,
+  quotedHeaders,
 } from '../../test/fixtures/csvFiles.js';
 
 function toBuffer(content: string): Buffer {
@@ -108,6 +109,13 @@ describe('csvAdapter.parse', () => {
     const result = csvAdapter.parse(toBuffer(mostlyInvalid));
     expect(result.rows).toHaveLength(0);
     expect(result.rowCount).toBe(3);
+  });
+
+  it('handles quoted headers containing commas', () => {
+    const result = csvAdapter.parse(toBuffer(quotedHeaders));
+    expect(result.headers).toContain('Revenue, Q1');
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!['Revenue, Q1']).toBe('5000.00');
   });
 });
 

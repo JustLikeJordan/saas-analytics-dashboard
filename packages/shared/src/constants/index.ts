@@ -27,6 +27,7 @@ export const ANALYTICS_EVENTS = {
   ORG_INVITE_SENT: 'org.invite_sent',
   ORG_INVITE_ACCEPTED: 'org.invite_accepted',
   DATASET_UPLOADED: 'dataset.uploaded',
+  DATASET_CONFIRMED: 'dataset.confirmed',
   DATASET_DELETED: 'dataset.deleted',
   AI_SUMMARY_REQUESTED: 'ai.summary_requested',
   AI_SUMMARY_COMPLETED: 'ai.summary_completed',

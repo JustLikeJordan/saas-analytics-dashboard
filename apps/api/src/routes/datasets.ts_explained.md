@@ -1,104 +1,177 @@
-# datasets.ts — Explained
+# datasets.ts — Interview-Ready Documentation
 
 ## 1. 30-Second Elevator Pitch
 
-This file is an Express 5 route handler that accepts CSV file uploads from small business owners, validates the file in three stages, and returns a structured preview of the data. Think of airport security with three checkpoints: multer checks file size and MIME type, the CSV adapter parses and validates structure, and the handler assembles a preview with sample rows, column types, and warnings. No data hits the database here — this is "parse, validate, preview." Actual persistence happens in Story 2.3. The route lives behind authentication middleware, so only logged-in users in a known org can reach it.
+This file handles the two-step CSV upload flow: preview and confirm. When a user picks a CSV file, the preview endpoint parses it, validates the data, and sends back a summary with sample rows, column types, and a cryptographically signed token. The confirm endpoint persists the data to PostgreSQL — but only after verifying that token proves the file hasn't been swapped since the user previewed it.
 
-**How to say it in an interview:** "This is the CSV upload endpoint — an Express 5 route handler with three-layer validation: multer for size/type, the CSV adapter for structural parsing, and semantic checks for headers and row quality. It returns a preview for user confirmation, not a database write. Express 5's native async error propagation means no try/catch wrappers."
+**How to say it in an interview:** "This is a two-phase upload system with TOCTOU protection. The preview endpoint validates the CSV and returns an HMAC-signed token binding the file's SHA-256 hash to the user's org. The confirm endpoint verifies that token before persisting, preventing file-swap attacks between preview and commit."
 
 ---
 
 ## 2. Why This Approach?
 
-### Decision 1: Preview before persist
+### Decision 1: Two-phase upload (preview -> confirm) instead of single upload
 
-**What's happening:** The route stops short of writing anything to the database. It returns a `PreviewData` object so the frontend can show users what was parsed.
+**What's happening:** Instead of uploading and saving data in one shot, the user first uploads to see a preview — column names, sample rows, row counts, warnings. Only after they click "Confirm" does the data get written to the database. Think of it like a "dry run" before the real thing.
 
-**Why it matters:** Non-technical business owners shouldn't be surprised by what happens after they upload. Show them what you understood — row count, sample data, column types, warnings. They say "looks right," and a separate endpoint does the write.
+**How to say it in an interview:** "We split upload into preview and confirm phases so users can catch column mismatches or data quality issues before committing. This reduces support burden from bad uploads and gives us a natural place to inject integrity verification."
 
-**How to say it in an interview:** "Preview-before-persist is a UX decision. The response gives the frontend everything needed to render a confirmation table without another API call. Users verify before committing."
+**Over alternative:** A single-step upload that auto-imports everything. Simpler, but users can't catch mistakes before they're persisted.
 
-**Over alternative:** Write-on-upload is simpler but doesn't give users a chance to catch mistakes.
+### Decision 2: HMAC-signed stateless preview tokens instead of server-side session storage
 
-### Decision 2: Three-layer validation pipeline
+**What's happening:** After previewing, the server creates a token containing the file's SHA-256 hash, the org ID, and a timestamp — then signs it with HMAC-SHA-256 using the server's JWT secret. When the user confirms, the server re-hashes the uploaded file and checks whether the token's hash matches. No database row, no Redis key, no session state.
 
-**What's happening:** Multer handles coarse checks (size, MIME), `csvAdapter.parse()` handles structural parsing (empty files, row counts, value validation), `csvAdapter.validate()` handles semantic checks (required columns).
+Think of a notarized document. The notary (server) stamps it with a tamper-evident seal. If anyone changes the document after stamping, the seal breaks — you don't need to keep a copy of the original to detect tampering.
 
-**Why it matters:** Each layer has a single job. Multer never knows about CSV column names. The CSV adapter never knows about HTTP multipart boundaries. Layers are ordered cheap-to-expensive: reject on size before parsing, reject on headers before validating 50,000 rows.
+**How to say it in an interview:** "I used an HMAC-signed token containing a SHA-256 file hash, org ID, and timestamp. The server verifies the token at confirm time by recomputing the HMAC and comparing hashes. It's stateless — no Redis or DB storage needed — and uses timing-safe comparison to prevent side-channel attacks."
 
-**How to say it in an interview:** "Validation is layered cheap-to-expensive: file size first, then structure, then content. Each failure mode produces a distinct user-facing message."
+**Over alternative:** Storing the file hash in Redis with a TTL. Works, but adds a cache dependency for correctness (if Redis evicts the key, the user can't confirm). The HMAC approach is zero-infrastructure and survives server restarts.
 
-### Decision 3: Memory storage over disk
+### Decision 3: `timingSafeEqual` for HMAC comparison
 
-**What's happening:** Multer uses `memoryStorage()` — the file lives as a Buffer in Node's heap during the request.
+**What's happening:** When you compare two strings with `===`, the computer stops comparing as soon as it finds a difference. An attacker can measure how long the comparison takes to figure out how many bytes of their forged signature are correct, then iterate. `timingSafeEqual` always takes the same time regardless of where the difference is.
 
-**Why it matters:** Disk storage means temp files, cleanup logic, race conditions on container restarts. Memory keeps the code simple and deployment stateless. With a 10MB limit, heap pressure is manageable.
+**How to say it in an interview:** "I used Node's `timingSafeEqual` for the HMAC comparison to prevent timing side-channel attacks. Regular string comparison leaks information about how many bytes match, which lets an attacker forge signatures iteratively."
 
-**How to say it in an interview:** "Memory storage keeps the upload stateless. The buffer exists for the request lifetime and gets GC'd after. With a 10MB cap, heap pressure is bounded."
+**Over alternative:** Plain `===` comparison. Functionally correct but leaks timing information. One line fix for a real attack vector.
 
-### Decision 4: Express 5 async error propagation
+### Decision 4: Key normalization in `normalizeSampleRows` at the route level
 
-**What's happening:** No `try/catch` wrapping the handler body. Express 5 catches rejected promises from async handlers and forwards them to error middleware.
+**What's happening:** csv-parse returns row objects keyed by the original header text — so if the file says `Date,Amount,Category`, the row keys are `Date`, `Amount`, `Category`. But the preview response sends lowercase headers (`date`, `amount`, `category`). Without normalization, the frontend gets headers that don't match the row keys and renders empty table cells.
 
-**Why it matters:** Every `throw new ValidationError(...)` produces a consistent 400 response without formatting logic at the throw site. The global error handler shapes it into `{ error: { code, message, details } }`.
+**How to say it in an interview:** "csv-parse preserves original header casing in row objects, but we normalize headers to lowercase for consistency. I added a `normalizeSampleRows` function that remaps each row's keys to match the normalized headers, so the frontend always gets a consistent key space."
+
+**Over alternative:** Normalizing inside the adapter. We avoided that because the adapter is a general-purpose parsing layer — other callers might need original-case keys. Normalization at the route level keeps the adapter reusable.
+
+### Decision 5: Express 5 async error propagation
+
+**What's happening:** No `try/catch` wrapping the handler bodies. Express 5 catches rejected promises from async handlers and forwards them to error middleware.
 
 **How to say it in an interview:** "Express 5 natively catches async rejections. The code just throws and trusts the framework to route errors to the global handler. In Express 4 you'd need try/catch or express-async-errors."
-
-### Decision 5: Custom multer error bridge
-
-**What's happening:** `handleMulterError` sits between `upload.single('file')` and the main handler, translating multer's internal error objects into `ValidationError` instances.
-
-**Why it matters:** Multer throws its own error format with a `code` property. The global error handler expects `AppError` subclasses. This four-line bridge translates between them with a user-friendly message.
-
-**How to say it in an interview:** "The multer error bridge is an adapter at the error boundary — translating framework-specific errors into our domain's error hierarchy."
 
 ---
 
 ## 3. Code Walkthrough
 
-### Multer configuration (lines 14-25)
+### Multer setup (lines 18-29)
 
-Three things: memory storage, a file size limit from shared constants, and a MIME filter that accepts `text/csv`, `application/vnd.ms-excel`, and `text/plain`. Also accepts any file ending in `.csv` as a fallback.
+Configures file upload handling with in-memory storage, a 10MB size limit, and MIME type filtering. The `fileFilter` callback accepts CSV-adjacent MIME types and falls back to checking the `.csv` extension — some browsers report CSVs as `text/plain` or `application/vnd.ms-excel`.
 
-### handleMulterError (lines 27-35)
+### Multer error handler (lines 31-39)
 
-Express error middleware (four arguments). Checks for multer's `LIMIT_FILE_SIZE` code, wraps it in a `ValidationError`. Anything else passes through unchanged.
+Multer throws its own error objects with a `code` property. This middleware intercepts `LIMIT_FILE_SIZE` and converts it into a user-friendly `ValidationError` that flows through the standard error handler. Other multer errors pass through unchanged.
 
-### inferColumnType and buildColumnTypes (lines 37-54)
+### Column type inference (lines 41-57)
 
-Column type inference for the preview. `inferColumnType` guesses number, date, or text from a single value. `buildColumnTypes` samples the first non-empty value per column. Powers the frontend's column-type indicators so users can verify the system understood their data.
+`inferColumnType` guesses whether a cell value is a date, number, or text by trying numeric parsing first, then date parsing. `buildColumnTypes` samples the first non-empty value per column. This drives the type badges shown in the preview UI.
 
-### The main route handler (lines 58-125)
+### Sample row normalization (lines 59-68)
 
-Extracts the authenticated user, runs the file through the CSV adapter, checks three failure conditions (file-level issues, header failures, high error rate), then builds the preview. Three `throw` statements produce three distinct error messages. After validation, it normalizes headers, slices 5 sample rows, infers column types, fires an analytics event, logs the outcome, and returns `{ data: preview }`.
+The bridge between csv-parse's original-cased row objects and the lowercase headers the API returns. Iterates each raw header, maps the value to a normalized key. Without this, a CSV with `Date,Amount,Category` headers would produce `{Date: "2025-01-15"}` row objects but `["date"]` in the headers array — the frontend table would render empty cells.
+
+This was Critical fix #1 from code review.
+
+### TOCTOU protection functions (lines 70-107)
+
+Four functions working together:
+- `computeFileHash`: SHA-256 of the raw file buffer
+- `signPreviewToken`: Packs hash + orgId + timestamp into a JSON payload, HMAC-signs it, base64url-encodes the whole thing
+- `verifyPreviewToken`: Decodes the token, recomputes the HMAC, checks hash/org/TTL with timing-safe comparison
+- The 30-minute TTL prevents stale tokens from being reused indefinitely
+
+The token format is `base64url(JSON({ hash, orgId, iat, sig }))`. The signature covers `hash:orgId:iat` — all three fields are bound, so you can't swap any of them independently.
+
+This was Critical fix #3 from code review — closing the TOCTOU gap.
+
+### Preview endpoint — `POST /` (lines 111-179)
+
+The happy path:
+1. Extract authenticated user's org and ID
+2. Parse CSV via the adapter
+3. Check for empty/rejected files (warnings, header validation, >50% failure)
+4. Build normalized sample rows (first 5) and column types
+5. Compute file hash and sign preview token
+6. Return the full preview payload including `fileHash` and `previewToken`
+
+Three different failure modes are checked in sequence. First, zero rows with warnings (empty file, header-only). Second, header validation failures (missing required columns). Third, zero valid rows from a non-empty file (>50% row failure rate). Each gets a different error message.
+
+### Confirm endpoint — `POST /confirm` (lines 181-243)
+
+1. Extract user context, check for file
+2. **Token gate**: reject if `previewToken` is missing or fails verification
+3. Re-parse and re-validate (the file buffer is self-contained)
+4. Normalize rows for DB insertion
+5. Create dataset record and batch-insert rows
+6. Track analytics event and respond
+
+The non-obvious part: `req.body?.previewToken` works because multer populates `req.body` with text form fields alongside `req.file`. The frontend appends both the file and the token to the same FormData object.
 
 ---
 
 ## 4. Complexity and Trade-offs
 
-**Validation is effectively O(1).** The CSV adapter samples 100 rows max. Column type inference scans rows looking for the first non-empty value per column — worst case O(n*h) for n rows and h headers, but typically finds values in the first few rows.
+### Time complexity
 
-**Memory trade-off.** The entire file is in memory. With a 10MB limit and moderate concurrency, this works. At 500MB or 1000 concurrent uploads, you'd need streaming + disk storage.
+- **SHA-256 hashing**: O(n) where n is file size. For a 10MB max file, ~2ms. Computed twice (preview + confirm).
+- **HMAC signing/verification**: O(1) relative to the token size (~100 bytes).
+- **CSV parsing**: O(n*m) where n is rows and m is columns. Happens twice in the confirm flow. For 50K rows, 200-500ms — the bottleneck.
 
-**Type inference is heuristic.** Single-sample per column. Could misclassify a text column where someone entered "12345" as an ID. The frontend uses these for display hints, not data processing, so a wrong guess is cosmetically awkward but harmless.
+### What would break first
 
-**How to say it in an interview:** "Validation is bounded by the 100-row sample, making it effectively constant-time. The memory ceiling is bounded by the 10MB file limit. Type inference is a heuristic for preview quality, not data correctness."
+- **Double parse on confirm**: The file gets fully parsed twice — preview and confirm. For large files near the 50K row limit, this adds latency. A future optimization could cache the parsed result server-side (Redis, keyed by file hash) and skip re-parsing at confirm time.
+- **Memory**: `multer.memoryStorage()` holds the entire file in RAM. 10 concurrent 10MB uploads = 100MB. Fine for an MVP. At scale, you'd stream to disk or S3.
+- **Token TTL**: The 30-minute window is hardcoded. If a user previews, goes to lunch, and comes back — they get an error. Could be configurable, but 30 minutes covers most real usage.
+
+**How to say it in an interview:** "The stateless HMAC approach trades double-parsing for zero server-side state. At MVP scale with a 10MB limit, the compute cost is negligible. If we needed larger files, I'd add a Redis-backed parse cache keyed by file hash to skip the redundant parse on confirm."
+
+### Known limitation
+
+The preview token doesn't bind to a specific user — only to an org. Two users in the same org could preview on one machine and confirm on another. This is by design — the org-level binding matches our multi-tenant model where org members share dataset access.
 
 ---
 
 ## 5. Patterns and Concepts Worth Knowing
 
-### Middleware Chain Composition
+### HMAC (Hash-based Message Authentication Code)
 
-Express routes accept an array of middleware. This route uses `upload.single('file')` → `handleMulterError` → `async handler`. Each middleware either calls `next()` or `next(err)`. This is the Chain of Responsibility pattern.
+A way to prove that data hasn't been tampered with, using a secret key. Think of a wax seal — only someone with the seal (secret) can create it, and breaking the seal (modifying data) is obvious. HMAC combines a hash function (SHA-256) with a secret to produce a signature tied to both the data and the key.
 
-**Interview-ready line:** "The upload endpoint chains three middleware: multer for parsing, an error bridge for multer-specific errors, and the business logic handler. Express executes them in registration order."
+**Where it appears:** `signPreviewToken` and `verifyPreviewToken` (lines 78-107).
 
-### BFF (Backend for Frontend) Pattern
+**Interview-ready line:** "HMAC gives us tamper-evident tokens without server-side storage. The secret key ensures only our server can create valid tokens, and the hash binding ensures any file modification invalidates the token."
 
-This Express API never faces the browser directly. Next.js receives uploads at `/api/datasets` and proxies to Express at `:3001/datasets`. Same-origin, no CORS needed.
+### TOCTOU (Time-of-Check-to-Time-of-Use)
 
-**Interview-ready line:** "The upload goes through a BFF proxy — browser to Next.js to Express. The API port isn't exposed publicly."
+A race condition where the state of something changes between checking and acting. Classic example: checking if a file exists, then opening it — but someone deletes it in between. Here, the "check" is preview and the "use" is confirm.
+
+**Where it appears:** The entire preview -> confirm flow. The token bridges the two phases.
+
+**Interview-ready line:** "Without the preview token, there's a TOCTOU gap where an attacker could preview a benign file, then swap in a malicious one before confirming. The HMAC-signed hash binding closes that gap."
+
+### Guard Clauses / Early Returns
+
+Instead of nesting validation inside if/else blocks, each check bails out immediately with an error. The happy path flows straight down without indentation.
+
+**Where it appears:** Both route handlers. The preview endpoint has three sequential validation gates (lines 129-146), the confirm endpoint has the token gate (lines 195-202).
+
+**Interview-ready line:** "I use early returns for validation so the happy path reads linearly. Each guard clause handles one failure mode and exits."
+
+### Timing-Safe Comparison
+
+A comparison technique that always takes the same amount of time regardless of input. Prevents attackers from measuring response times to gradually guess correct values byte by byte.
+
+**Where it appears:** `verifyPreviewToken` uses `timingSafeEqual` at line 97.
+
+**Interview-ready line:** "Standard string comparison short-circuits on the first mismatch, which leaks timing information. `timingSafeEqual` compares every byte regardless, closing the side-channel."
+
+### BFF (Backend For Frontend) Pattern
+
+The browser never talks directly to this Express API. Requests go through Next.js's `/api/*` routes, which proxy to Express. No CORS configuration needed — everything is same-origin.
+
+**Where it appears:** Implicitly — the route doesn't set CORS headers because the BFF proxy handles the cross-service hop.
+
+**Interview-ready line:** "We use a BFF proxy pattern where the Next.js frontend proxies API calls to Express. This eliminates CORS complexity and lets us enforce auth at the proxy layer."
 
 ### Pluggable Adapter Pattern
 
@@ -106,80 +179,122 @@ This Express API never faces the browser directly. Next.js receives uploads at `
 
 **Interview-ready line:** "The route depends on the DataSourceAdapter interface, not the CSV implementation. Adding new data sources means new adapters, not route changes."
 
-### Fire-and-Forget Analytics
-
-`trackEvent` is called without `await`. Upload response shouldn't wait on analytics writes. If analytics is down, the upload still succeeds.
-
 ---
 
 ## 6. Potential Interview Questions
 
-### Q1: "Why no try/catch in the async handler?"
+### Q1: "Why not store the parsed data in a temp table during preview and just commit it on confirm?"
 
-**Strong answer:** "Express 5 catches rejected promises natively. The code throws ValidationError instances and the framework routes them to errorHandler. In Express 4 you'd need try/catch or express-async-errors."
+**Context if you need it:** This tests whether you understand the trade-off between stateful and stateless verification. Storing parsed data server-side is a valid approach.
 
-**Red flag:** "You should always wrap async code in try/catch." — True in Express 4, unnecessary in Express 5.
+**Strong answer:** "A temp table approach works but introduces server-side state that needs cleanup — expired previews, orphaned rows, TTL sweeps. The HMAC token is stateless and self-expiring. The trade-off is re-parsing the file on confirm, which for our file size limits (10MB, 50K rows) takes under 500ms. At larger scale, I'd consider a hybrid — cache parsed results in Redis keyed by file hash."
 
-### Q2: "What would you change for 500MB files?"
+**Red flag answer:** "We don't need to store anything because the token has all the data." The token doesn't contain the data; it contains a hash of it. It's a verification mechanism, not storage.
 
-**Strong answer:** "Switch to disk storage, streaming CSV parsing, and a background job with polling for status. The preview becomes an async operation — return a job ID immediately, poll for completion."
+### Q2: "What happens if two users upload the same file simultaneously?"
 
-**Red flag:** "Just increase the memory limit." — Ignores heap exhaustion under concurrency.
+**Context if you need it:** Tests understanding of concurrent request handling and whether the HMAC scheme has race conditions.
 
-### Q3: "Why check `rows.length === 0 && rowCount > 0` separately?"
+**Strong answer:** "Each request gets its own multer buffer, its own hash computation, and its own token. Two identical files produce identical hashes, but the `iat` timestamps differ, so the tokens are different. There's no shared mutable state between requests."
 
-**Strong answer:** "That catches a specific edge case: the CSV parsed but >50% of rows failed validation, so zero valid rows were returned. The earlier check catches file-level problems. These are different failure modes with different messages."
+**Red flag answer:** "They'd get the same token so one would overwrite the other." Tokens are computed per-request with different timestamps.
 
-**Red flag:** "They do the same thing." — Different conditions, different user messages.
+### Q3: "Why do you re-parse the CSV in the confirm endpoint instead of trusting the preview?"
 
-### Q4: "How do you know the user is authenticated?"
+**Context if you need it:** Probes your understanding of the TOCTOU problem and why the data needs to be available, not just verified.
 
-**Strong answer:** "This router is mounted on protectedRouter, which applies authMiddleware to all routes. The middleware reads a JWT from an httpOnly cookie, verifies it, and attaches the payload to req.user. By the time this handler runs, user.org_id and user.sub are guaranteed."
+**Strong answer:** "The token verifies file integrity — that the bytes haven't changed. But re-parsing is necessary because we need the actual parsed rows to insert into the database. The preview only returns 5 sample rows; confirm needs all of them. We could cache the full parse result, but for MVP file sizes the re-parse cost is trivial."
 
-### Q5: "Why is type inference a separate function from validation?"
+**Red flag answer:** "Because you can't trust the client." Partially right, but the token already establishes trust in the file content. Re-parsing is about needing the data, not about trust.
 
-**Strong answer:** "Validation checks data correctness — are dates valid, are amounts numeric. Type inference guesses column semantics for the preview UI. They serve different consumers: validation gates the upload, type inference aids the user's visual confirmation."
+### Q4: "How would you modify this to support streaming uploads for large files?"
+
+**Context if you need it:** Tests your ability to think beyond the current implementation. `multer.memoryStorage()` holds the whole file in RAM.
+
+**Strong answer:** "I'd switch from `multer.memoryStorage()` to streaming to disk or S3 during upload, then process in chunks. The hash computation already works incrementally — `createHash('sha256').update(chunk)` can be called repeatedly. csv-parse supports stream mode too. The main architectural change is the preview endpoint would need to process the first N rows while streaming the rest to storage."
+
+**Red flag answer:** "Just increase the memory limit." Doesn't scale. 100 concurrent 10MB uploads = 1GB of RAM just for upload buffers.
+
+### Q5: "Why `base64url` encoding for the token instead of plain JSON?"
+
+**Context if you need it:** Tests understanding of transport encoding.
+
+**Strong answer:** "base64url is URL-safe and doesn't contain characters that need escaping in form fields or query strings. Raw JSON needs percent-encoding for `{`, `}`, `\"`. base64url also produces a shorter string for the same payload."
+
+**Red flag answer:** "For security — base64 makes it harder to read." base64 is not encryption. Anyone can decode it. The security comes from the HMAC signature, not the encoding.
 
 ---
 
 ## 7. Data Structures & Algorithms Used
 
-### Record<string, string> (ParsedRow)
+### Hash Map (JavaScript Object as key-value store)
 
-Each CSV row is a plain object mapping column names to values. O(1) lookups by key. Named keys make code readable compared to positional array indexing.
+**What it is:** A data structure that lets you look up values by key in constant time. In JavaScript, every plain object `{}` is a hash map — you store `obj[key] = value` and retrieve with `obj[key]`. Like a dictionary: look up a word (key) to find its definition (value).
 
-### PreviewData Interface
+**Where it appears:** `normalizeSampleRows` (lines 60-68) builds a new object per row where keys are normalized header names. `buildColumnTypes` (lines 49-57) builds a `Record<string, string>` mapping headers to inferred types.
 
-The response shape bundles headers, sample rows, counts, column types, warnings, and file name. A materialized view — all derived data computed once, no follow-up API calls needed.
+**Why this one:** O(1) lookup by column name. An array of `[key, value]` pairs would require O(n) scanning. Since we do this per-row, the difference matters at scale.
 
-### Set (in csvAdapter)
+**Complexity:** O(1) average for read and write. "O(1)" means the time doesn't grow as you add more entries.
 
-Skipped row indices stored in a Set for O(1) membership checks during the filter pass. The route handler benefits from this indirectly through the clean ParseResult.
+**How to say it in an interview:** "Each row is a hash map keyed by column name, giving O(1) field access. The normalization step remaps keys to ensure the frontend gets a consistent key space regardless of original CSV casing."
+
+### SHA-256 (Cryptographic Hash)
+
+**What it is:** An algorithm that turns any amount of data into a fixed-length string (64 hex characters). Even changing one byte produces a completely different output. Like a fingerprint — unique to the data, much shorter, and irreversible.
+
+**Where it appears:** `computeFileHash` (line 74-76) hashes the entire file buffer.
+
+**Why this one:** Collision-resistant and standard. MD5 is faster but has known collision attacks. SHA-256 has no known practical attacks, and ~2ms for a 10MB file is negligible.
+
+**Complexity:** O(n) where n is file size in bytes. Space is O(1) — output is always 32 bytes.
+
+**How to say it in an interview:** "SHA-256 gives us a collision-resistant fingerprint of the file content. If even one byte changes between preview and confirm, the hash differs and token verification fails."
+
+### HMAC-SHA-256 (Keyed Hash)
+
+**What it is:** SHA-256 but with a secret key mixed in. Without HMAC, anyone could compute a hash of a file and forge a valid token. With HMAC, only someone who knows the secret can produce a valid signature. The difference between a photocopy (anyone can make one) and a notarized stamp (only the notary has the seal).
+
+**Where it appears:** `signPreviewToken` (line 81) and `verifyPreviewToken` (lines 90-92).
+
+**Why this one:** Plain SHA-256 provides integrity but not authentication. HMAC adds authentication. We reuse the existing `JWT_SECRET` rather than introducing a separate key.
+
+**Complexity:** O(m) where m is payload length (under 100 chars). Effectively O(1).
+
+**How to say it in an interview:** "HMAC-SHA-256 provides both integrity and authentication. The secret key ensures only our server can create valid tokens — an attacker who knows the file hash still can't forge a token without the key."
 
 ---
 
 ## 8. Impress the Interviewer
 
-### Defense in Depth Validation
+### TOCTOU is a real attack vector, not theoretical
 
-Three layers — multer, structural parsing, semantic validation — each catching a different class of problem. Ordered cheap-to-expensive: file size check (instant) before parsing (milliseconds) before row validation (bounded by sample). Parallels how firewalls, application auth, and business logic work together.
+**What's happening:** TOCTOU attacks exploit the gap between checking and acting. In a file upload context, an attacker could use browser dev tools to modify the FormData between preview and confirm requests — swapping in a different file. Straightforward with tools like Burp Suite or even the browser's network tab.
 
-**How to bring it up:** "Validation is layered cheap-to-expensive. Multer rejects oversized files before any parsing. The CSV adapter catches structural problems before row-level validation. Each layer has a distinct failure message."
+**Why it matters:** Without verification, an attacker in a shared org could preview a benign CSV, gain trust ("looks good, click confirm"), then intercept the confirm request and swap in data that corrupts the org's analytics. The HMAC token closes this gap with zero infrastructure cost.
 
-### Express 5 Async Error Model
+**How to bring it up:** "I implemented TOCTOU protection because the two-phase upload creates a natural race condition window. The HMAC-signed token binds the file hash, org, and timestamp into a tamper-evident package that the confirm endpoint verifies before persisting."
 
-Many candidates still write handlers with try/catch everywhere. Mentioning native promise rejection handling signals framework awareness. The custom `AppError` hierarchy lets the error handler produce structured responses without formatting at each throw site.
+### Multer populates req.body alongside req.file
 
-**How to bring it up:** "Express 5 catches async rejections natively, so the handler just throws domain-specific errors. The global error handler shapes them into the standard API response format."
+**What's happening:** When the frontend sends a FormData with both a file and a text field (`previewToken`), multer parses both. The file goes to `req.file`, the text fields go to `req.body`. Standard multipart behavior that trips people up — they expect `req.body` to be empty when uploading files.
 
-### Preview-Before-Persist Is a Product Decision
+**Why it matters:** The confirm endpoint reads `req.body?.previewToken` alongside `req.file`. If you didn't know multer fills `req.body` for multipart forms, you might reach for a custom header or query parameter instead — messier and less standard.
 
-The target users are small business owners, not data engineers. Showing them a preview with sample rows, column types, and skip counts builds trust. The response shape maps directly to UI elements in the upload flow.
+**How to bring it up:** "The preview token travels as a text field in the same FormData as the file. Multer handles both — `req.file` for the binary, `req.body` for the text fields. Standard multipart behavior, no custom transport needed."
 
-**How to bring it up:** "Preview-before-persist is a trust-building pattern. Non-technical users see exactly what we understood from their file before anything is committed. The PreviewData shape maps 1:1 to UI elements."
+### Stateless verification vs. stateful storage
 
-### Pluggable Data Sources
+**What's happening:** Many upload flows store server-side state between preview and confirm — a Redis key, a database row, a temp file. The HMAC approach eliminates all of that. The client holds the token, the server verifies from scratch each time. The trade-off is re-parsing the file on confirm.
 
-Even though only `csvAdapter` exists, the `DataSourceAdapter` interface means adding QuickBooks import requires a new adapter, not changes to this handler. The route calls `adapter.parse()` without caring about format.
+**Why it matters:** No cleanup jobs, no TTL management, no "what if Redis evicts the key" edge cases. The server can restart between preview and confirm and nothing breaks. Simpler operations, smaller blast radius from infrastructure failures.
 
-**How to bring it up:** "The handler depends on an interface, not the CSV implementation. Adding financial API imports means writing a new adapter, not touching this route. Open-Closed Principle in practice."
+**How to bring it up:** "I chose stateless HMAC tokens over Redis-backed sessions because it eliminates cleanup concerns and survives server restarts. The cost is a redundant parse on confirm, which is acceptable at our file size limits."
+
+### Error messages written for the person reading them at 2am
+
+**What's happening:** Every `ValidationError` includes specific, actionable context. Not "Invalid file" but "We expected a .csv file, but received a application/json file." Not "Validation failed" but "File has changed since preview. Please re-upload and preview again."
+
+**Why it matters:** Generic error messages generate support tickets. Specific messages let users self-serve. The difference between "something went wrong" and telling the user exactly what's wrong and what to do about it.
+
+**How to bring it up:** "I wrote error messages for the end user, not the developer. Every validation failure tells you what's wrong and what to do. The TOCTOU rejection message specifically tells them to re-upload, not just that something failed."

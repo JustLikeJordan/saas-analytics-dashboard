@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import multer from 'multer';
 import { MAX_FILE_SIZE, ANALYTICS_EVENTS } from 'shared/constants';
 import type { AuthenticatedRequest } from '../middleware/authMiddleware.js';
@@ -8,8 +9,11 @@ import { csvAdapter } from '../services/dataIngestion/index.js';
 import { normalizeRows } from '../services/dataIngestion/normalizer.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
 import { logger } from '../lib/logger.js';
-import type { PreviewData } from '../services/adapters/index.js';
-import { normalizeHeader } from '../services/dataIngestion/csvAdapter.js';
+import type { PreviewData, ParsedRow } from '../services/adapters/index.js';
+import { normalizeHeader } from '../services/dataIngestion/index.js';
+import { createDataset } from '../db/queries/datasets.js';
+import { insertBatch } from '../db/queries/dataRows.js';
+import { env } from '../config.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -44,13 +48,76 @@ function inferColumnType(value: string): 'date' | 'number' | 'text' {
 
 function buildColumnTypes(rows: Record<string, string>[], headers: string[]): Record<string, 'date' | 'number' | 'text'> {
   const types: Record<string, 'date' | 'number' | 'text'> = {};
+  const sample = rows.slice(0, 5);
   for (const header of headers) {
     const normalized = normalizeHeader(header);
-    // Sample first non-empty value to infer type
-    const sample = rows.find((r) => r[header]?.trim())?.[ header] ?? '';
-    types[normalized] = inferColumnType(sample);
+    const votes = sample
+      .map((r) => r[header]?.trim())
+      .filter(Boolean)
+      .map((v) => inferColumnType(v!));
+
+    if (votes.length === 0) {
+      types[normalized] = 'text';
+      continue;
+    }
+
+    // majority wins
+    const counts: Record<string, number> = {};
+    for (const v of votes) counts[v] = (counts[v] ?? 0) + 1;
+    types[normalized] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]![0] as 'date' | 'number' | 'text';
   }
   return types;
+}
+
+/** Remap original-cased row keys to normalized (lowercase) keys for the preview response */
+function normalizeSampleRows(rows: ParsedRow[], rawHeaders: string[]): Record<string, string>[] {
+  return rows.map((row) => {
+    const out: Record<string, string> = {};
+    for (const key of rawHeaders) {
+      out[normalizeHeader(key)] = row[key] ?? '';
+    }
+    return out;
+  });
+}
+
+// --- TOCTOU protection: HMAC-signed preview tokens ---
+
+const PREVIEW_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 min
+
+function computeFileHash(buffer: Buffer): string {
+  return createHash('sha256').update(buffer).digest('hex');
+}
+
+function signPreviewToken(hash: string, orgId: number, secret: string): string {
+  const iat = Date.now();
+  const payload = `${hash}:${orgId}:${iat}`;
+  const sig = createHmac('sha256', secret).update(payload).digest('hex');
+  return Buffer.from(JSON.stringify({ hash, orgId, iat, sig })).toString('base64url');
+}
+
+function verifyPreviewToken(token: string, buffer: Buffer, orgId: number, secret: string): boolean {
+  try {
+    const decoded = JSON.parse(Buffer.from(token, 'base64url').toString());
+    const { hash, orgId: tokenOrg, iat, sig } = decoded;
+
+    const expected = createHmac('sha256', secret)
+      .update(`${hash}:${tokenOrg}:${iat}`)
+      .digest('hex');
+
+    // timing-safe comparison to prevent side-channel leakage
+    const sigBuf = Buffer.from(sig, 'hex');
+    const expectedBuf = Buffer.from(expected, 'hex');
+    if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return false;
+
+    // cheap checks first — avoid hashing a 10MB file for an expired or wrong-org token
+    if (tokenOrg !== orgId) return false;
+    if (Date.now() - iat > PREVIEW_TOKEN_TTL_MS) return false;
+    if (computeFileHash(buffer) !== hash) return false;
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const datasetsRouter = Router();
@@ -73,12 +140,10 @@ datasetsRouter.post(
 
     const parseResult = csvAdapter.parse(req.file.buffer);
 
-    // Check for file-level issues (empty, header-only, too many rows)
     if (parseResult.rows.length === 0 && parseResult.warnings.length > 0) {
       throw new ValidationError(parseResult.warnings[0] ?? 'Validation failed', { fileName });
     }
 
-    // Check for header validation failures
     const headerValidation = csvAdapter.validate(parseResult.headers);
     if (!headerValidation.valid) {
       throw new ValidationError('CSV validation failed', {
@@ -87,7 +152,6 @@ datasetsRouter.post(
       });
     }
 
-    // Check if >50% row failure caused parse to return empty rows
     if (parseResult.rows.length === 0 && parseResult.rowCount > 0) {
       throw new ValidationError(
         'More than half the rows had validation errors. Check your data format and try again.',
@@ -95,9 +159,11 @@ datasetsRouter.post(
       );
     }
 
-    const normalizedRows = normalizeRows(parseResult.rows, parseResult.headers);
-    const sampleRows = parseResult.rows.slice(0, 5);
+    const sampleRows = normalizeSampleRows(parseResult.rows.slice(0, 5), parseResult.headers);
     const columnTypes = buildColumnTypes(parseResult.rows, parseResult.headers);
+
+    const fileHash = computeFileHash(req.file.buffer);
+    const previewToken = signPreviewToken(fileHash, orgId, env.JWT_SECRET);
 
     const preview: PreviewData = {
       headers: parseResult.headers.map(normalizeHeader),
@@ -108,6 +174,8 @@ datasetsRouter.post(
       columnTypes,
       warnings: parseResult.warnings,
       fileName,
+      fileHash,
+      previewToken,
     };
 
     trackEvent(orgId, userId, ANALYTICS_EVENTS.DATASET_UPLOADED, {
@@ -116,10 +184,74 @@ datasetsRouter.post(
     });
 
     logger.info(
-      { orgId, fileName, rowCount: parseResult.rowCount, validRows: normalizedRows.length },
+      { orgId, fileName, rowCount: parseResult.rowCount, validRows: parseResult.rows.length },
       'CSV validated',
     );
 
     res.json({ data: preview });
+  },
+);
+
+datasetsRouter.post(
+  '/confirm',
+  upload.single('file'),
+  handleMulterError,
+  async (req: Request, res: Response) => {
+    const { user } = req as AuthenticatedRequest;
+    const orgId = user.org_id;
+    const userId = parseInt(user.sub, 10);
+
+    if (!req.file) {
+      throw new ValidationError('No file provided. Select a CSV file to upload.');
+    }
+
+    // TOCTOU gate — reject if the file changed since preview
+    const token = req.body?.previewToken;
+    if (!token || typeof token !== 'string') {
+      throw new ValidationError('Missing preview token. Preview your file before confirming.');
+    }
+
+    if (!verifyPreviewToken(token, req.file.buffer, orgId, env.JWT_SECRET)) {
+      throw new ValidationError('File has changed since preview. Please re-upload and preview again.');
+    }
+
+    const fileName = req.file.originalname;
+    logger.info({ orgId, userId, fileName }, 'Dataset confirm received');
+
+    const parseResult = csvAdapter.parse(req.file.buffer);
+
+    const headerValidation = csvAdapter.validate(parseResult.headers);
+    if (!headerValidation.valid) {
+      throw new ValidationError('CSV validation failed', {
+        errors: headerValidation.errors,
+        fileName,
+      });
+    }
+
+    if (parseResult.rows.length === 0) {
+      throw new ValidationError('No valid rows to import. Check your data and try again.', { fileName });
+    }
+
+    const normalizedRows = normalizeRows(parseResult.rows, parseResult.headers);
+
+    const dataset = await createDataset(orgId, {
+      name: fileName,
+      sourceType: 'csv',
+      uploadedBy: userId,
+    });
+
+    await insertBatch(orgId, dataset.id, normalizedRows);
+
+    trackEvent(orgId, userId, ANALYTICS_EVENTS.DATASET_CONFIRMED, {
+      datasetId: dataset.id,
+      rowCount: normalizedRows.length,
+    });
+
+    logger.info(
+      { orgId, userId, datasetId: dataset.id, rowCount: normalizedRows.length },
+      'Dataset confirmed and persisted',
+    );
+
+    res.json({ data: { datasetId: dataset.id, rowCount: normalizedRows.length } });
   },
 );
