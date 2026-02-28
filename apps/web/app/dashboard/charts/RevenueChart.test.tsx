@@ -24,7 +24,7 @@ vi.mock('recharts', () => ({
   Tooltip: () => null,
 }));
 
-import { RevenueChart } from './RevenueChart';
+import { RevenueChart, RevenueTooltip } from './RevenueChart';
 
 const sampleData = [
   { month: 'Jan', revenue: 10000 },
@@ -90,5 +90,33 @@ describe('RevenueChart', () => {
     render(<RevenueChart data={sampleData} />);
 
     expect(capturedLineProps.isAnimationActive).toBe(false);
+  });
+});
+
+describe('RevenueTooltip', () => {
+  it('shows formatted currency when active with payload', () => {
+    render(<RevenueTooltip active payload={[{ value: 15000 }]} label="Mar" />);
+
+    expect(screen.getByText('Mar')).toBeInTheDocument();
+    expect(screen.getByText('$15,000')).toBeInTheDocument();
+  });
+
+  it('shows "No data" message for null payload value', () => {
+    render(<RevenueTooltip active payload={[{ value: null }]} label="Feb" />);
+
+    expect(screen.getByText('No data for this period')).toBeInTheDocument();
+  });
+
+  it('returns null when not active', () => {
+    const { container } = render(<RevenueTooltip active={false} payload={[{ value: 100 }]} label="Jan" />);
+
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('has role="status" with aria-live="polite"', () => {
+    render(<RevenueTooltip active payload={[{ value: 5000 }]} label="Apr" />);
+
+    const tooltip = screen.getByRole('status');
+    expect(tooltip).toHaveAttribute('aria-live', 'polite');
   });
 });

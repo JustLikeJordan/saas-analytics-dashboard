@@ -22,7 +22,7 @@ vi.mock('recharts', () => ({
   Tooltip: () => null,
 }));
 
-import { ExpenseChart } from './ExpenseChart';
+import { ExpenseChart, ExpenseTooltip } from './ExpenseChart';
 
 const sampleData = [
   { category: 'Payroll', total: 8000 },
@@ -82,5 +82,33 @@ describe('ExpenseChart', () => {
     render(<ExpenseChart data={sampleData} />);
 
     expect(capturedBarProps.isAnimationActive).toBe(false);
+  });
+});
+
+describe('ExpenseTooltip', () => {
+  it('shows formatted currency when active with payload', () => {
+    render(<ExpenseTooltip active payload={[{ value: 8000 }]} label="Payroll" />);
+
+    expect(screen.getByText('Payroll')).toBeInTheDocument();
+    expect(screen.getByText('$8,000')).toBeInTheDocument();
+  });
+
+  it('shows "No data" message for null payload value', () => {
+    render(<ExpenseTooltip active payload={[{ value: null }]} label="Rent" />);
+
+    expect(screen.getByText('No data for this category')).toBeInTheDocument();
+  });
+
+  it('returns null when not active', () => {
+    const { container } = render(<ExpenseTooltip active={false} payload={[{ value: 100 }]} label="Rent" />);
+
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('has role="status" with aria-live="polite"', () => {
+    render(<ExpenseTooltip active payload={[{ value: 3000 }]} label="Rent" />);
+
+    const tooltip = screen.getByRole('status');
+    expect(tooltip).toHaveAttribute('aria-live', 'polite');
   });
 });
