@@ -1,6 +1,8 @@
 import { eq, and, between, inArray, asc } from 'drizzle-orm';
-import { db } from '../../lib/db.js';
+import { db, type DbTransaction } from '../../lib/db.js';
 import { dataRows } from '../schema.js';
+
+const BATCH_SIZE = 1_000;
 
 export async function insertBatch(
   orgId: number,
@@ -14,11 +16,15 @@ export async function insertBatch(
     label?: string | null;
     metadata?: Record<string, unknown> | null;
   }>,
+  client: typeof db | DbTransaction = db,
 ) {
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return;
 
-  const values = rows.map((row) => ({ orgId, datasetId, ...row }));
-  return db.insert(dataRows).values(values).returning();
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_SIZE);
+    const values = chunk.map((row) => ({ orgId, datasetId, ...row }));
+    await client.insert(dataRows).values(values);
+  }
 }
 
 export async function getByDateRange(

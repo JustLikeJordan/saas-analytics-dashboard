@@ -39,6 +39,10 @@ vi.mock('../db/queries/dataRows.js', () => ({
   insertBatch: mockInsertBatch,
 }));
 
+vi.mock('../lib/db.js', () => ({
+  db: { transaction: vi.fn(async (fn: Function) => fn({})) },
+}));
+
 const { createTestApp } = await import('../test/helpers/testApp.js');
 const { authMiddleware } = await import('../middleware/authMiddleware.js');
 const { datasetsRouter } = await import('./datasets.js');
@@ -268,7 +272,7 @@ describe('POST /datasets/confirm', () => {
       name: 'revenue.csv',
       sourceType: 'csv',
       uploadedBy: 42,
-    });
+    }, expect.anything());
   });
 
   it('calls insertBatch with normalized rows', async () => {
@@ -279,7 +283,7 @@ describe('POST /datasets/confirm', () => {
 
     expect(mockInsertBatch).toHaveBeenCalledWith(10, 7, expect.arrayContaining([
       expect.objectContaining({ category: 'Revenue' }),
-    ]));
+    ]), expect.anything());
     expect(mockInsertBatch.mock.calls[0]![2]).toHaveLength(3);
   });
 

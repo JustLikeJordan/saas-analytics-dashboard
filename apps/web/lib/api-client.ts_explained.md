@@ -1,6 +1,6 @@
 # api-client.ts — Interview-Ready Documentation
 
-> Source file: `apps/web/lib/api-client.ts` (76 lines)
+> Source file: `apps/web/lib/api-client.ts` (82 lines)
 
 ---
 
@@ -57,7 +57,7 @@ This is the browser's HTTP client for talking to the backend. Instead of using `
 Three phases:
 1. **Initial request** — Sends the request with cookies and JSON headers.
 2. **401 recovery** — If unauthorized, attempts a silent refresh. The `if (!refreshPromise)` check ensures only the first 401 triggers the actual refresh call. The `.finally(() => { refreshPromise = null })` resets the singleton after the refresh completes (success or failure). If refresh succeeded, retries the original request.
-3. **Error handling** — If the response is still not OK (either initial failure on non-401, or retry after refresh failed), parses the error body and throws a descriptive Error.
+3. **Error handling** — If the response is still not OK, attempts to parse the JSON error body inside a try/catch. Not every non-2xx response comes from our Express API — a 502 Bad Gateway or gateway timeout from a reverse proxy returns HTML, not JSON. Without the try/catch, `response.json()` would throw a `SyntaxError` on HTML responses, crashing the error handler itself. The catch silently falls back to the generic status-code message. Either way, the outer `throw new Error(msg)` always fires.
 
 The `credentials: 'include'` on every fetch is critical — without it, the browser won't send cookies on same-origin requests (it's the default behavior, but being explicit prevents subtle bugs if defaults change).
 
@@ -100,6 +100,14 @@ Multiple concurrent triggers of the same async operation share a single executio
 **Where it appears:** The `if (!refreshPromise) { refreshPromise = attemptRefresh()... }` block.
 
 **Interview-ready line:** "Promise deduplication prevents the thundering herd problem — multiple concurrent 401s coalesce into a single refresh request. This matters with refresh token rotation, where concurrent refreshes would trigger reuse detection and revoke all sessions."
+
+### Defensive Parsing
+
+Attempting an operation that might fail (parsing an HTTP body as JSON) inside a try/catch, with a safe fallback. The goal isn't to suppress errors silently — it's to let the outer error handling still fire, just with less detail.
+
+**Where it appears:** The try/catch around `response.json()` in the error block (lines 70-77).
+
+**Interview-ready line:** "Defensive parsing lets the happy-path JSON extraction fail gracefully when a reverse proxy returns an HTML error page. The catch block doesn't swallow the error — it lets the status-code fallback message through while still throwing to the caller."
 
 ---
 

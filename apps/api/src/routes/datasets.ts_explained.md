@@ -2,9 +2,9 @@
 
 ## 1. 30-Second Elevator Pitch
 
-This file handles the two-step CSV upload flow: preview and confirm. When a user picks a CSV file, the preview endpoint parses it, validates the data, and sends back a summary with sample rows, column types, and a cryptographically signed token. The confirm endpoint persists the data to PostgreSQL — but only after verifying that token proves the file hasn't been swapped since the user previewed it.
+This file handles the two-step CSV upload flow: preview and confirm. When a user picks a CSV file, the preview endpoint parses it, validates the data, and sends back a summary with sample rows, column types, and a cryptographically signed token. The confirm endpoint persists the data to PostgreSQL — but only after verifying that token proves the file hasn't been swapped since the user previewed it. The persistence step wraps both the dataset record creation and the row batch insert in a single database transaction, so a partial failure leaves nothing behind.
 
-**How to say it in an interview:** "This is a two-phase upload system with TOCTOU protection. The preview endpoint validates the CSV and returns an HMAC-signed token binding the file's SHA-256 hash to the user's org. The confirm endpoint verifies that token before persisting, preventing file-swap attacks between preview and commit."
+**How to say it in an interview:** "This is a two-phase upload system with TOCTOU protection and transactional persistence. The preview endpoint validates the CSV and returns an HMAC-signed token binding the file's SHA-256 hash to the user's org. The confirm endpoint verifies that token, then writes the dataset header and all data rows inside a single transaction — so the database never ends up with a dataset record that has no rows."
 
 ---
 
@@ -44,7 +44,21 @@ Think of a notarized document. The notary (server) stamps it with a tamper-evide
 
 **Over alternative:** Normalizing inside the adapter. We avoided that because the adapter is a general-purpose parsing layer — other callers might need original-case keys. Normalization at the route level keeps the adapter reusable.
 
-### Decision 5: Express 5 async error propagation
+### Decision 5: `db.transaction()` for atomic persistence
+
+**What's happening:** The confirm endpoint creates a dataset record and then inserts all the data rows. Before, these were two separate `await` calls — if `insertBatch` failed after `createDataset` succeeded, you'd have a dataset with no rows (an "orphan"). Now both writes happen inside `db.transaction()`. If either fails, the database rolls back everything. Think of a bank transfer — you wouldn't debit one account without crediting the other. The transaction makes it all-or-nothing.
+
+**How to say it in an interview:** "I wrapped `createDataset` and `insertBatch` in a single transaction to prevent orphan datasets. Without it, a failure in the batch insert would leave a dataset record with no rows — a silent data integrity bug that's hard to detect after the fact."
+
+**Over alternative:** Two sequential `await` calls with manual cleanup in a `catch` block. But what if the cleanup also fails? You're stuck with an orphan and an exception, writing recovery logic for the recovery logic. Transactions handle this atomically.
+
+### Decision 6: Side effects outside the transaction boundary
+
+**What's happening:** `trackEvent` and `logger.info` run *after* `await db.transaction()` resolves, not inside the callback. The transaction returns `{ datasetId, rowCount }`, and the outer code uses those values. Side effects don't belong inside transactions because: (1) they're not rollback-able — you can't un-send an analytics event, (2) a side effect failure shouldn't undo a successful data write, (3) long-running side effects hold the transaction open, blocking other writers.
+
+**How to say it in an interview:** "I keep analytics and logging outside the transaction. If `trackEvent` fails, that's not a reason to roll back a successful data import. The transaction returns the data the outer code needs, so there's no re-querying."
+
+### Decision 7: Express 5 async error propagation
 
 **What's happening:** No `try/catch` wrapping the handler bodies. Express 5 catches rejected promises from async handlers and forwards them to error middleware.
 
@@ -96,16 +110,18 @@ The happy path:
 
 Three different failure modes are checked in sequence. First, zero rows with warnings (empty file, header-only). Second, header validation failures (missing required columns). Third, zero valid rows from a non-empty file (>50% row failure rate). Each gets a different error message.
 
-### Confirm endpoint — `POST /confirm` (lines 181-243)
+### Confirm endpoint — `POST /confirm` (lines 181-265)
 
 1. Extract user context, check for file
 2. **Token gate**: reject if `previewToken` is missing or fails verification
 3. Re-parse and re-validate (the file buffer is self-contained)
 4. Normalize rows for DB insertion
-5. Create dataset record and batch-insert rows
-6. Track analytics event and respond
+5. **Transaction block**: `db.transaction(async (tx) => { ... })` wraps `createDataset` and `insertBatch`, passing `tx` to both. Returns `{ datasetId, rowCount }`.
+6. **Post-transaction**: track analytics event and respond using the returned `result` object
 
 The non-obvious part: `req.body?.previewToken` works because multer populates `req.body` with text form fields alongside `req.file`. The frontend appends both the file and the token to the same FormData object.
+
+The transaction pattern: both `createDataset` and `insertBatch` accept an optional `client` parameter. Inside the transaction callback, they receive `tx` — outside, they default to the module-level `db`. This means the query functions don't know or care whether they're in a transaction; the route handler controls the boundary.
 
 ---
 
@@ -183,7 +199,23 @@ The browser never talks directly to this Express API. Requests go through Next.j
 
 ## 6. Potential Interview Questions
 
-### Q1: "Why not store the parsed data in a temp table during preview and just commit it on confirm?"
+### Q1: "Why wrap both writes in one transaction instead of handling the error and cleaning up manually?"
+
+**Context if you need it:** Tests whether you understand why transactions exist and whether you see the edge cases in manual cleanup.
+
+**Strong answer:** "Manual cleanup is error-prone. If `createDataset` succeeds and `insertBatch` fails, you'd need to delete the dataset in the catch block — but what if *that* delete also fails? You're stuck with an orphan and an exception, writing recovery logic for the recovery logic. The transaction handles it atomically — ACID guarantees mean the database does the rollback."
+
+**Red flag answer:** "We could just catch the error and delete the dataset row." Technically possible, but introduces a second failure point with no recovery path.
+
+### Q2: "Why are `trackEvent` and `logger.info` outside the transaction?"
+
+**Context if you need it:** Tests understanding of transaction scope and side effect hygiene.
+
+**Strong answer:** "Two reasons. First, `trackEvent` likely does network I/O — keeping a transaction open during external calls holds a DB connection and blocks other writers. Second, if analytics tracking fails, we don't want to roll back a successful data import. The transaction's job is data integrity. Logging and analytics are best-effort side effects that happen after we know the core write succeeded."
+
+**Red flag answer:** "To keep the transaction small." One of the reasons, but the more important one is that side effects aren't rollback-able.
+
+### Q3: "Why not store the parsed data in a temp table during preview and just commit it on confirm?"
 
 **Context if you need it:** This tests whether you understand the trade-off between stateful and stateless verification. Storing parsed data server-side is a valid approach.
 

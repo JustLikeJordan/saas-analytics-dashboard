@@ -1,6 +1,6 @@
 # proxy.ts — interview-ready documentation
 
-> Source file: `apps/web/proxy.ts` (46 lines)
+> Source file: `apps/web/proxy.ts` (48 lines)
 
 ---
 
@@ -30,13 +30,13 @@ In Next.js 16, there's a special file called `proxy.ts` (previously `middleware.
 
 **Over alternative:** Raw `process.env.JWT_SECRET` would work but gives you `string | undefined`, leading to subtle bugs. The config module guarantees the type and existence.
 
-### Decision 3: Graceful degradation when secret is unavailable
+### Decision 3: Fail hard in production, fail soft in development
 
-**What's happening:** `getJwtSecret()` returns `null` if the secret isn't set, and the proxy skips JWT verification in that case. This might seem unsafe, but it's deliberate for local development — you might not have all env vars configured, and you still want the app to run. In production, the Zod config validation ensures the secret exists before the app starts.
+**What's happening:** `getJwtSecret()` returns `null` if the secret isn't set. In development, the proxy skips JWT verification — you might not have all env vars configured, and you still want the app to run. But in production, skipping verification would be an auth bypass. So if the secret is missing and `NODE_ENV === 'production'`, the proxy returns a 500 error instead of silently waving everyone through.
 
-**How to say it in an interview:** "The null-check on the JWT secret provides graceful degradation during development while production relies on the startup config validation to guarantee it exists. It's defense in depth — two layers of checking."
+**How to say it in an interview:** "The proxy uses environment-aware failure modes. In dev, a missing JWT secret skips verification for convenience. In production, it returns 500 — because silently skipping JWT verification in production is an auth bypass, not a convenience."
 
-**Over alternative:** Throwing an error when the secret is missing would crash the proxy on every request during development, making it painful to work on non-auth features.
+**Over alternative:** Always throwing would crash the proxy on every request during development. Always skipping would be a security hole in production. The environment check threads the needle.
 
 ---
 
@@ -44,7 +44,7 @@ In Next.js 16, there's a special file called `proxy.ts` (previously `middleware.
 
 ### Route protection list (line 5)
 
-`PROTECTED_ROUTES` is a simple array of path prefixes. Only `/upload`, `/billing`, and `/admin` are protected. Everything else — including `/dashboard` — passes through. This matches the architecture decision that the dashboard is public (demo mode with seed data for unauthenticated users).
+`PROTECTED_ROUTES` is a simple array of path prefixes. Only `/upload`, `/billing`, `/admin`, and `/settings` are protected. Everything else — including `/dashboard` — passes through. This matches the architecture decision that the dashboard is public (demo mode with seed data for unauthenticated users).
 
 ### Secret accessor (lines 7-10)
 
