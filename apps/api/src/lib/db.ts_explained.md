@@ -77,16 +77,30 @@ The variable is named `queryClient` (not just `client` or `connection`) because 
 ### Block 2: Wrapping with Drizzle ORM (line 13)
 
 ```ts
-export const db = drizzle(queryClient);
+export const db = drizzle(queryClient, { schema });
 ```
 
-**`drizzle(queryClient)`** — This wraps the raw connection pool with Drizzle ORM, a type-safe query builder. Instead of writing raw SQL strings like `SELECT * FROM users WHERE id = $1`, you write TypeScript expressions like `db.select().from(users).where(eq(users.id, 1))`. The benefits are:
+**`drizzle(queryClient, { schema })`** — This wraps the raw connection pool with Drizzle ORM, a type-safe query builder. Passing the schema enables Drizzle's relational query API (`db.query.users.findMany(...)`). Instead of writing raw SQL strings like `SELECT * FROM users WHERE id = $1`, you write TypeScript expressions like `db.select().from(users).where(eq(users.id, 1))`. The benefits are:
 
 1. **Type safety** — If you try to query a column that does not exist, TypeScript catches it at compile time, not at runtime when a user hits the bug.
 2. **SQL injection prevention** — Drizzle parameterizes all values automatically. You cannot accidentally concatenate user input into a query string.
 3. **Autocompletion** — Your editor knows every table and column, so you get suggestions as you type.
 
 The `db` object is what the rest of the application imports. It is the single entry point for all database operations. By centralizing it here, we ensure every part of the app uses the same pool with the same configuration.
+
+### Block 3: The `DbTransaction` type export (lines 15-16)
+
+```ts
+export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+```
+
+**What's happening:** Drizzle doesn't export the transaction client type directly. This line extracts it from the `db.transaction()` method signature using TypeScript's `Parameters` utility type — twice. Think of it like opening a box (the transaction method) to find another box (the callback) and pulling out the thing inside (the `tx` argument).
+
+Step by step: `typeof db.transaction` is the function type. `Parameters<...>[0]` gets the first parameter — the callback. `Parameters<callback>[0]` gets the callback's first parameter — the transaction client. If Drizzle changes its internals, this type updates automatically.
+
+Query functions use this type as: `client: typeof db | DbTransaction = db`. The union means "either the global connection or a transaction." Defaulting to `db` means callers that don't need a transaction don't have to think about it.
+
+**How to say it in an interview:** "Drizzle doesn't export the transaction client type, so we extract it from the method signature using nested `Parameters<>`. It's zero-maintenance — if Drizzle's API changes, the type follows automatically."
 
 ---
 
@@ -107,9 +121,9 @@ We hardcode `max: 10` instead of dynamically adjusting the pool size based on lo
 **How to say it in an interview:**
 "We use a fixed pool size of 10 for predictability. Under heavy load, queries queue instead of opening more connections — this protects PostgreSQL from connection storms. If we need more throughput, we scale horizontally or add PgBouncer, rather than inflating the pool on a single instance."
 
-### Trade-off: No schema passed to drizzle()
+### Trade-off: `DbTransaction` type extraction vs. a hand-written interface
 
-The `drizzle(queryClient)` call does not include a schema argument. Drizzle supports passing your schema (table definitions) at construction time, which enables the "relational query" API (`db.query.users.findMany(...)`). Without it, we use the core query builder API (`db.select().from(users)`), which is equally type-safe but slightly more verbose for joins. This is a deliberate simplicity choice — the core API is closer to SQL and easier for engineers who already know SQL to read.
+We could define `interface DbTransaction { insert: ...; select: ...; query: ... }` manually. But that's fragile — if Drizzle adds or changes methods, our interface falls out of sync silently. The `Parameters<>` extraction tracks Drizzle's actual API automatically. The cost is a line that looks cryptic until you understand `Parameters<>`, but the benefit is zero maintenance across library upgrades.
 
 ---
 

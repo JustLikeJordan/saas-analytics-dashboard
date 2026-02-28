@@ -30,7 +30,8 @@ export async function POST(request: NextRequest) {
     data = { error: { code: 'UPSTREAM_ERROR', message: 'Unexpected response from the server. Please try again.' } };
   }
 
-  const nextResponse = NextResponse.json(data, { status: response.ok ? response.status : 502 });
+  const status = response.status >= 500 ? 502 : response.status;
+  const nextResponse = NextResponse.json(data, { status });
 
   for (const setCookie of response.headers.getSetCookie()) {
     nextResponse.headers.append('Set-Cookie', setCookie);

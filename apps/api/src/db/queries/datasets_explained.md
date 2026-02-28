@@ -12,7 +12,7 @@ Query functions for the `datasets` table that handle CRUD operations and the dem
 
 ## Code Walkthrough
 
-**`createDataset(orgId, data)`** — Standard INSERT-returning pattern. `orgId` is always required (tenant isolation). `isSeedData` defaults to `false` in the schema but can be overridden by the seed script.
+**`createDataset(orgId, data, client?)`** — Inserts a dataset and returns the created row. `orgId` is always required (tenant isolation). `isSeedData` defaults to `false` in the schema but can be overridden by the seed script. The optional `client` parameter accepts either the global `db` connection or a `DbTransaction` handle — both expose the same `.insert()` interface, so the function doesn't need to know which it got. The default `= db` means existing callers don't break. When a caller needs atomicity (e.g., creating a dataset and inserting rows together), it passes its transaction handle: `createDataset(orgId, data, tx)`.
 
 **`getDatasetsByOrg(orgId)`** — Returns all datasets for an org, newest first. Used by the dashboard to list uploaded files and by the demo mode logic to determine available data sources.
 
@@ -28,6 +28,8 @@ Query functions for the `datasets` table that handle CRUD operations and the dem
 
 ## Patterns Worth Knowing
 
+- **Transaction propagation via optional parameter** — `createDataset` accepts an optional `client` so callers control transaction boundaries. The function stays simple; the caller decides the scope. This is the standard "unit of work" pattern without framework magic.
+- **Default parameter = backward-compatible change** — `client = db` means zero callers break when this parameter is added. Callers that need a transaction opt in explicitly.
 - **State machine as a query result** — instead of storing state explicitly, we derive it from the data. No extra column to keep in sync, no state transitions to manage.
 - **Barrel-imported query modules** — all functions are consumed via `import { datasetsQueries } from '../db/queries/index.js'`, keeping the import path consistent across the codebase.
 - **`orgId` on every function** — application-level tenant isolation that mirrors the RLS policies at the database level. Defense in depth.

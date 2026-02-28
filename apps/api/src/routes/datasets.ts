@@ -13,6 +13,7 @@ import type { PreviewData, ParsedRow } from '../services/adapters/index.js';
 import { normalizeHeader } from '../services/dataIngestion/index.js';
 import { createDataset } from '../db/queries/datasets.js';
 import { insertBatch } from '../db/queries/dataRows.js';
+import { db } from '../lib/db.js';
 import { env } from '../config.js';
 
 const upload = multer({
@@ -98,20 +99,27 @@ function signPreviewToken(hash: string, orgId: number, secret: string): string {
 function verifyPreviewToken(token: string, buffer: Buffer, orgId: number, secret: string): boolean {
   try {
     const decoded = JSON.parse(Buffer.from(token, 'base64url').toString());
+
+    if (!decoded || typeof decoded.hash !== 'string' || typeof decoded.orgId !== 'number' ||
+        typeof decoded.iat !== 'number' || typeof decoded.sig !== 'string') {
+      return false;
+    }
+
     const { hash, orgId: tokenOrg, iat, sig } = decoded;
+
+    // cheap rejections first — avoid HMAC + SHA-256 for expired or wrong-org tokens
+    if (tokenOrg !== orgId) return false;
+    if (Date.now() - iat > PREVIEW_TOKEN_TTL_MS) return false;
 
     const expected = createHmac('sha256', secret)
       .update(`${hash}:${tokenOrg}:${iat}`)
       .digest('hex');
 
-    // timing-safe comparison to prevent side-channel leakage
     const sigBuf = Buffer.from(sig, 'hex');
     const expectedBuf = Buffer.from(expected, 'hex');
     if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return false;
 
-    // cheap checks first — avoid hashing a 10MB file for an expired or wrong-org token
-    if (tokenOrg !== orgId) return false;
-    if (Date.now() - iat > PREVIEW_TOKEN_TTL_MS) return false;
+    // file hash is the most expensive check — SHA-256 over up to 10MB
     if (computeFileHash(buffer) !== hash) return false;
 
     return true;
@@ -234,24 +242,26 @@ datasetsRouter.post(
 
     const normalizedRows = normalizeRows(parseResult.rows, parseResult.headers);
 
-    const dataset = await createDataset(orgId, {
-      name: fileName,
-      sourceType: 'csv',
-      uploadedBy: userId,
+    const result = await db.transaction(async (tx) => {
+      const dataset = await createDataset(orgId, {
+        name: fileName,
+        sourceType: 'csv',
+        uploadedBy: userId,
+      }, tx);
+      await insertBatch(orgId, dataset.id, normalizedRows, tx);
+      return { datasetId: dataset.id, rowCount: normalizedRows.length };
     });
 
-    await insertBatch(orgId, dataset.id, normalizedRows);
-
     trackEvent(orgId, userId, ANALYTICS_EVENTS.DATASET_CONFIRMED, {
-      datasetId: dataset.id,
-      rowCount: normalizedRows.length,
+      datasetId: result.datasetId,
+      rowCount: result.rowCount,
     });
 
     logger.info(
-      { orgId, userId, datasetId: dataset.id, rowCount: normalizedRows.length },
+      { orgId, userId, datasetId: result.datasetId, rowCount: result.rowCount },
       'Dataset confirmed and persisted',
     );
 
-    res.json({ data: { datasetId: dataset.id, rowCount: normalizedRows.length } });
+    res.json({ data: result });
   },
 );

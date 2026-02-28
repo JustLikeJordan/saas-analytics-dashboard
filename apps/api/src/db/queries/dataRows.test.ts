@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockFindMany = vi.fn();
-const mockReturning = vi.fn();
-const mockValues = vi.fn(() => ({ returning: mockReturning }));
+const mockValues = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../../lib/db.js', () => ({
   db: {
@@ -24,24 +23,25 @@ describe('dataRows queries', () => {
   });
 
   describe('insertBatch', () => {
-    it('inserts rows and returns them', async () => {
-      const inserted = [{ id: 1 }, { id: 2 }];
-      mockReturning.mockResolvedValueOnce(inserted);
-
+    it('inserts rows in batches', async () => {
       const rows = [
         { category: 'Revenue', date: new Date('2025-01-15'), amount: '12000.00' },
         { category: 'Payroll', date: new Date('2025-01-15'), amount: '5500.00' },
       ];
 
-      const result = await insertBatch(10, 1, rows);
+      await insertBatch(10, 1, rows);
 
-      expect(result).toEqual(inserted);
+      expect(mockValues).toHaveBeenCalledOnce();
+      expect(mockValues).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ orgId: 10, datasetId: 1, category: 'Revenue' }),
+        ]),
+      );
     });
 
-    it('returns empty array for empty input', async () => {
-      const result = await insertBatch(10, 1, []);
+    it('skips insert for empty input', async () => {
+      await insertBatch(10, 1, []);
 
-      expect(result).toEqual([]);
       expect(mockValues).not.toHaveBeenCalled();
     });
   });

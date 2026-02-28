@@ -1,13 +1,14 @@
 import { eq, and, desc } from 'drizzle-orm';
 import type { DemoModeState } from 'shared/types';
-import { db } from '../../lib/db.js';
+import { db, type DbTransaction } from '../../lib/db.js';
 import { datasets } from '../schema.js';
 
 export async function createDataset(
   orgId: number,
   data: { name: string; sourceType?: 'csv'; isSeedData?: boolean; uploadedBy?: number | null },
+  client: typeof db | DbTransaction = db,
 ) {
-  const [dataset] = await db
+  const [dataset] = await client
     .insert(datasets)
     .values({ orgId, ...data })
     .returning();
