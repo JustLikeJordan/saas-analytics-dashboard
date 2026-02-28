@@ -122,9 +122,13 @@ The main dropzone container with conditional content per state. A `cn()` call on
 
 The error state shows inside the dropzone (destructive icon, last file name, "Drop a corrected file" prompt) AND below it (a detailed Alert with per-column error breakdown and a sample template link).
 
-### DefaultContent subcomponent (lines 366-383)
+### DefaultContent subcomponent (lines 370-387)
 
-Extracted to keep the main render clean. Shows the upload icon, adaptive text (touch vs. desktop), file size constraints, and a sample template link.
+Extracted to keep the main render clean. Shows the upload icon, adaptive text (touch vs. desktop), file size constraints, and a sample CSV template download link. The link points to `/templates/sample-data.csv` — a static file served by Next.js from `public/templates/`. The `download` attribute triggers a save dialog instead of navigation. `stopPropagation` prevents the click from bubbling to the dropzone's file picker.
+
+### Template download links (default + error states)
+
+Both the default state (`DefaultContent`) and the error state alert include a "Download sample template" link. Both point to the same static CSV file at `/templates/sample-data.csv` with a `download` attribute. The error state link also has `stopPropagation` to prevent the dropzone click handler from intercepting. This fulfills FR9 — users can download a sample CSV template showing the expected format.
 
 ---
 

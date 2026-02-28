@@ -1,0 +1,6 @@
+date,amount,category,parent_category,label
+2025-01-15,14500.00,Revenue,Income,Monthly sales
+2025-01-15,6000.00,Payroll,Expenses,Staff wages
+2025-01-15,950.00,Marketing,Expenses,Social media ads
+2025-01-15,3000.00,Rent,Expenses,Store lease
+2025-01-15,1800.00,Supplies,Expenses,Coffee beans and packaging

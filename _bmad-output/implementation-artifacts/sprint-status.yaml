@@ -55,7 +55,7 @@ development_status:
   2-1-seed-data-demo-mode-foundation: done
   2-2-csv-upload-validation: done
   2-3-csv-preview-confirmation: done
-  2-4-sample-csv-template-download: backlog
+  2-4-sample-csv-template-download: done
   2-5-demo-to-real-data-transition: backlog
   2-6-interactive-dashboard-charts: backlog
   2-7-date-range-category-filters: backlog

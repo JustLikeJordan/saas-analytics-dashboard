@@ -352,7 +352,12 @@ export function UploadDropzone() {
               </AlertDescription>
             )}
             <AlertDescription className="mt-3">
-              <a href="#" className="font-medium underline underline-offset-4">
+              <a
+                href="/templates/sample-data.csv"
+                download="sample-data.csv"
+                className="font-medium underline underline-offset-4"
+                onClick={(e) => e.stopPropagation()}
+              >
                 Download sample template
               </a>
             </AlertDescription>
@@ -372,7 +377,8 @@ function DefaultContent({ isMobile }: { isMobile: boolean }) {
       </p>
       <p className="mt-1 text-sm text-muted-foreground">Accepted: .csv up to 10MB</p>
       <a
-        href="#"
+        href="/templates/sample-data.csv"
+        download="sample-data.csv"
         className="mt-2 inline-block text-sm text-primary underline underline-offset-4"
         onClick={(e) => e.stopPropagation()}
       >
