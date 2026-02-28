@@ -9,7 +9,7 @@ const MONTH_LABELS = [
 
 /**
  * Aggregates an org's data_rows into chart-ready structures:
- * - revenueTrend: monthly income totals, chronological
+ * - revenueTrend: monthly income totals, chronological (year-aware)
  * - expenseBreakdown: total per expense category, descending by amount
  *
  * Runs a single query, aggregates in JS. Good enough for <50k rows;
@@ -21,26 +21,31 @@ export async function getChartData(orgId: number) {
     orderBy: asc(dataRows.date),
   });
 
-  const revenueByMonth = new Map<number, number>();
+  // keyed as "YYYY-MM" for correct chronological sorting across years
+  const revenueByMonth = new Map<string, number>();
   const expenseTotals = new Map<string, number>();
 
   for (const row of rows) {
     const amount = parseFloat(row.amount);
-    const month = row.date.getMonth();
 
     if (row.parentCategory === 'Income') {
-      revenueByMonth.set(month, (revenueByMonth.get(month) ?? 0) + amount);
+      const key = `${row.date.getFullYear()}-${String(row.date.getMonth()).padStart(2, '0')}`;
+      revenueByMonth.set(key, (revenueByMonth.get(key) ?? 0) + amount);
     } else if (row.parentCategory === 'Expenses') {
       expenseTotals.set(row.category, (expenseTotals.get(row.category) ?? 0) + amount);
     }
   }
 
   const revenueTrend = [...revenueByMonth.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([monthIdx, revenue]) => ({
-      month: MONTH_LABELS[monthIdx],
-      revenue: Math.round(revenue * 100) / 100,
-    }));
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, revenue]) => {
+      const monthIdx = parseInt(key.split('-')[1]!, 10);
+      const year = key.split('-')[0];
+      return {
+        month: `${MONTH_LABELS[monthIdx]} ${year}`,
+        revenue: Math.round(revenue * 100) / 100,
+      };
+    });
 
   const expenseBreakdown = [...expenseTotals.entries()]
     .map(([category, total]) => ({ category, total: Math.round(total * 100) / 100 }))

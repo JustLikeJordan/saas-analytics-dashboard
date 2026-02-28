@@ -5,7 +5,6 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import { Upload } from 'lucide-react';
 import type { ChartData } from 'shared/types';
-import { AppHeader } from '@/components/layout/AppHeader';
 import { apiClient } from '@/lib/api-client';
 import { useSidebar } from './contexts/SidebarContext';
 import { RevenueChart } from './charts/RevenueChart';
@@ -15,7 +14,6 @@ import { LazyChart } from './charts/LazyChart';
 
 interface DashboardShellProps {
   initialData: ChartData;
-  isAuthenticated: boolean;
 }
 
 async function fetchChartData(): Promise<ChartData> {
@@ -69,7 +67,7 @@ function EmptyState() {
   );
 }
 
-export function DashboardShell({ initialData, isAuthenticated }: DashboardShellProps) {
+export function DashboardShell({ initialData }: DashboardShellProps) {
   const { setOrgName } = useSidebar();
   const { data = initialData, isLoading, mutate } = useSWR(
     '/dashboard/charts',
@@ -90,45 +88,39 @@ export function DashboardShell({ initialData, isAuthenticated }: DashboardShellP
   const hasData = hasRevenue || hasExpenses;
 
   return (
-    <div className="flex h-full flex-col">
-      <AppHeader isAuthenticated={isAuthenticated} />
+    <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-foreground">{data.orgName}</h1>
+        {data.isDemo && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Viewing sample data &mdash; upload your own CSV to see insights about your business.
+          </p>
+        )}
+      </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold text-foreground">{data.orgName}</h1>
-            {data.isDemo && (
-              <p className="mt-1 text-sm text-muted-foreground">
-                Viewing sample data &mdash; upload your own CSV to see insights about your business.
-              </p>
+      <ChartErrorBoundary onRetry={() => mutate()}>
+        {isLoading && !hasData ? (
+          <div className="grid gap-4 md:grid-cols-2 md:gap-6">
+            <ChartSkeleton variant="line" />
+            <ChartSkeleton variant="bar" />
+          </div>
+        ) : !hasData ? (
+          <EmptyState />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 md:gap-6">
+            {hasRevenue && (
+              <LazyChart skeletonVariant="line">
+                <RevenueChart data={data.revenueTrend} />
+              </LazyChart>
+            )}
+            {hasExpenses && (
+              <LazyChart skeletonVariant="bar">
+                <ExpenseChart data={data.expenseBreakdown} />
+              </LazyChart>
             )}
           </div>
-
-          <ChartErrorBoundary onRetry={() => mutate()}>
-            {isLoading && !hasData ? (
-              <div className="grid gap-4 md:grid-cols-2 md:gap-6">
-                <ChartSkeleton variant="line" />
-                <ChartSkeleton variant="bar" />
-              </div>
-            ) : !hasData ? (
-              <EmptyState />
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 md:gap-6">
-                {hasRevenue && (
-                  <LazyChart skeletonVariant="line">
-                    <RevenueChart data={data.revenueTrend} />
-                  </LazyChart>
-                )}
-                {hasExpenses && (
-                  <LazyChart skeletonVariant="bar">
-                    <ExpenseChart data={data.expenseBreakdown} />
-                  </LazyChart>
-                )}
-              </div>
-            )}
-          </ChartErrorBoundary>
-        </div>
-      </div>
+        )}
+      </ChartErrorBoundary>
     </div>
   );
 }

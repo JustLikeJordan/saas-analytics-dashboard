@@ -19,12 +19,6 @@ vi.mock('@/lib/api-client', () => ({
   apiClient: vi.fn(),
 }));
 
-vi.mock('@/components/layout/AppHeader', () => ({
-  AppHeader: ({ isAuthenticated }: { isAuthenticated: boolean }) => (
-    <div data-testid="app-header" data-auth={isAuthenticated} />
-  ),
-}));
-
 let shouldThrow = false;
 
 vi.mock('./charts/RevenueChart', () => ({
@@ -84,32 +78,32 @@ afterEach(() => {
 
 describe('DashboardShell', () => {
   it('renders org name as heading', () => {
-    render(<DashboardShell initialData={fullData} isAuthenticated={false} />);
+    render(<DashboardShell initialData={fullData} />);
 
     expect(screen.getByRole('heading', { name: 'Acme Corp' })).toBeInTheDocument();
   });
 
   it('shows demo banner when isDemo is true', () => {
-    render(<DashboardShell initialData={{ ...fullData, isDemo: true }} isAuthenticated={false} />);
+    render(<DashboardShell initialData={{ ...fullData, isDemo: true }} />);
 
     expect(screen.getByText(/Viewing sample data/)).toBeInTheDocument();
   });
 
   it('hides demo banner when isDemo is false', () => {
-    render(<DashboardShell initialData={fullData} isAuthenticated={true} />);
+    render(<DashboardShell initialData={fullData} />);
 
     expect(screen.queryByText(/Viewing sample data/)).not.toBeInTheDocument();
   });
 
   it('renders both charts when data exists', () => {
-    render(<DashboardShell initialData={fullData} isAuthenticated={false} />);
+    render(<DashboardShell initialData={fullData} />);
 
     expect(screen.getByTestId('revenue-chart')).toBeInTheDocument();
     expect(screen.getByTestId('expense-chart')).toBeInTheDocument();
   });
 
   it('shows empty state with upload CTA when no data', () => {
-    render(<DashboardShell initialData={emptyData} isAuthenticated={false} />);
+    render(<DashboardShell initialData={emptyData} />);
 
     expect(screen.getByText('No data to display')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Upload a CSV' })).toHaveAttribute('href', '/upload');
@@ -118,7 +112,7 @@ describe('DashboardShell', () => {
   it('shows skeletons during loading with no fallback data', () => {
     mockSwrReturn = { data: emptyData, isLoading: true, mutate: mockMutate };
 
-    render(<DashboardShell initialData={emptyData} isAuthenticated={false} />);
+    render(<DashboardShell initialData={emptyData} />);
 
     expect(screen.getByTestId('skeleton-line')).toBeInTheDocument();
     expect(screen.getByTestId('skeleton-bar')).toBeInTheDocument();
@@ -126,10 +120,7 @@ describe('DashboardShell', () => {
 
   it('only renders revenue chart when expense data is empty', () => {
     render(
-      <DashboardShell
-        initialData={{ ...fullData, expenseBreakdown: [] }}
-        isAuthenticated={false}
-      />,
+      <DashboardShell initialData={{ ...fullData, expenseBreakdown: [] }} />,
     );
 
     expect(screen.getByTestId('revenue-chart')).toBeInTheDocument();
@@ -138,10 +129,7 @@ describe('DashboardShell', () => {
 
   it('only renders expense chart when revenue data is empty', () => {
     render(
-      <DashboardShell
-        initialData={{ ...fullData, revenueTrend: [] }}
-        isAuthenticated={false}
-      />,
+      <DashboardShell initialData={{ ...fullData, revenueTrend: [] }} />,
     );
 
     expect(screen.queryByTestId('revenue-chart')).not.toBeInTheDocument();
@@ -153,7 +141,7 @@ describe('DashboardShell', () => {
       vi.spyOn(console, 'error').mockImplementation(() => {});
       shouldThrow = true;
 
-      render(<DashboardShell initialData={fullData} isAuthenticated={false} />);
+      render(<DashboardShell initialData={fullData} />);
 
       expect(screen.getByText('Unable to load charts')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
@@ -163,7 +151,7 @@ describe('DashboardShell', () => {
       vi.spyOn(console, 'error').mockImplementation(() => {});
       shouldThrow = true;
 
-      render(<DashboardShell initialData={fullData} isAuthenticated={false} />);
+      render(<DashboardShell initialData={fullData} />);
       expect(screen.getByText('Unable to load charts')).toBeInTheDocument();
 
       shouldThrow = false;
