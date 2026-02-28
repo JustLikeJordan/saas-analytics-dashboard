@@ -17,4 +17,7 @@ export {
   demoModeStateSchema,
   datasetSchema,
   dataRowSchema,
+  columnValidationErrorSchema,
+  csvPreviewDataSchema,
+  csvValidationErrorSchema,
 } from './datasets.js';

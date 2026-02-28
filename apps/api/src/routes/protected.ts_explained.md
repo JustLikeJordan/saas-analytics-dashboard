@@ -48,15 +48,14 @@ protectedRouter.use(authMiddleware);
 
 `Router()` creates a new, empty router. `.use(authMiddleware)` registers middleware that runs before any route handler on this router. When a request hits any route mounted on `protectedRouter`, Express runs `authMiddleware` first. If auth succeeds, the request continues to the actual route handler. If it fails, the middleware responds with 401 and the route handler never runs.
 
-### Lines 9-12: Commented future routes
+### Lines 9-12: Mounted sub-routers
 
 ```ts
-// protectedRouter.use(datasetRouter);
-// protectedRouter.use(aiRouter);
-// protectedRouter.use(adminRouter); // + roleGuard('admin')
+protectedRouter.use('/invites', inviteRouter);
+protectedRouter.use('/datasets', datasetsRouter);
 ```
 
-These comments show how the router will grow. Future stories will create sub-routers for datasets, AI summaries, billing, and admin operations. Each one just calls `protectedRouter.use(...)` and gets auth automatically. The `adminRouter` note hints at layered authorization — auth first (from this router), then role-based access control on top.
+Two sub-routers are now mounted. `inviteRouter` handles org invite CRUD (Story 1.5). `datasetsRouter` handles CSV upload and validation (Story 2.2) — it's the `POST /datasets` endpoint that receives multipart file uploads, validates the CSV structure, and returns a preview. Both inherit JWT authentication from the `protectedRouter.use(authMiddleware)` call above. Future stories will add AI summary routes (with `rateLimitAi`) and admin routes (with `roleGuard`).
 
 ### Line 14: Export
 

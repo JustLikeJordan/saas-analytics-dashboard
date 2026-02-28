@@ -15,4 +15,7 @@ export type {
   DemoModeState,
   Dataset,
   DataRow,
+  ColumnValidationError,
+  CsvPreviewData,
+  CsvValidationError,
 } from './datasets.js';
