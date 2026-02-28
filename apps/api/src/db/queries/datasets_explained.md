@@ -16,9 +16,11 @@ Query functions for the `datasets` table that handle CRUD operations and the dem
 
 **`getDatasetsByOrg(orgId)`** — Returns all datasets for an org, newest first. Used by the dashboard to list uploaded files and by the demo mode logic to determine available data sources.
 
-**`getUserOrgDemoState(orgId)`** — The demo mode state machine. Queries for a single non-seed dataset. If found, the org has its own data (`user_only`). If not, the org is empty and the dashboard should fall back to seed data (`empty`). The other two enum values (`seed_only`, `seed_plus_user`) only apply to the seed-demo org itself.
+**`getUserOrgDemoState(orgId, client?)`** — The demo mode state machine. Queries for a single non-seed dataset. If found, the org has its own data (`user_only`). If not, the org is empty and the dashboard should fall back to seed data (`empty`). The other two enum values (`seed_only`, `seed_plus_user`) only apply to the seed-demo org itself. The optional `client` parameter (defaults to `db`) lets the confirm endpoint read state inside the same transaction that writes data — so the returned state reflects the just-committed changes, not a stale snapshot.
 
-**`getSeedDataset(orgId)`** — Finds the seed dataset for an org. Used by Story 2.5 (CSV upload) to determine if seed data should be replaced when the user uploads their own data. Returns `undefined` if no seed dataset exists.
+**`getSeedDataset(orgId)`** — Finds the seed dataset for an org. Returns `undefined` if no seed dataset exists.
+
+**`deleteSeedDatasets(orgId, client?)`** — Removes all seed datasets for an org. Data rows cascade-delete at the database level via the FK constraint on `data_rows.dataset_id`. This is a safety net — under Option C, user orgs normally never have seed data (seed data lives in the `seed-demo` org). But if the architecture evolves to copy seed data into user orgs, or a bug places it there, the confirm endpoint cleans it up atomically within the upload transaction.
 
 ## Complexity & Trade-offs
 
@@ -28,8 +30,9 @@ Query functions for the `datasets` table that handle CRUD operations and the dem
 
 ## Patterns Worth Knowing
 
-- **Transaction propagation via optional parameter** — `createDataset` accepts an optional `client` so callers control transaction boundaries. The function stays simple; the caller decides the scope. This is the standard "unit of work" pattern without framework magic.
+- **Transaction propagation via optional parameter** — `createDataset`, `getUserOrgDemoState`, and `deleteSeedDatasets` all accept an optional `client` so callers control transaction boundaries. The function stays simple; the caller decides the scope. This is the standard "unit of work" pattern without framework magic.
 - **Default parameter = backward-compatible change** — `client = db` means zero callers break when this parameter is added. Callers that need a transaction opt in explicitly.
+- **Cascade delete as infrastructure, not application logic** — `deleteSeedDatasets` doesn't query or delete data rows. The FK constraint does that automatically. One SQL statement, zero application-level coordination.
 - **State machine as a query result** — instead of storing state explicitly, we derive it from the data. No extra column to keep in sync, no state transitions to manage.
 - **Barrel-imported query modules** — all functions are consumed via `import { datasetsQueries } from '../db/queries/index.js'`, keeping the import path consistent across the codebase.
 - **`orgId` on every function** — application-level tenant isolation that mirrors the RLS policies at the database level. Defense in depth.
@@ -42,8 +45,11 @@ A: Derived state can't go stale. If you stored "demo_mode = empty" as a column, 
 **Q: What happens if the user deletes all their datasets?**
 A: `getUserOrgDemoState` would return `empty` again, and the dashboard would fall back to seed data. The transition is automatic — no manual state management.
 
-**Q: Why does `getSeedDataset` exist separately from `getUserOrgDemoState`?**
-A: Different consumers, different data needs. `getUserOrgDemoState` answers "should I show seed or user data?" (binary decision). `getSeedDataset` returns the actual dataset record, needed by CSV upload (Story 2.5) to implement the "replace seed data" flow.
+**Q: Why does `getSeedDataset` exist separately from `deleteSeedDatasets`?**
+A: Different read vs. write needs. `getSeedDataset` returns the record — useful when you need to inspect seed data before acting. `deleteSeedDatasets` is a bulk delete that doesn't return what it removed. They could share an internal "find seed datasets" query, but that's premature abstraction for two simple functions.
+
+**Q: Why does `deleteSeedDatasets` exist if user orgs don't normally have seed data?**
+A: Defensive programming. The Option C architecture puts seed data in the `seed-demo` org, not user orgs. But architectures evolve, bugs happen. Running `deleteSeedDatasets` inside the upload transaction costs almost nothing (it's a no-op when there's nothing to delete) and guarantees a clean slate regardless of how the data got there.
 
 ## Data Structures
 

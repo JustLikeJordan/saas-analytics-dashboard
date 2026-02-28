@@ -44,11 +44,11 @@ Think of a notarized document. The notary (server) stamps it with a tamper-evide
 
 **Over alternative:** Normalizing inside the adapter. We avoided that because the adapter is a general-purpose parsing layer — other callers might need original-case keys. Normalization at the route level keeps the adapter reusable.
 
-### Decision 5: `db.transaction()` for atomic persistence
+### Decision 5: `db.transaction()` for atomic persistence + seed cleanup
 
-**What's happening:** The confirm endpoint creates a dataset record and then inserts all the data rows. Before, these were two separate `await` calls — if `insertBatch` failed after `createDataset` succeeded, you'd have a dataset with no rows (an "orphan"). Now both writes happen inside `db.transaction()`. If either fails, the database rolls back everything. Think of a bank transfer — you wouldn't debit one account without crediting the other. The transaction makes it all-or-nothing.
+**What's happening:** The confirm endpoint does three things atomically inside `db.transaction()`: (1) deletes any seed datasets for the org, (2) creates the new dataset record, (3) inserts all data rows. If any step fails, everything rolls back — no orphan datasets, no half-deleted seed data. The seed deletion is a safety net (user orgs don't normally have seed data under Option C), but running it inside the transaction costs nothing and guarantees the org transitions cleanly. After the writes, `getUserOrgDemoState` reads the org's state inside the same transaction, so it reflects the just-committed data — not a stale external read.
 
-**How to say it in an interview:** "I wrapped `createDataset` and `insertBatch` in a single transaction to prevent orphan datasets. Without it, a failure in the batch insert would leave a dataset record with no rows — a silent data integrity bug that's hard to detect after the fact."
+**How to say it in an interview:** "The transaction bundles seed cleanup, dataset creation, row insertion, and demo state derivation into a single atomic unit. A failure at any point rolls back everything. The demo state query runs inside the transaction so it sees the new data, not a stale snapshot from before the write."
 
 **Over alternative:** Two sequential `await` calls with manual cleanup in a `catch` block. But what if the cleanup also fails? You're stuck with an orphan and an exception, writing recovery logic for the recovery logic. Transactions handle this atomically.
 
@@ -110,18 +110,25 @@ The happy path:
 
 Three different failure modes are checked in sequence. First, zero rows with warnings (empty file, header-only). Second, header validation failures (missing required columns). Third, zero valid rows from a non-empty file (>50% row failure rate). Each gets a different error message.
 
-### Confirm endpoint — `POST /confirm` (lines 181-265)
+### Confirm endpoint — `POST /confirm` (lines 203-271)
 
 1. Extract user context, check for file
 2. **Token gate**: reject if `previewToken` is missing or fails verification
 3. Re-parse and re-validate (the file buffer is self-contained)
 4. Normalize rows for DB insertion
-5. **Transaction block**: `db.transaction(async (tx) => { ... })` wraps `createDataset` and `insertBatch`, passing `tx` to both. Returns `{ datasetId, rowCount }`.
+5. **Transaction block**: `db.transaction(async (tx) => { ... })` runs four steps atomically:
+   - `deleteSeedDatasets(orgId, tx)` — cleans up any seed data in the org (safety net; usually a no-op)
+   - `createDataset(orgId, { ... }, tx)` — inserts the dataset record
+   - `insertBatch(orgId, dataset.id, normalizedRows, tx)` — inserts all data rows
+   - `getUserOrgDemoState(orgId, tx)` — derives the org's demo state from the just-written data
+   - Returns `{ datasetId, rowCount, demoState }`
 6. **Post-transaction**: track analytics event and respond using the returned `result` object
 
 The non-obvious part: `req.body?.previewToken` works because multer populates `req.body` with text form fields alongside `req.file`. The frontend appends both the file and the token to the same FormData object.
 
-The transaction pattern: both `createDataset` and `insertBatch` accept an optional `client` parameter. Inside the transaction callback, they receive `tx` — outside, they default to the module-level `db`. This means the query functions don't know or care whether they're in a transaction; the route handler controls the boundary.
+The transaction pattern: `createDataset`, `insertBatch`, `deleteSeedDatasets`, and `getUserOrgDemoState` all accept an optional `client` parameter. Inside the transaction callback, they receive `tx` — outside, they default to the module-level `db`. The query functions don't know or care whether they're in a transaction; the route handler controls the boundary.
+
+The `demoState` return is important for the frontend. After a first upload, the dashboard needs to know the org transitioned from `empty` to `user_only` so it can stop showing seed data. Reading state inside the transaction avoids a race where a concurrent request could see stale state.
 
 ---
 
@@ -222,6 +229,14 @@ The browser never talks directly to this Express API. Requests go through Next.j
 **Strong answer:** "A temp table approach works but introduces server-side state that needs cleanup — expired previews, orphaned rows, TTL sweeps. The HMAC token is stateless and self-expiring. The trade-off is re-parsing the file on confirm, which for our file size limits (10MB, 50K rows) takes under 500ms. At larger scale, I'd consider a hybrid — cache parsed results in Redis keyed by file hash."
 
 **Red flag answer:** "We don't need to store anything because the token has all the data." The token doesn't contain the data; it contains a hash of it. It's a verification mechanism, not storage.
+
+### Q6: "Why does the confirm endpoint delete seed data and read demo state inside the transaction?"
+
+**Context if you need it:** Tests understanding of transactional reads and the demo mode state machine.
+
+**Strong answer:** "The seed deletion and state read both happen inside the transaction so they see the same snapshot of data as the writes. If `getUserOrgDemoState` ran after the transaction committed, a concurrent request could insert another dataset between our commit and our read, giving us a stale state. Inside the transaction, the read is guaranteed to reflect our writes and nothing else."
+
+**Red flag answer:** "Because it's cleaner to have everything in one place." That's incidental. The actual reason is consistency — a transactional read sees the effects of prior writes in the same transaction.
 
 ### Q2: "What happens if two users upload the same file simultaneously?"
 

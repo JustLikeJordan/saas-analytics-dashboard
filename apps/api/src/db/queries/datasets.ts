@@ -24,8 +24,11 @@ export async function getDatasetsByOrg(orgId: number) {
 }
 
 /** User orgs only: returns 'empty' or 'user_only'. Seed org states handled separately. */
-export async function getUserOrgDemoState(orgId: number): Promise<DemoModeState> {
-  const userDataset = await db.query.datasets.findFirst({
+export async function getUserOrgDemoState(
+  orgId: number,
+  client: typeof db | DbTransaction = db,
+): Promise<DemoModeState> {
+  const userDataset = await client.query.datasets.findFirst({
     where: and(eq(datasets.orgId, orgId), eq(datasets.isSeedData, false)),
   });
   return userDataset ? 'user_only' : 'empty';
@@ -35,4 +38,14 @@ export async function getSeedDataset(orgId: number) {
   return db.query.datasets.findFirst({
     where: and(eq(datasets.orgId, orgId), eq(datasets.isSeedData, true)),
   });
+}
+
+/** Removes all seed datasets (and their data rows via cascade) for an org. */
+export async function deleteSeedDatasets(
+  orgId: number,
+  client: typeof db | DbTransaction = db,
+) {
+  return client
+    .delete(datasets)
+    .where(and(eq(datasets.orgId, orgId), eq(datasets.isSeedData, true)));
 }

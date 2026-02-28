@@ -11,7 +11,7 @@ import { trackEvent } from '../services/analytics/trackEvent.js';
 import { logger } from '../lib/logger.js';
 import type { PreviewData, ParsedRow } from '../services/adapters/index.js';
 import { normalizeHeader } from '../services/dataIngestion/index.js';
-import { createDataset } from '../db/queries/datasets.js';
+import { createDataset, deleteSeedDatasets, getUserOrgDemoState } from '../db/queries/datasets.js';
 import { insertBatch } from '../db/queries/dataRows.js';
 import { db } from '../lib/db.js';
 import { env } from '../config.js';
@@ -243,13 +243,17 @@ datasetsRouter.post(
     const normalizedRows = normalizeRows(parseResult.rows, parseResult.headers);
 
     const result = await db.transaction(async (tx) => {
+      await deleteSeedDatasets(orgId, tx);
+
       const dataset = await createDataset(orgId, {
         name: fileName,
         sourceType: 'csv',
         uploadedBy: userId,
       }, tx);
       await insertBatch(orgId, dataset.id, normalizedRows, tx);
-      return { datasetId: dataset.id, rowCount: normalizedRows.length };
+
+      const demoState = await getUserOrgDemoState(orgId, tx);
+      return { datasetId: dataset.id, rowCount: normalizedRows.length, demoState };
     });
 
     trackEvent(orgId, userId, ANALYTICS_EVENTS.DATASET_CONFIRMED, {
