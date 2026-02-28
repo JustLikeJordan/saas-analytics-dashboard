@@ -21,3 +21,9 @@ export {
   csvPreviewDataSchema,
   csvValidationErrorSchema,
 } from './datasets.js';
+
+export {
+  revenueTrendPointSchema,
+  expenseBreakdownItemSchema,
+  chartDataSchema,
+} from './charts.js';

@@ -19,3 +19,9 @@ export type {
   CsvPreviewData,
   CsvValidationError,
 } from './datasets.js';
+
+export type {
+  RevenueTrendPoint,
+  ExpenseBreakdownItem,
+  ChartData,
+} from './charts.js';
