@@ -25,6 +25,28 @@ export const datasetSchema = z.object({
   createdAt: z.coerce.date(),
 });
 
+export const columnValidationErrorSchema = z.object({
+  column: z.string(),
+  message: z.string(),
+  row: z.number().int().optional(),
+});
+
+export const csvPreviewDataSchema = z.object({
+  headers: z.array(z.string()),
+  sampleRows: z.array(z.record(z.string())),
+  rowCount: z.number().int(),
+  validRowCount: z.number().int(),
+  skippedRowCount: z.number().int(),
+  columnTypes: z.record(z.enum(['date', 'number', 'text'])),
+  warnings: z.array(z.string()),
+  fileName: z.string(),
+});
+
+export const csvValidationErrorSchema = z.object({
+  errors: z.array(columnValidationErrorSchema),
+  fileName: z.string(),
+});
+
 export const dataRowSchema = z.object({
   id: z.number().int(),
   orgId: z.number().int(),

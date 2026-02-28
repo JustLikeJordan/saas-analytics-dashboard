@@ -170,7 +170,44 @@ So `AnalyticsEventName` is a union of all 12 event strings. Any function that ac
 
 Adding a new event in the future is one line: add a key-value pair to the object. The `AnalyticsEventName` type updates automatically. No manual type maintenance, no risk of forgetting to update a union.
 
-### Block 7: Auth configuration (lines 40-53)
+### Block 7: Seed org configuration (lines 55-58)
+
+```ts
+export const SEED_ORG = {
+  slug: 'seed-demo',
+  name: 'Sunrise Cafe',
+} as const;
+```
+
+The demo mode system uses a pre-created org called "Sunrise Cafe" with a fixed slug. This constant defines that org's identity so the seed data scripts and demo mode state machine can reference it consistently. The slug `'seed-demo'` is used for URL routing and database lookups. Hardcoding it here (rather than generating it dynamically) means demo mode setup is deterministic — every environment starts with the same org, which makes CI testing and local development predictable.
+
+### Block 8: CSV validation constants (lines 60-63)
+
+```ts
+export const CSV_REQUIRED_COLUMNS = ['date', 'amount', 'category'] as const;
+export const CSV_OPTIONAL_COLUMNS = ['label', 'parent_category'] as const;
+export const CSV_MAX_ROWS = 50_000;
+export const ACCEPTED_FILE_TYPES = ['.csv', 'text/csv', 'application/vnd.ms-excel'] as const;
+```
+
+Four constants governing CSV upload validation. `CSV_REQUIRED_COLUMNS` lists the three columns every CSV must contain — the backend rejects files missing any of them. `CSV_OPTIONAL_COLUMNS` lists recognized-but-not-mandatory columns. `CSV_MAX_ROWS` caps file size at 50,000 rows to prevent memory exhaustion during parsing (the entire file is buffered in memory via multer). `ACCEPTED_FILE_TYPES` defines valid MIME types and extensions — the frontend checks this before uploading, and multer's `fileFilter` checks it again server-side.
+
+These live in shared constants (not just the backend) because the frontend's `UploadDropzone` component uses `MAX_FILE_SIZE` and `ACCEPTED_FILE_TYPES` for client-side validation before the file ever leaves the browser.
+
+### Block 9: Demo mode state machine (lines 65-70)
+
+```ts
+export const DEMO_MODE_STATES = {
+  SEED_ONLY: 'seed_only',
+  SEED_PLUS_USER: 'seed_plus_user',
+  USER_ONLY: 'user_only',
+  EMPTY: 'empty',
+} as const;
+```
+
+The dashboard has a 4-state machine governing what data a user sees. `seed_only` means the user is viewing the pre-loaded demo data (Sunrise Cafe). `seed_plus_user` means they uploaded their own CSV but the demo data is still visible. `user_only` means they've dismissed the demo. `empty` means they deleted everything and haven't uploaded yet. The state transitions drive UI decisions — like showing a "Try with sample data" prompt in the `empty` state, or a "You're viewing demo data" banner in `seed_only`.
+
+### Block 10: Auth configuration (lines 40-53)
 
 ```ts
 export const AUTH = {

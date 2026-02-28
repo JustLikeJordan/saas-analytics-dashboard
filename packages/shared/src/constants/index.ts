@@ -57,6 +57,11 @@ export const SEED_ORG = {
   name: 'Sunrise Cafe',
 } as const;
 
+export const CSV_REQUIRED_COLUMNS = ['date', 'amount', 'category'] as const;
+export const CSV_OPTIONAL_COLUMNS = ['label', 'parent_category'] as const;
+export const CSV_MAX_ROWS = 50_000;
+export const ACCEPTED_FILE_TYPES = ['.csv', 'text/csv', 'application/vnd.ms-excel'] as const;
+
 export const DEMO_MODE_STATES = {
   SEED_ONLY: 'seed_only',
   SEED_PLUS_USER: 'seed_plus_user',
