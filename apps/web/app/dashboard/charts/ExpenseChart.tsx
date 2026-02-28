@@ -18,7 +18,7 @@ interface ExpenseChartProps {
   data: ExpenseBreakdownItem[];
 }
 
-function ExpenseTooltip({ active, payload, label }: {
+export function ExpenseTooltip({ active, payload, label }: {
   active?: boolean;
   payload?: Array<{ value: number | null }>;
   label?: string;
@@ -31,7 +31,7 @@ function ExpenseTooltip({ active, payload, label }: {
   return (
     <div
       role="status"
-      aria-live="assertive"
+      aria-live="polite"
       className="rounded-md border border-border bg-card px-3 py-2 text-sm shadow-md"
     >
       <p className="font-medium text-card-foreground">{label}</p>

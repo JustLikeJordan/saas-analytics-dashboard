@@ -69,5 +69,9 @@ describe('computeTrend', () => {
     expect(computeTrend([{ revenue: 0 }, { revenue: 50 }])).toBe(100);
     expect(computeTrend([{ revenue: 0 }, { revenue: 0 }])).toBe(0);
   });
+
+  it('returns -100 when previous is zero and current is negative', () => {
+    expect(computeTrend([{ revenue: 0 }, { revenue: -200 }])).toBe(-100);
+  });
 });
 

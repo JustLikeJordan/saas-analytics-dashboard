@@ -74,7 +74,7 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
     fetchChartData,
     {
       fallbackData: initialData,
-      revalidateOnFocus: false,
+      revalidateOnFocus: true,
       revalidateOnReconnect: false,
     },
   );

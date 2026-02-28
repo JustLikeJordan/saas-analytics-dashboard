@@ -30,7 +30,7 @@ export function computeTrend(data: { revenue: number }[]): number | null {
   const last = data[data.length - 1]!.revenue;
   const prev = data[data.length - 2]!.revenue;
 
-  if (prev === 0) return last > 0 ? 100 : 0;
+  if (prev === 0) return last > 0 ? 100 : last < 0 ? -100 : 0;
   return ((last - prev) / prev) * 100;
 }
 

@@ -29,7 +29,7 @@ export async function getChartData(orgId: number) {
     const amount = parseFloat(row.amount);
 
     if (row.parentCategory === 'Income') {
-      const key = `${row.date.getFullYear()}-${String(row.date.getMonth()).padStart(2, '0')}`;
+      const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, '0')}`;
       revenueByMonth.set(key, (revenueByMonth.get(key) ?? 0) + amount);
     } else if (row.parentCategory === 'Expenses') {
       expenseTotals.set(row.category, (expenseTotals.get(row.category) ?? 0) + amount);
@@ -39,7 +39,7 @@ export async function getChartData(orgId: number) {
   const revenueTrend = [...revenueByMonth.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, revenue]) => {
-      const monthIdx = parseInt(key.split('-')[1]!, 10);
+      const monthIdx = parseInt(key.split('-')[1]!, 10) - 1;
       const year = key.split('-')[0];
       return {
         month: `${MONTH_LABELS[monthIdx]} ${year}`,

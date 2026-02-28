@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { BarChart3, Upload, Settings, X } from 'lucide-react';
@@ -74,6 +74,7 @@ export function Sidebar() {
   const { open, setOpen, orgName } = useSidebar();
   const pathname = usePathname();
   const close = useCallback(() => setOpen(false), [setOpen]);
+  const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setOpen(false);
@@ -82,16 +83,36 @@ export function Sidebar() {
   useEffect(() => {
     if (!open) return;
 
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+    const dialog = dialogRef.current;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    const focusableSelector = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusables = dialog?.querySelectorAll<HTMLElement>(focusableSelector) ?? [];
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+
+    first?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { close(); return; }
+      if (e.key !== 'Tab' || !first || !last) return;
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
 
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener('keydown', handleKeyDown);
     document.body.style.overflow = 'hidden';
 
     return () => {
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
+      previouslyFocused?.focus();
     };
   }, [open, close]);
 
@@ -109,6 +130,7 @@ export function Sidebar() {
             aria-hidden="true"
           />
           <aside
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Navigation menu"
