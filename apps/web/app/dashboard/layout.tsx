@@ -1,11 +1,17 @@
+import { cookies } from 'next/headers';
+import { AUTH } from 'shared/constants';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { AppHeader } from '@/components/layout/AppHeader';
 import { SidebarProvider } from './contexts/SidebarContext';
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const cookieStore = await cookies();
+  const isAuthenticated = !!cookieStore.get(AUTH.COOKIE_NAMES.ACCESS_TOKEN)?.value;
+
   return (
     <SidebarProvider>
       <div className="flex h-screen overflow-hidden bg-background">
@@ -16,9 +22,12 @@ export default function DashboardLayout({
           Skip to main content
         </a>
         <Sidebar />
-        <main id="main-content" className="flex-1 overflow-y-auto">
-          {children}
-        </main>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <AppHeader isAuthenticated={isAuthenticated} />
+          <main id="main-content" className="flex-1 overflow-y-auto">
+            {children}
+          </main>
+        </div>
       </div>
     </SidebarProvider>
   );

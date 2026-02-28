@@ -1,6 +1,5 @@
 import { cookies } from 'next/headers';
 import type { ChartData } from 'shared/types';
-import { AUTH } from 'shared/constants';
 import { apiServer, ApiServerError } from '@/lib/api-server';
 import { DashboardShell } from './DashboardShell';
 
@@ -32,12 +31,5 @@ export default async function DashboardPage() {
     }
   }
 
-  const isAuthenticated = !!cookieStore.get(AUTH.COOKIE_NAMES.ACCESS_TOKEN)?.value;
-
-  return (
-    <DashboardShell
-      initialData={chartData}
-      isAuthenticated={isAuthenticated}
-    />
-  );
+  return <DashboardShell initialData={chartData} />;
 }
