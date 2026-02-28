@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
-import { Upload, AlertCircle, FileText } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Upload, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { MAX_FILE_SIZE, ACCEPTED_FILE_TYPES } from 'shared/constants';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import type { CsvPreviewData, ColumnValidationError } from 'shared/types';
+import { CsvPreview } from './CsvPreview';
 
 type DropzoneState = 'default' | 'dragHover' | 'processing' | 'preview' | 'success' | 'error';
 
@@ -19,15 +21,34 @@ interface UploadError {
 const isTouchDevice =
   typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
+const REDIRECT_DELAY_S = 3;
+
 export function UploadDropzone() {
+  const router = useRouter();
   const [state, setState] = useState<DropzoneState>('default');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<UploadError | null>(null);
   const [lastFile, setLastFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<CsvPreviewData | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [confirmedRowCount, setConfirmedRowCount] = useState(0);
+  const [countdown, setCountdown] = useState(REDIRECT_DELAY_S);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropzoneRef = useRef<HTMLDivElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
+
+  // Redirect countdown after successful confirm
+  useEffect(() => {
+    if (state !== 'success') return;
+
+    if (countdown <= 0) {
+      router.push('/dashboard');
+      return;
+    }
+
+    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [state, countdown, router]);
 
   const validateClientSide = useCallback((file: File): string | null => {
     if (file.size > MAX_FILE_SIZE) {
@@ -64,7 +85,6 @@ export function UploadDropzone() {
       const formData = new FormData();
       formData.append('file', file);
 
-      // Use XMLHttpRequest for upload progress tracking
       const response = await new Promise<{ ok: boolean; status: number; data: unknown }>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
 
@@ -116,6 +136,58 @@ export function UploadDropzone() {
     }
   }, [validateClientSide]);
 
+  const handleConfirm = useCallback(async () => {
+    if (!lastFile || !previewData) return;
+
+    setIsConfirming(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', lastFile);
+      formData.append('previewToken', previewData.previewToken);
+
+      const response = await fetch('/api/datasets/confirm', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        const errMsg = result?.error?.message || 'Something went wrong while saving your data.';
+        setError({ message: errMsg, fileName: lastFile.name });
+        setIsConfirming(false);
+        setState('error');
+        setTimeout(() => alertRef.current?.focus(), 100);
+        return;
+      }
+
+      const { rowCount } = result.data as { datasetId: number; rowCount: number };
+      setConfirmedRowCount(rowCount);
+      setIsConfirming(false);
+      setLastFile(null);
+      setPreviewData(null);
+      setCountdown(REDIRECT_DELAY_S);
+      setState('success');
+    } catch (err) {
+      setError({
+        message: err instanceof Error ? err.message : 'Network error while saving your data.',
+        fileName: lastFile.name,
+      });
+      setIsConfirming(false);
+      setState('error');
+      setTimeout(() => alertRef.current?.focus(), 100);
+    }
+  }, [lastFile, previewData]);
+
+  const handleCancel = useCallback(() => {
+    setPreviewData(null);
+    setIsConfirming(false);
+    setState('default');
+    // lastFile preserved so user sees "Last attempt: file.csv" if they re-enter error state
+  }, []);
+
   const handleFileSelect = useCallback((file: File | undefined) => {
     if (file) uploadFile(file);
   }, [uploadFile]);
@@ -134,7 +206,6 @@ export function UploadDropzone() {
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Only reset if leaving the dropzone entirely (not entering a child)
     if (e.currentTarget === e.target) {
       setState((s) => (s === 'dragHover' ? 'default' : s));
     }
@@ -149,7 +220,6 @@ export function UploadDropzone() {
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     handleFileSelect(e.target.files?.[0]);
-    // Reset input so re-selecting the same file triggers onChange
     e.target.value = '';
   }, [handleFileSelect]);
 
@@ -163,6 +233,34 @@ export function UploadDropzone() {
   const openFilePicker = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
+
+  // Preview and success states render outside the dropzone
+  if (state === 'preview' && previewData) {
+    return (
+      <div className="space-y-4">
+        <CsvPreview
+          previewData={previewData}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+          isConfirming={isConfirming}
+        />
+      </div>
+    );
+  }
+
+  if (state === 'success') {
+    return (
+      <div className="flex min-h-[240px] flex-col items-center justify-center rounded-lg border-2 border-green-300 bg-green-50 p-8 text-center">
+        <CheckCircle2 className="mb-3 h-12 w-12 text-green-600" />
+        <p className="text-lg font-medium text-green-800">
+          {confirmedRowCount.toLocaleString()} transactions uploaded!
+        </p>
+        <p className="mt-1 text-sm text-green-600">
+          Redirecting to dashboard in {countdown}...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -221,16 +319,6 @@ export function UploadDropzone() {
           </div>
         )}
 
-        {state === 'preview' && previewData && (
-          <div className="text-center">
-            <FileText className="mx-auto mb-3 h-10 w-10 text-primary" />
-            <p className="text-sm font-medium">
-              {previewData.validRowCount.toLocaleString()} rows ready
-            </p>
-            <p className="text-xs text-muted-foreground">Preview and confirm in Story 2.3</p>
-          </div>
-        )}
-
         {state === 'error' && (
           <div className="text-center">
             <AlertCircle className="mx-auto mb-3 h-10 w-10 text-destructive" />
@@ -270,20 +358,6 @@ export function UploadDropzone() {
             </AlertDescription>
           </Alert>
         </div>
-      )}
-
-      {state === 'preview' && previewData && previewData.warnings.length > 0 && (
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Heads up</AlertTitle>
-          <AlertDescription>
-            <ul className="mt-1 space-y-1">
-              {previewData.warnings.map((w, i) => (
-                <li key={i} className="text-sm">{w}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
       )}
     </div>
   );

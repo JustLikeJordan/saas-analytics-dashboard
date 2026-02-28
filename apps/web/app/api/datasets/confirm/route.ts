@@ -5,15 +5,15 @@ import { webEnv } from '@/lib/config';
 export const runtime = 'nodejs';
 
 /**
- * Explicit BFF handler for CSV uploads. Next.js rewrites exist but don't
- * reliably forward cookies or multipart boundaries. This handler streams
- * the raw multipart body to Express and returns the response verbatim.
+ * BFF proxy for dataset confirmation. Re-sends the original CSV file
+ * to Express for re-parsing + persistence. Same streaming pattern as
+ * the upload proxy — multipart body forwarded without buffering.
  */
 export async function POST(request: NextRequest) {
   const contentType = request.headers.get('content-type') || '';
   const cookie = request.headers.get('cookie') || '';
 
-  const response = await fetch(`${webEnv.API_INTERNAL_URL}/datasets`, {
+  const response = await fetch(`${webEnv.API_INTERNAL_URL}/datasets/confirm`, {
     method: 'POST',
     headers: {
       'content-type': contentType,
@@ -32,7 +32,6 @@ export async function POST(request: NextRequest) {
 
   const nextResponse = NextResponse.json(data, { status: response.ok ? response.status : 502 });
 
-  // Forward Set-Cookie headers (token refresh may happen on any auth request)
   for (const setCookie of response.headers.getSetCookie()) {
     nextResponse.headers.append('Set-Cookie', setCookie);
   }

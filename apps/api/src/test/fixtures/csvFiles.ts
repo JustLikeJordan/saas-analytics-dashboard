@@ -58,3 +58,12 @@ export const mostlyInvalid = `date,amount,category
 bad,bad,
 nope,nah,
 also-bad,not-num,`;
+
+/** Header containing a quoted comma — naive split(',') would break this */
+export const quotedHeaders = `date,amount,category,"Revenue, Q1"
+2025-01-15,1200.00,Revenue,5000.00`;
+
+/** Mixed-case headers for key normalization testing */
+export const mixedCaseHeaders = `Date,Amount,Category
+2025-01-15,1200.00,Revenue
+2025-01-16,450.50,Expenses`;
