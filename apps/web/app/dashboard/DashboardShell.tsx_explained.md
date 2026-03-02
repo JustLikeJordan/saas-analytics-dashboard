@@ -1,14 +1,14 @@
 # DashboardShell.tsx — Interview-Ready Documentation
 
-> Source file: `apps/web/app/dashboard/DashboardShell.tsx` (133 lines)
+> Source file: `apps/web/app/dashboard/DashboardShell.tsx` (~160 lines)
 
 ---
 
 ## 1. 30-Second Elevator Pitch
 
-DashboardShell is the top-level client component that owns the dashboard's data lifecycle. It accepts server-fetched `initialData` as a prop, hands it to SWR as `fallbackData` so the page renders instantly with zero loading spinners, then quietly revalidates in the background. It also contains a class-based error boundary (the only way to catch render errors in React), an empty state with an upload CTA, and the responsive chart grid.
+DashboardShell is the top-level client component that owns the dashboard's data lifecycle and filter state. It accepts server-fetched `initialData` as a prop, hands it to SWR as `fallbackData` so the page renders instantly with zero loading spinners, then quietly revalidates in the background. Filter state (date range preset + expense category) is encoded directly into the SWR cache key — when filters change, the key changes, SWR treats it as a new request, and charts update with filtered data. It also contains a class-based error boundary, three distinct empty states (loading / filtered-empty / no-data), and the responsive chart grid.
 
-**How to say it in an interview:** "DashboardShell bridges server and client rendering by passing server-fetched data into SWR's fallbackData. The user sees content on first paint — no skeleton flash. SWR handles background revalidation, and a class error boundary wraps the chart grid so a single broken chart doesn't take down the page."
+**How to say it in an interview:** "DashboardShell bridges server and client rendering by passing server-fetched data into SWR's fallbackData. Filter state is encoded into the SWR cache key, so filter changes trigger automatic refetches. The component distinguishes between 'no data at all' and 'filters exclude all data' with separate empty states."
 
 ---
 
@@ -38,11 +38,19 @@ DashboardShell is the top-level client component that owns the dashboard's data 
 
 **Over alternative:** Using `sm:grid-cols-2` would cram charts into ~300px columns on a 640px screen. The axes, labels, and tooltips would overlap or truncate.
 
-### Decision 4: Empty state with upload CTA
+### Decision 4: Three-tier empty state
 
-**What's happening:** When both `revenueTrend` and `expenseBreakdown` arrays are empty, the component renders an `EmptyState` — a dashed border box with an Upload icon and a link to `/upload`. This is the zero-data onboarding path: new users or demo-reset users see a clear call to action instead of a blank grid.
+**What's happening:** The dashboard now has three distinct "no data" branches instead of one. (1) Loading skeleton — data is being fetched. (2) FilteredEmptyState — data exists but current filters exclude everything, showing "No data matches these filters" with a reset button. (3) EmptyState — no data at all, showing upload CTA. The order matters: `isLoading` > `filtered empty` > `empty` > `has data`. The `hasActiveFilters` check distinguishes a genuine empty org from a filter that narrowed results to zero.
 
-**How to say it in an interview:** "The empty state is a first-run experience for users who haven't uploaded data yet. A dashed border, upload icon, and CTA link guide them to the next step. It replaces what would otherwise be a confusing blank page."
+**How to say it in an interview:** "I distinguish between 'no data uploaded' and 'filters too narrow' with separate empty states. The filtered-empty state offers a reset button instead of an upload CTA — the user's data exists, they just need to widen their filters."
+
+### Decision 5: Filter state encoded in SWR cache key
+
+**What's happening:** Instead of managing filter state separately from data fetching, filters are encoded directly into the SWR key string. `buildSwrKey()` converts `FilterState` into query params like `/dashboard/charts?from=2025-12-01&to=2026-03-01&categories=Payroll`. When the filter changes, the key changes, SWR sees a new cache entry, and fires a fresh request. Old filter combinations stay in SWR's cache, so switching back is instant.
+
+**How to say it in an interview:** "Filters are encoded into the SWR cache key rather than managed as separate state that triggers fetches. This gives us automatic cache per filter combination — switching between 'Last 3 months' and 'Last year' serves from cache after the first load."
+
+**Over alternative:** Keeping filter state separate and calling `mutate()` on change would work but loses the per-key caching benefit. Every filter change would refetch even if we'd seen that combination before.
 
 ---
 
@@ -50,11 +58,11 @@ DashboardShell is the top-level client component that owns the dashboard's data 
 
 ### Imports and interface (lines 1-18)
 
-Standard split: React, Next.js, SWR, Lucide icon, then project internals. The `DashboardShellProps` interface takes `initialData` (the server-fetched chart payload) and `isAuthenticated` (passed through to the header for conditional UI).
+Standard split: React, Next.js, SWR, Lucide icons, then project internals. The `DashboardShellProps` interface takes `initialData` (the server-fetched chart payload). `FilterState` and `computeDateRange` are imported from the `FilterBar` module.
 
-### fetchChartData (lines 20-23)
+### buildSwrKey and fetchChartData (lines 20-35)
 
-A standalone async function that SWR uses as its fetcher. Calls the BFF proxy endpoint `/dashboard/charts` through the shared `apiClient`, which handles the `/api` prefix and cookie forwarding. Returns just `res.data` — unwrapping the API envelope.
+`buildSwrKey` converts `FilterState` into a URL string with query params. It calls `computeDateRange` to turn a preset like `'last-3-months'` into `from` and `to` ISO dates. The resulting string (e.g., `/dashboard/charts?from=2025-12-02&to=2026-03-02`) becomes the SWR cache key. `fetchChartData` takes this key string and passes it directly to `apiClient` as the request path — the query params travel with it.
 
 ### ChartErrorBoundary (lines 25-58)
 
@@ -70,11 +78,11 @@ A presentational component. Dashed border, Upload icon, text, and a Link to `/up
 
 The main export. Destructures `initialData` and `isAuthenticated` from props.
 
-**SWR setup (lines 76-84):** The `useSWR` call uses `/dashboard/charts` as the cache key (matching the fetch URL), `fetchChartData` as the fetcher, and `fallbackData: initialData` to seed the cache. `revalidateOnFocus` and `revalidateOnReconnect` are both `false` — chart data doesn't change often enough to justify refetching every time the user alt-tabs back.
+**Filter state (lines 83-84):** `useState<FilterState>` starts with `EMPTY_FILTERS` (both fields null). `buildSwrKey` converts this into the SWR cache key. `hasActiveFilters` is a simple null check that drives the filtered-empty state branch.
 
-The default value `data = initialData` in the destructuring is a safety net — if SWR somehow returns undefined before fallbackData kicks in, you still have data.
+**SWR setup (lines 86-95):** The `useSWR` call uses the dynamic `swrKey` (which changes when filters change). `fallbackData` is only set when no filters are active (unfiltered initial data from the server). `keepPreviousData: true` prevents a flash of empty content when switching between filter combinations — the old data stays visible while the new request is in flight.
 
-**Data checks (lines 86-88):** Three booleans: `hasRevenue`, `hasExpenses`, `hasData`. These drive the conditional rendering below.
+**Data checks (lines 105-108):** Four booleans: `hasRevenue`, `hasExpenses`, `hasData` (for current filtered data), and `hasAnyData` (from unfiltered initialData — used to decide whether to show FilterBar at all).
 
 **Layout (lines 90-131):** A flex column filling the viewport. `AppHeader` at the top, then a scrollable content area with max-width constraint. The heading shows `data.orgName`, with a demo banner if `data.isDemo`. The chart grid is wrapped in `ChartErrorBoundary` with `mutate` as the retry callback.
 

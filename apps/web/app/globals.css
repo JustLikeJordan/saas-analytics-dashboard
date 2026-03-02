@@ -31,6 +31,7 @@
   --animate-skeleton-pulse: skeleton-pulse 1.5s ease-in-out infinite;
   --animate-slide-in-left: slide-in-left 200ms ease-out;
   --animate-fade-in: fade-in 150ms ease-out;
+  --animate-badge-in: badge-in 100ms ease-out;
 }
 
 @keyframes indeterminate {
@@ -51,6 +52,11 @@
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes badge-in {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @media (prefers-color-scheme: dark) {

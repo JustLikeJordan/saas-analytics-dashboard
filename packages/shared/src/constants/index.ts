@@ -34,6 +34,7 @@ export const ANALYTICS_EVENTS = {
   SHARE_CREATED: 'share.created',
   SHARE_VIEWED: 'share.viewed',
   DASHBOARD_VIEWED: 'dashboard.viewed',
+  CHART_FILTERED: 'chart.filtered',
 } as const;
 
 export type AnalyticsEventName =
@@ -71,6 +72,7 @@ export const CHART_CONFIG = {
   RESIZE_DEBOUNCE_MS: 200,
   LAZY_THRESHOLD: 0.1,
   SKELETON_FADE_MS: 150,
+  FILTER_DEBOUNCE_MS: 300,
 } as const;
 
 export const DEMO_MODE_STATES = {

@@ -23,5 +23,8 @@ export type {
 export type {
   RevenueTrendPoint,
   ExpenseBreakdownItem,
+  DatasetDateRange,
   ChartData,
+  DateRange,
+  ChartFilters,
 } from './charts.js';

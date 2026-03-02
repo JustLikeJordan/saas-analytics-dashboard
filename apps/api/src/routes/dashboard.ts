@@ -8,6 +8,24 @@ import { logger } from '../lib/logger.js';
 
 const dashboardRouter = Router();
 
+function parseFilterParams(query: Request['query']) {
+  const from = typeof query.from === 'string' ? new Date(query.from) : undefined;
+  const to = typeof query.to === 'string' ? new Date(query.to) : undefined;
+  const categories = typeof query.categories === 'string' && query.categories
+    ? query.categories.split(',')
+    : undefined;
+
+  return {
+    dateFrom: from && !isNaN(from.getTime()) ? from : undefined,
+    dateTo: to && !isNaN(to.getTime()) ? to : undefined,
+    categories,
+  };
+}
+
+function hasFilters(filters: ReturnType<typeof parseFilterParams>): boolean {
+  return !!(filters.dateFrom || filters.dateTo || filters.categories);
+}
+
 // public — unauthenticated visitors get seed org
 dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => {
   let orgId: number;
@@ -36,16 +54,25 @@ dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => 
     orgName = 'Sunrise Cafe';
   }
 
-  const chartData = await chartsQueries.getChartData(orgId);
+  const filters = parseFilterParams(req.query);
+  const chartData = await chartsQueries.getChartData(orgId, hasFilters(filters) ? filters : undefined);
 
   if (authedUser) {
     trackEvent(authedUser.orgId, authedUser.userId, ANALYTICS_EVENTS.DASHBOARD_VIEWED, {
       isDemo,
       chartCount: chartData.revenueTrend.length + chartData.expenseBreakdown.length,
     });
+
+    if (hasFilters(filters)) {
+      trackEvent(authedUser.orgId, authedUser.userId, ANALYTICS_EVENTS.CHART_FILTERED, {
+        dateFrom: filters.dateFrom?.toISOString(),
+        dateTo: filters.dateTo?.toISOString(),
+        categories: filters.categories,
+      });
+    }
   }
 
-  logger.info({ orgId, isDemo }, 'Dashboard charts served');
+  logger.info({ orgId, isDemo, filtered: hasFilters(filters) }, 'Dashboard charts served');
 
   res.json({
     data: {
