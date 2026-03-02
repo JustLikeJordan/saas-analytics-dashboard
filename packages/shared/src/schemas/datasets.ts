@@ -40,7 +40,6 @@ export const csvPreviewDataSchema = z.object({
   columnTypes: z.record(z.enum(['date', 'number', 'text'])),
   warnings: z.array(z.string()),
   fileName: z.string(),
-  fileHash: z.string(),
   previewToken: z.string(),
 });
 

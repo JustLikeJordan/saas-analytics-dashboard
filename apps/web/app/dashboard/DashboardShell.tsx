@@ -1,9 +1,9 @@
 'use client';
 
-import { Component, type ReactNode, useEffect } from 'react';
+import { Component, type ReactNode, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
-import { Upload } from 'lucide-react';
+import { Upload, Filter } from 'lucide-react';
 import type { ChartData } from 'shared/types';
 import { apiClient } from '@/lib/api-client';
 import { useSidebar } from './contexts/SidebarContext';
@@ -11,13 +11,33 @@ import { RevenueChart } from './charts/RevenueChart';
 import { ExpenseChart } from './charts/ExpenseChart';
 import { ChartSkeleton } from './charts/ChartSkeleton';
 import { LazyChart } from './charts/LazyChart';
+import { FilterBar, computeDateRange, type FilterState } from './FilterBar';
 
 interface DashboardShellProps {
   initialData: ChartData;
 }
 
-async function fetchChartData(): Promise<ChartData> {
-  const res = await apiClient<ChartData>('/dashboard/charts');
+const EMPTY_FILTERS: FilterState = { datePreset: null, category: null };
+
+function buildSwrKey(filters: FilterState): string {
+  const params = new URLSearchParams();
+  if (filters.datePreset) {
+    const range = computeDateRange(filters.datePreset);
+    if (range) {
+      params.set('from', range.from);
+      params.set('to', range.to);
+    }
+  }
+  if (filters.category) {
+    params.set('categories', filters.category);
+  }
+  const qs = params.toString();
+  return qs ? `/dashboard/charts?${qs}` : '/dashboard/charts';
+}
+
+async function fetchChartData(key: string): Promise<ChartData> {
+  const path = key.startsWith('/') ? key : `/${key}`;
+  const res = await apiClient<ChartData>(path);
   return res.data;
 }
 
@@ -67,15 +87,36 @@ function EmptyState() {
   );
 }
 
+function FilteredEmptyState({ onReset }: { onReset: () => void }) {
+  return (
+    <div className="col-span-full flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border p-6 text-center">
+      <Filter className="h-8 w-8 text-muted-foreground" />
+      <p className="text-sm text-muted-foreground">No data matches these filters</p>
+      <button
+        type="button"
+        onClick={onReset}
+        className="rounded-md px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        Reset filters
+      </button>
+    </div>
+  );
+}
+
 export function DashboardShell({ initialData }: DashboardShellProps) {
   const { setOrgName } = useSidebar();
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+  const swrKey = buildSwrKey(filters);
+  const hasActiveFilters = filters.datePreset !== null || filters.category !== null;
+
   const { data = initialData, isLoading, mutate } = useSWR(
-    '/dashboard/charts',
+    swrKey,
     fetchChartData,
     {
       fallbackData: initialData,
       revalidateOnFocus: true,
       revalidateOnReconnect: false,
+      keepPreviousData: true,
     },
   );
 
@@ -83,44 +124,65 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
     setOrgName(data.orgName);
   }, [data.orgName, setOrgName]);
 
+  const handleFilterChange = useCallback((next: FilterState) => {
+    setFilters(next);
+  }, []);
+
+  const handleResetFilters = useCallback(() => {
+    setFilters(EMPTY_FILTERS);
+  }, []);
+
   const hasRevenue = data.revenueTrend.length > 0;
   const hasExpenses = data.expenseBreakdown.length > 0;
   const hasData = hasRevenue || hasExpenses;
+  const hasAnyData = initialData.revenueTrend.length > 0 || initialData.expenseBreakdown.length > 0;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-foreground">{data.orgName}</h1>
-        {data.isDemo && (
-          <p className="mt-1 text-sm text-muted-foreground">
-            Viewing sample data &mdash; upload your own CSV to see insights about your business.
-          </p>
-        )}
-      </div>
+    <>
+      {hasAnyData && (
+        <FilterBar
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          availableCategories={data.availableCategories ?? []}
+        />
+      )}
 
-      <ChartErrorBoundary onRetry={() => mutate()}>
-        {isLoading && !hasData ? (
-          <div className="grid gap-4 md:grid-cols-2 md:gap-6">
-            <ChartSkeleton variant="line" />
-            <ChartSkeleton variant="bar" />
-          </div>
-        ) : !hasData ? (
-          <EmptyState />
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 md:gap-6">
-            {hasRevenue && (
-              <LazyChart skeletonVariant="line">
-                <RevenueChart data={data.revenueTrend} />
-              </LazyChart>
-            )}
-            {hasExpenses && (
-              <LazyChart skeletonVariant="bar">
-                <ExpenseChart data={data.expenseBreakdown} />
-              </LazyChart>
-            )}
-          </div>
-        )}
-      </ChartErrorBoundary>
-    </div>
+      <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-foreground">{data.orgName}</h1>
+          {data.isDemo && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Viewing sample data &mdash; upload your own CSV to see insights about your business.
+            </p>
+          )}
+        </div>
+
+        <ChartErrorBoundary onRetry={() => mutate()}>
+          {isLoading && !hasData ? (
+            <div className="grid gap-4 md:grid-cols-2 md:gap-6">
+              <ChartSkeleton variant="line" />
+              <ChartSkeleton variant="bar" />
+            </div>
+          ) : !hasData && hasActiveFilters ? (
+            <FilteredEmptyState onReset={handleResetFilters} />
+          ) : !hasData ? (
+            <EmptyState />
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 md:gap-6">
+              {hasRevenue && (
+                <LazyChart skeletonVariant="line">
+                  <RevenueChart data={data.revenueTrend} />
+                </LazyChart>
+              )}
+              {hasExpenses && (
+                <LazyChart skeletonVariant="bar">
+                  <ExpenseChart data={data.expenseBreakdown} />
+                </LazyChart>
+              )}
+            </div>
+          )}
+        </ChartErrorBoundary>
+      </div>
+    </>
   );
 }

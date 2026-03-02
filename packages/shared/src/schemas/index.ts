@@ -25,5 +25,10 @@ export {
 export {
   revenueTrendPointSchema,
   expenseBreakdownItemSchema,
+  datasetDateRangeSchema,
   chartDataSchema,
 } from './charts.js';
+
+export {
+  chartFiltersSchema,
+} from './filters.js';
