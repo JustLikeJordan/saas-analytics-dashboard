@@ -56,6 +56,8 @@ const { default: dashboardRouter } = await import('./dashboard.js');
 const chartFixture = {
   revenueTrend: [{ month: 'Jan', revenue: 5000 }],
   expenseBreakdown: [{ category: 'Payroll', total: 3000 }],
+  availableCategories: ['Payroll', 'Rent'],
+  dateRange: { min: '2025-01-01', max: '2025-12-31' },
 };
 
 let server: http.Server;
@@ -86,7 +88,7 @@ describe('GET /dashboard/charts', () => {
     expect(body.data.isDemo).toBe(true);
     expect(body.data.orgName).toBe('Sunrise Cafe');
     expect(mockGetSeedOrgId).toHaveBeenCalledOnce();
-    expect(mockGetChartData).toHaveBeenCalledWith(99);
+    expect(mockGetChartData).toHaveBeenCalledWith(99, undefined);
   });
 
   it('returns user org data for valid JWT', async () => {
@@ -106,7 +108,7 @@ describe('GET /dashboard/charts', () => {
     expect(res.status).toBe(200);
     expect(body.data.isDemo).toBe(false);
     expect(body.data.orgName).toBe('Acme Corp');
-    expect(mockGetChartData).toHaveBeenCalledWith(10);
+    expect(mockGetChartData).toHaveBeenCalledWith(10, undefined);
     expect(mockGetSeedOrgId).not.toHaveBeenCalled();
   });
 
@@ -152,32 +154,54 @@ describe('GET /dashboard/charts', () => {
     });
   });
 
-  it('returns correct response shape with chart data', async () => {
+  it('returns response with availableCategories and dateRange', async () => {
+    const res = await fetch(`${baseUrl}/dashboard/charts`);
+    const body = await res.json() as { data: Record<string, unknown> };
+
+    expect(body.data.availableCategories).toEqual(['Payroll', 'Rent']);
+    expect(body.data.dateRange).toEqual({ min: '2025-01-01', max: '2025-12-31' });
+  });
+
+  it('passes filter params to getChartData', async () => {
+    const res = await fetch(
+      `${baseUrl}/dashboard/charts?from=2025-03-01&to=2025-06-30&categories=Payroll,Rent`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockGetChartData).toHaveBeenCalledWith(
+      99,
+      expect.objectContaining({
+        dateFrom: expect.any(Date),
+        dateTo: expect.any(Date),
+        categories: ['Payroll', 'Rent'],
+      }),
+    );
+  });
+
+  it('ignores invalid date params gracefully', async () => {
+    const res = await fetch(`${baseUrl}/dashboard/charts?from=not-a-date&to=also-bad`);
+
+    expect(res.status).toBe(200);
+    expect(mockGetChartData).toHaveBeenCalledWith(99, undefined);
+  });
+
+  it('fires chart.filtered event when filters are present', async () => {
     mockVerifyAccessToken.mockResolvedValueOnce({
-      sub: '7',
-      org_id: 5,
-      role: 'member',
+      sub: '42',
+      org_id: 10,
+      role: 'owner',
       isAdmin: false,
     });
-    mockFindOrgById.mockResolvedValueOnce({ id: 5, name: 'Test Biz', slug: 'test-biz' });
+    mockFindOrgById.mockResolvedValueOnce({ id: 10, name: 'Acme Corp', slug: 'acme' });
 
-    const res = await fetch(`${baseUrl}/dashboard/charts`, {
+    await fetch(`${baseUrl}/dashboard/charts?from=2025-01-01&categories=Rent`, {
       headers: { Cookie: 'access_token=valid-jwt' },
     });
-    const body = await res.json() as {
-      data: {
-        revenueTrend: { month: string; revenue: number }[];
-        expenseBreakdown: { category: string; total: number }[];
-        orgName: string;
-        isDemo: boolean;
-      };
-    };
 
-    expect(body.data).toEqual({
-      revenueTrend: [{ month: 'Jan', revenue: 5000 }],
-      expenseBreakdown: [{ category: 'Payroll', total: 3000 }],
-      orgName: 'Test Biz',
-      isDemo: false,
+    expect(mockTrackEvent).toHaveBeenCalledWith(10, 42, 'chart.filtered', {
+      dateFrom: expect.any(String),
+      dateTo: undefined,
+      categories: ['Rent'],
     });
   });
 });

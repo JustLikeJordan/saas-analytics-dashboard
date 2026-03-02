@@ -11,9 +11,7 @@ import { trackEvent } from '../services/analytics/trackEvent.js';
 import { logger } from '../lib/logger.js';
 import type { PreviewData, ParsedRow } from '../services/adapters/index.js';
 import { normalizeHeader } from '../services/dataIngestion/index.js';
-import { createDataset, deleteSeedDatasets, getUserOrgDemoState } from '../db/queries/datasets.js';
-import { insertBatch } from '../db/queries/dataRows.js';
-import { db } from '../lib/db.js';
+import { persistUpload } from '../db/queries/datasets.js';
 import { env } from '../config.js';
 
 const upload = multer({
@@ -81,9 +79,7 @@ function normalizeSampleRows(rows: ParsedRow[], rawHeaders: string[]): Record<st
   });
 }
 
-// --- TOCTOU protection: HMAC-signed preview tokens ---
-
-const PREVIEW_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 min
+const PREVIEW_TOKEN_TTL_MS = 30 * 60 * 1000;
 
 function computeFileHash(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');
@@ -182,7 +178,6 @@ datasetsRouter.post(
       columnTypes,
       warnings: parseResult.warnings,
       fileName,
-      fileHash,
       previewToken,
     };
 
@@ -241,20 +236,7 @@ datasetsRouter.post(
     }
 
     const normalizedRows = normalizeRows(parseResult.rows, parseResult.headers);
-
-    const result = await db.transaction(async (tx) => {
-      await deleteSeedDatasets(orgId, tx);
-
-      const dataset = await createDataset(orgId, {
-        name: fileName,
-        sourceType: 'csv',
-        uploadedBy: userId,
-      }, tx);
-      await insertBatch(orgId, dataset.id, normalizedRows, tx);
-
-      const demoState = await getUserOrgDemoState(orgId, tx);
-      return { datasetId: dataset.id, rowCount: normalizedRows.length, demoState };
-    });
+    const result = await persistUpload(orgId, userId, fileName, normalizedRows);
 
     trackEvent(orgId, userId, ANALYTICS_EVENTS.DATASET_CONFIRMED, {
       datasetId: result.datasetId,

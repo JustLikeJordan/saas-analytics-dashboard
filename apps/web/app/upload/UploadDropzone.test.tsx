@@ -33,7 +33,6 @@ const previewResponse = {
     fileName: 'test.csv',
     warnings: [],
     columnTypes: {},
-    fileHash: 'abc123def456',
     previewToken: 'signed-preview-token',
   },
 };

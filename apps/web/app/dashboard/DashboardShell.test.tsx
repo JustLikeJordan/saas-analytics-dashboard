@@ -46,6 +46,11 @@ vi.mock('./contexts/SidebarContext', () => ({
   useSidebar: () => ({ setOrgName: vi.fn() }),
 }));
 
+vi.mock('./FilterBar', () => ({
+  FilterBar: () => <div data-testid="filter-bar">FilterBar</div>,
+  computeDateRange: () => null,
+}));
+
 import { DashboardShell } from './DashboardShell';
 import type { ChartData } from 'shared/types';
 
@@ -60,6 +65,8 @@ const fullData: ChartData = {
   ],
   orgName: 'Acme Corp',
   isDemo: false,
+  availableCategories: ['Payroll', 'Rent'],
+  dateRange: { min: '2025-01-01', max: '2025-12-31' },
 };
 
 const emptyData: ChartData = {
@@ -67,6 +74,8 @@ const emptyData: ChartData = {
   expenseBreakdown: [],
   orgName: 'Dashboard',
   isDemo: true,
+  availableCategories: [],
+  dateRange: null,
 };
 
 afterEach(() => {
@@ -100,6 +109,18 @@ describe('DashboardShell', () => {
 
     expect(screen.getByTestId('revenue-chart')).toBeInTheDocument();
     expect(screen.getByTestId('expense-chart')).toBeInTheDocument();
+  });
+
+  it('shows FilterBar when data exists', () => {
+    render(<DashboardShell initialData={fullData} />);
+
+    expect(screen.getByTestId('filter-bar')).toBeInTheDocument();
+  });
+
+  it('hides FilterBar when no data', () => {
+    render(<DashboardShell initialData={emptyData} />);
+
+    expect(screen.queryByTestId('filter-bar')).not.toBeInTheDocument();
   });
 
   it('shows empty state with upload CTA when no data', () => {

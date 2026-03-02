@@ -56,13 +56,15 @@ describe('getChartData', () => {
     ]);
   });
 
-  it('returns empty arrays for no data', async () => {
+  it('returns empty arrays and null dateRange for no data', async () => {
     mockFindMany.mockResolvedValueOnce([]);
 
     const result = await getChartData(1);
 
     expect(result.revenueTrend).toEqual([]);
     expect(result.expenseBreakdown).toEqual([]);
+    expect(result.availableCategories).toEqual([]);
+    expect(result.dateRange).toBeNull();
   });
 
   it('handles rows with zero amounts', async () => {
@@ -123,5 +125,97 @@ describe('getChartData', () => {
       { month: 'Jan 2025', revenue: 1000 },
       { month: 'Jan 2026', revenue: 2000 },
     ]);
+  });
+
+  describe('metadata', () => {
+    it('returns sorted availableCategories from expense rows', async () => {
+      mockFindMany.mockResolvedValueOnce([
+        row({ date: new Date('2025-01-01'), amount: '100', category: 'Utilities', parentCategory: 'Expenses' }),
+        row({ date: new Date('2025-01-05'), amount: '200', category: 'Payroll', parentCategory: 'Expenses' }),
+        row({ date: new Date('2025-01-10'), amount: '300', category: 'Rent', parentCategory: 'Expenses' }),
+        row({ date: new Date('2025-01-15'), amount: '1000', category: 'Sales', parentCategory: 'Income' }),
+      ]);
+
+      const result = await getChartData(1);
+
+      expect(result.availableCategories).toEqual(['Payroll', 'Rent', 'Utilities']);
+    });
+
+    it('returns dateRange spanning all rows', async () => {
+      mockFindMany.mockResolvedValueOnce([
+        row({ date: new Date('2025-03-15'), amount: '100', category: 'Sales', parentCategory: 'Income' }),
+        row({ date: new Date('2025-01-01'), amount: '200', category: 'Rent', parentCategory: 'Expenses' }),
+        row({ date: new Date('2025-06-30'), amount: '300', category: 'Payroll', parentCategory: 'Expenses' }),
+      ]);
+
+      const result = await getChartData(1);
+
+      expect(result.dateRange).toEqual({ min: '2025-01-01', max: '2025-06-30' });
+    });
+  });
+
+  describe('filters', () => {
+    const mixedRows = [
+      row({ date: new Date('2025-01-10'), amount: '1000', category: 'Sales', parentCategory: 'Income' }),
+      row({ date: new Date('2025-02-15'), amount: '2000', category: 'Sales', parentCategory: 'Income' }),
+      row({ date: new Date('2025-03-20'), amount: '3000', category: 'Sales', parentCategory: 'Income' }),
+      row({ date: new Date('2025-01-05'), amount: '500', category: 'Rent', parentCategory: 'Expenses' }),
+      row({ date: new Date('2025-02-10'), amount: '800', category: 'Payroll', parentCategory: 'Expenses' }),
+      row({ date: new Date('2025-03-15'), amount: '300', category: 'Utilities', parentCategory: 'Expenses' }),
+    ];
+
+    it('filters revenue by date range', async () => {
+      mockFindMany.mockResolvedValueOnce(mixedRows);
+
+      const result = await getChartData(1, {
+        dateFrom: new Date('2025-02-01'),
+        dateTo: new Date('2025-02-28'),
+      });
+
+      expect(result.revenueTrend).toEqual([{ month: 'Feb 2025', revenue: 2000 }]);
+      expect(result.expenseBreakdown).toEqual([{ category: 'Payroll', total: 800 }]);
+    });
+
+    it('filters expenses by category', async () => {
+      mockFindMany.mockResolvedValueOnce(mixedRows);
+
+      const result = await getChartData(1, { categories: ['Rent'] });
+
+      // revenue unaffected by category filter
+      expect(result.revenueTrend).toHaveLength(3);
+      expect(result.expenseBreakdown).toEqual([{ category: 'Rent', total: 500 }]);
+    });
+
+    it('combines date and category filters', async () => {
+      mockFindMany.mockResolvedValueOnce(mixedRows);
+
+      const result = await getChartData(1, {
+        dateFrom: new Date('2025-01-01'),
+        dateTo: new Date('2025-02-28'),
+        categories: ['Payroll', 'Rent'],
+      });
+
+      expect(result.revenueTrend).toEqual([
+        { month: 'Jan 2025', revenue: 1000 },
+        { month: 'Feb 2025', revenue: 2000 },
+      ]);
+      expect(result.expenseBreakdown).toEqual([
+        { category: 'Payroll', total: 800 },
+        { category: 'Rent', total: 500 },
+      ]);
+    });
+
+    it('metadata reflects full dataset regardless of filters', async () => {
+      mockFindMany.mockResolvedValueOnce(mixedRows);
+
+      const result = await getChartData(1, {
+        dateFrom: new Date('2025-02-01'),
+        dateTo: new Date('2025-02-28'),
+        categories: ['Rent'],
+      });
+
+      expect(result.availableCategories).toEqual(['Payroll', 'Rent', 'Utilities']);
+      expect(result.dateRange).toEqual({ min: '2025-01-05', max: '2025-03-20' });
+    });
   });
 });

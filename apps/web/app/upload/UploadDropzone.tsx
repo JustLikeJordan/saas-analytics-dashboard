@@ -55,9 +55,9 @@ export function UploadDropzone() {
       return 'File size exceeds 10MB limit. Try splitting your data into smaller files.';
     }
 
-    const ext = file.name.toLowerCase().endsWith('.csv');
-    const mimeOk = (ACCEPTED_FILE_TYPES as readonly string[]).includes(file.type);
-    if (!ext && !mimeOk) {
+    const hasValidExt = file.name.toLowerCase().endsWith('.csv');
+    const hasValidMime = (ACCEPTED_FILE_TYPES as readonly string[]).includes(file.type);
+    if (!hasValidExt && !hasValidMime) {
       return `We expected a .csv file, but received a ${file.type || 'unknown'} file type.`;
     }
 
@@ -381,6 +381,7 @@ function DefaultContent({ isMobile }: { isMobile: boolean }) {
         download="sample-data.csv"
         className="mt-2 inline-block text-sm text-primary underline underline-offset-4"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
       >
         Download sample template
       </a>

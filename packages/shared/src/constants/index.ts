@@ -34,6 +34,7 @@ export const ANALYTICS_EVENTS = {
   SHARE_CREATED: 'share.created',
   SHARE_VIEWED: 'share.viewed',
   DASHBOARD_VIEWED: 'dashboard.viewed',
+  CHART_FILTERED: 'chart.filtered',
 } as const;
 
 export type AnalyticsEventName =

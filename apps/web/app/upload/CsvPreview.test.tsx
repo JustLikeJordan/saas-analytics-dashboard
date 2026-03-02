@@ -18,7 +18,6 @@ function buildPreview(overrides: Partial<CsvPreviewData> = {}): CsvPreviewData {
     columnTypes: { date: 'date', amount: 'number', category: 'text' },
     warnings: [],
     fileName: 'transactions.csv',
-    fileHash: 'abc123',
     previewToken: 'test-token',
     ...overrides,
   };

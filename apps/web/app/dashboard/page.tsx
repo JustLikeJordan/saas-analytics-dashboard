@@ -8,6 +8,8 @@ const EMPTY_CHART_DATA: ChartData = {
   expenseBreakdown: [],
   orgName: 'Dashboard',
   isDemo: true,
+  availableCategories: [],
+  dateRange: null,
 };
 
 export default async function DashboardPage() {

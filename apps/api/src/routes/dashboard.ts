@@ -1,12 +1,36 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { AUTH, ANALYTICS_EVENTS } from 'shared/constants';
+import { chartFiltersSchema } from 'shared/schemas';
 import { verifyAccessToken } from '../services/auth/tokenService.js';
 import { chartsQueries, orgsQueries } from '../db/queries/index.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
 import { logger } from '../lib/logger.js';
 
 const dashboardRouter = Router();
+
+function parseFilterParams(query: Request['query']) {
+  const raw = {
+    dateFrom: typeof query.from === 'string' ? query.from : undefined,
+    dateTo: typeof query.to === 'string' ? query.to : undefined,
+    categories: typeof query.categories === 'string' && query.categories
+      ? query.categories.split(',').slice(0, 20)
+      : undefined,
+  };
+
+  const result = chartFiltersSchema.safeParse(raw);
+  if (!result.success) return { dateFrom: undefined, dateTo: undefined, categories: undefined };
+
+  return {
+    dateFrom: result.data.dateFrom,
+    dateTo: result.data.dateTo,
+    categories: result.data.categories,
+  };
+}
+
+function hasFilters(filters: ReturnType<typeof parseFilterParams>): boolean {
+  return !!(filters.dateFrom || filters.dateTo || filters.categories);
+}
 
 // public — unauthenticated visitors get seed org
 dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => {
@@ -36,16 +60,25 @@ dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => 
     orgName = 'Sunrise Cafe';
   }
 
-  const chartData = await chartsQueries.getChartData(orgId);
+  const filters = parseFilterParams(req.query);
+  const chartData = await chartsQueries.getChartData(orgId, hasFilters(filters) ? filters : undefined);
 
   if (authedUser) {
     trackEvent(authedUser.orgId, authedUser.userId, ANALYTICS_EVENTS.DASHBOARD_VIEWED, {
       isDemo,
       chartCount: chartData.revenueTrend.length + chartData.expenseBreakdown.length,
     });
+
+    if (hasFilters(filters)) {
+      trackEvent(authedUser.orgId, authedUser.userId, ANALYTICS_EVENTS.CHART_FILTERED, {
+        dateFrom: filters.dateFrom?.toISOString(),
+        dateTo: filters.dateTo?.toISOString(),
+        categories: filters.categories,
+      });
+    }
   }
 
-  logger.info({ orgId, isDemo }, 'Dashboard charts served');
+  logger.info({ orgId, isDemo, filtered: hasFilters(filters) }, 'Dashboard charts served');
 
   res.json({
     data: {

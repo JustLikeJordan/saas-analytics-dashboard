@@ -29,7 +29,6 @@ export interface PreviewData {
   columnTypes: Record<string, 'date' | 'number' | 'text'>;
   warnings: string[];
   fileName: string;
-  fileHash: string;
   previewToken: string;
 }
 
