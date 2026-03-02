@@ -7,10 +7,6 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-vi.mock('@/hooks/useReducedMotion', () => ({
-  useReducedMotion: () => false,
-}));
-
 const defaultProps = {
   filters: { datePreset: null, category: null } as FilterState,
   onFilterChange: vi.fn(),
@@ -306,6 +302,9 @@ describe('computeDateRange', () => {
     expect(result).not.toBeNull();
     expect(result!.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(result!.to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // rolling window through today, consistent with other presets
+    const today = new Date().toISOString().slice(0, 10);
+    expect(result!.to).toBe(today);
     expect(new Date(result!.from).getTime()).toBeLessThan(new Date(result!.to).getTime());
   });
 

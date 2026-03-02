@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback, useId, type KeyboardEvent } from 'react';
 import { Calendar, Tag, X, RotateCcw, ChevronDown } from 'lucide-react';
-import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 export interface FilterState {
   datePreset: string | null;
@@ -27,12 +26,9 @@ export function computeDateRange(preset: string): { from: string; to: string } |
   let from: Date;
 
   switch (preset) {
-    case 'last-month': {
-      const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      from = d;
-      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { from: from.toISOString().slice(0, 10), to: lastDay.toISOString().slice(0, 10) };
-    }
+    case 'last-month':
+      from = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      break;
     case 'last-3-months':
       from = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
       break;
@@ -226,18 +222,12 @@ function FilterDropdown({
 function FilterBadge({
   label,
   onDismiss,
-  reducedMotion,
 }: {
   label: string;
   onDismiss: () => void;
-  reducedMotion: boolean;
 }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary ${
-        reducedMotion ? '' : 'animate-badge-in'
-      }`}
-    >
+    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary animate-badge-in motion-reduce:animate-none">
       {label}
       <button
         type="button"
@@ -264,8 +254,6 @@ export function FilterBar({
   availableCategories,
   disabled,
 }: FilterBarProps) {
-  const reducedMotion = useReducedMotion();
-
   const hasActiveFilters = filters.datePreset !== null || filters.category !== null;
 
   const dateOptions = DATE_PRESETS.map((p) => ({ label: p.label, value: p.value }));
@@ -321,7 +309,6 @@ export function FilterBar({
               <FilterBadge
                 label={selectedPresetLabel}
                 onDismiss={() => handleDateChange(null)}
-                reducedMotion={reducedMotion}
               />
             )}
 
@@ -329,7 +316,6 @@ export function FilterBar({
               <FilterBadge
                 label={filters.category}
                 onDismiss={() => handleCategoryChange(null)}
-                reducedMotion={reducedMotion}
               />
             )}
 

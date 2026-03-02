@@ -72,7 +72,6 @@ export const CHART_CONFIG = {
   RESIZE_DEBOUNCE_MS: 200,
   LAZY_THRESHOLD: 0.1,
   SKELETON_FADE_MS: 150,
-  FILTER_DEBOUNCE_MS: 300,
 } as const;
 
 export const DEMO_MODE_STATES = {

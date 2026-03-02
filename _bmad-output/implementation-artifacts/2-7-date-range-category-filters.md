@@ -96,6 +96,7 @@ Claude Opus 4.6 (claude-opus-4-6)
 - `apps/web/app/dashboard/DashboardShell.tsx` — Added filter state, buildSwrKey, FilteredEmptyState, FilterBar integration
 - `apps/web/app/dashboard/DashboardShell.test.tsx` — Updated FilterBar mock import path
 - `apps/web/app/dashboard/DashboardShell.tsx_explained.md` — Updated with filter integration docs
+- `apps/web/app/dashboard/page.tsx` — Added availableCategories and dateRange to EMPTY_CHART_DATA fallback
 - `apps/web/app/globals.css` — Added badge-in keyframe animation
 - `_bmad-output/implementation-artifacts/2-7-date-range-category-filters.md` — This file
 
