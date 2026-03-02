@@ -4,10 +4,7 @@ import { validCsv, missingColumn, emptyFile, mixedCaseHeaders } from '../test/fi
 
 const mockVerifyAccessToken = vi.fn();
 const mockTrackEvent = vi.fn();
-const mockCreateDataset = vi.fn();
-const mockDeleteSeedDatasets = vi.fn();
-const mockGetUserOrgDemoState = vi.fn();
-const mockInsertBatch = vi.fn();
+const mockPersistUpload = vi.fn();
 
 vi.mock('../services/auth/tokenService.js', () => ({
   verifyAccessToken: mockVerifyAccessToken,
@@ -34,17 +31,7 @@ vi.mock('../lib/logger.js', () => ({
 }));
 
 vi.mock('../db/queries/datasets.js', () => ({
-  createDataset: mockCreateDataset,
-  deleteSeedDatasets: mockDeleteSeedDatasets,
-  getUserOrgDemoState: mockGetUserOrgDemoState,
-}));
-
-vi.mock('../db/queries/dataRows.js', () => ({
-  insertBatch: mockInsertBatch,
-}));
-
-vi.mock('../lib/db.js', () => ({
-  db: { transaction: vi.fn(async (fn: (tx: Record<string, unknown>) => unknown) => fn({})) },
+  persistUpload: mockPersistUpload,
 }));
 
 const { createTestApp } = await import('../test/helpers/testApp.js');
@@ -58,7 +45,6 @@ interface PreviewBody {
     rowCount: number;
     validRowCount: number;
     skippedRowCount: number;
-    fileHash: string;
     previewToken: string;
     fileName: string;
   };
@@ -154,14 +140,14 @@ describe('POST /datasets', () => {
     expect(body.data.fileName).toBe('test.csv');
   });
 
-  it('includes fileHash and previewToken in response', async () => {
+  it('includes previewToken in response', async () => {
     mockVerifyAccessToken.mockResolvedValueOnce(userPayload());
 
     const res = await uploadCsv(validCsv);
     const body = (await res.json()) as PreviewBody;
 
-    expect(body.data.fileHash).toMatch(/^[a-f0-9]{64}$/); // SHA-256 hex
     expect(body.data.previewToken).toBeTruthy();
+    expect((body.data as Record<string, unknown>).fileHash).toBeUndefined();
   });
 
   it('normalizes sample row keys to match headers', async () => {
@@ -250,10 +236,7 @@ describe('POST /datasets', () => {
 
 describe('POST /datasets/confirm', () => {
   beforeEach(() => {
-    mockCreateDataset.mockResolvedValue({ id: 7, orgId: 10, name: 'test.csv' });
-    mockInsertBatch.mockResolvedValue([]);
-    mockDeleteSeedDatasets.mockResolvedValue(undefined);
-    mockGetUserOrgDemoState.mockResolvedValue('user_only');
+    mockPersistUpload.mockResolvedValue({ datasetId: 7, rowCount: 3, demoState: 'user_only' });
   });
 
   it('persists data with valid preview token', async () => {
@@ -268,29 +251,21 @@ describe('POST /datasets/confirm', () => {
     expect(body.data.rowCount).toBe(3);
   });
 
-  it('calls createDataset with correct org and metadata', async () => {
+  it('calls persistUpload with correct org, user, filename, and rows', async () => {
     const token = await getPreviewToken(validCsv, 'revenue.csv');
     mockVerifyAccessToken.mockResolvedValueOnce(userPayload());
 
     await confirmCsv(validCsv, 'revenue.csv', token);
 
-    expect(mockCreateDataset).toHaveBeenCalledWith(10, {
-      name: 'revenue.csv',
-      sourceType: 'csv',
-      uploadedBy: 42,
-    }, expect.anything());
-  });
-
-  it('calls insertBatch with normalized rows', async () => {
-    const token = await getPreviewToken(validCsv);
-    mockVerifyAccessToken.mockResolvedValueOnce(userPayload());
-
-    await confirmCsv(validCsv, 'test.csv', token);
-
-    expect(mockInsertBatch).toHaveBeenCalledWith(10, 7, expect.arrayContaining([
-      expect.objectContaining({ category: 'Revenue' }),
-    ]), expect.anything());
-    expect(mockInsertBatch.mock.calls[0]![2]).toHaveLength(3);
+    expect(mockPersistUpload).toHaveBeenCalledWith(
+      10,
+      42,
+      'revenue.csv',
+      expect.arrayContaining([
+        expect.objectContaining({ category: 'Revenue' }),
+      ]),
+    );
+    expect(mockPersistUpload.mock.calls[0]![3]).toHaveLength(3);
   });
 
   it('fires trackEvent with dataset.confirmed', async () => {
@@ -315,15 +290,6 @@ describe('POST /datasets/confirm', () => {
     const body = (await res.json()) as ConfirmBody;
 
     expect(body.data.demoState).toBe('user_only');
-  });
-
-  it('calls deleteSeedDatasets within the transaction', async () => {
-    const token = await getPreviewToken(validCsv);
-    mockVerifyAccessToken.mockResolvedValueOnce(userPayload());
-
-    await confirmCsv(validCsv, 'test.csv', token);
-
-    expect(mockDeleteSeedDatasets).toHaveBeenCalledWith(10, expect.anything());
   });
 
   it('rejects when preview token is missing', async () => {

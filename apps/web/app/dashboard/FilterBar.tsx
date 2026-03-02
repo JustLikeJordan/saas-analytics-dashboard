@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, useId, type KeyboardEvent } from 'react';
 import { Calendar, Tag, X, RotateCcw, ChevronDown } from 'lucide-react';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 
@@ -65,6 +65,7 @@ function FilterDropdown({
   onChange: (value: string | null) => void;
   disabled?: boolean;
 }) {
+  const uid = useId();
   const [open, setOpen] = useState(false);
   const [focusIdx, setFocusIdx] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -105,7 +106,8 @@ function FilterDropdown({
           e.preventDefault();
           if (!open) {
             setOpen(true);
-            setFocusIdx(options.findIndex((o) => o.value === value) || 0);
+            const idx = options.findIndex((o) => o.value === value);
+            setFocusIdx(idx >= 0 ? idx : 0);
           } else if (focusIdx >= 0) {
             const opt = options[focusIdx];
             if (opt) {
@@ -165,13 +167,17 @@ function FilterDropdown({
         onClick={() => {
           if (disabled) return;
           setOpen((prev) => {
-            if (!prev) setFocusIdx(options.findIndex((o) => o.value === value) || 0);
+            if (!prev) {
+              const idx = options.findIndex((o) => o.value === value);
+              setFocusIdx(idx >= 0 ? idx : 0);
+            }
             return !prev;
           });
         }}
         onKeyDown={handleKeyDown}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-activedescendant={open && focusIdx >= 0 ? `${uid}-opt-${focusIdx}` : undefined}
         aria-label={`Filter by ${label.toLowerCase()}`}
         disabled={disabled}
         className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-card-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
@@ -198,6 +204,7 @@ function FilterDropdown({
             return (
               <li
                 key={opt.value}
+                id={`${uid}-opt-${idx}`}
                 role="option"
                 aria-selected={isSelected}
                 onClick={() => handleSelect(opt, idx)}

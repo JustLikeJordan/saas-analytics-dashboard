@@ -113,7 +113,7 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
     swrKey,
     fetchChartData,
     {
-      fallbackData: hasActiveFilters ? undefined : initialData,
+      fallbackData: initialData,
       revalidateOnFocus: true,
       revalidateOnReconnect: false,
       keepPreviousData: true,

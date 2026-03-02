@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { AUTH, ANALYTICS_EVENTS } from 'shared/constants';
+import { chartFiltersSchema } from 'shared/schemas';
 import { verifyAccessToken } from '../services/auth/tokenService.js';
 import { chartsQueries, orgsQueries } from '../db/queries/index.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
@@ -9,16 +10,21 @@ import { logger } from '../lib/logger.js';
 const dashboardRouter = Router();
 
 function parseFilterParams(query: Request['query']) {
-  const from = typeof query.from === 'string' ? new Date(query.from) : undefined;
-  const to = typeof query.to === 'string' ? new Date(query.to) : undefined;
-  const categories = typeof query.categories === 'string' && query.categories
-    ? query.categories.split(',')
-    : undefined;
+  const raw = {
+    dateFrom: typeof query.from === 'string' ? query.from : undefined,
+    dateTo: typeof query.to === 'string' ? query.to : undefined,
+    categories: typeof query.categories === 'string' && query.categories
+      ? query.categories.split(',').slice(0, 20)
+      : undefined,
+  };
+
+  const result = chartFiltersSchema.safeParse(raw);
+  if (!result.success) return { dateFrom: undefined, dateTo: undefined, categories: undefined };
 
   return {
-    dateFrom: from && !isNaN(from.getTime()) ? from : undefined,
-    dateTo: to && !isNaN(to.getTime()) ? to : undefined,
-    categories,
+    dateFrom: result.data.dateFrom,
+    dateTo: result.data.dateTo,
+    categories: result.data.categories,
   };
 }
 

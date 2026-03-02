@@ -1,4 +1,5 @@
 import { eq, asc } from 'drizzle-orm';
+import type { ChartFilters } from 'shared/types';
 import { db } from '../../lib/db.js';
 import { dataRows } from '../schema.js';
 
@@ -7,19 +8,14 @@ const MONTH_LABELS = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ] as const;
 
-interface ChartFilters {
-  dateFrom?: Date;
-  dateTo?: Date;
-  categories?: string[];
-}
-
 function toISODate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function isInDateRange(date: Date, from?: Date, to?: Date): boolean {
-  if (from && date < from) return false;
-  if (to && date > to) return false;
+function isInDateRange(rowDate: Date, from?: Date, to?: Date): boolean {
+  const d = toISODate(rowDate);
+  if (from && d < toISODate(from)) return false;
+  if (to && d > toISODate(to)) return false;
   return true;
 }
 

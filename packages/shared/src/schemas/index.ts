@@ -30,6 +30,5 @@ export {
 } from './charts.js';
 
 export {
-  dateRangeSchema,
   chartFiltersSchema,
 } from './filters.js';
