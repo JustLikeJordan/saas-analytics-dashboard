@@ -1,6 +1,6 @@
 # UploadDropzone.tsx — Interview-Ready Documentation
 
-> Source file: `apps/web/app/upload/UploadDropzone.tsx` (383 lines)
+> Source file: `apps/web/app/upload/UploadDropzone.tsx` (~391 lines)
 
 ---
 
@@ -88,7 +88,7 @@ A `useEffect` that only runs when `state === 'success'`. Each second, it decreme
 
 ### Client-side validation (lines 53-69)
 
-`validateClientSide` returns a human-readable error string or `null`. Three checks in priority order: size (cheapest check), type (extension OR MIME — because some OSes set CSV MIME to `application/vnd.ms-excel`), then empty file. Think of a bouncer — size limit is the rope, file type is the dress code, empty file is checking if anyone's in the car.
+`validateClientSide` returns a human-readable error string or `null`. Three checks in priority order: size (cheapest check), type (extension OR MIME — because some OSes set CSV MIME to `application/vnd.ms-excel`), then empty file. The boolean names — `hasValidExt` and `hasValidMime` — read as questions, making the branching logic self-documenting. Think of a bouncer — size limit is the rope, file type is the dress code, empty file is checking if anyone's in the car.
 
 ### Upload function (lines 71-137)
 
@@ -124,7 +124,7 @@ The error state shows inside the dropzone (destructive icon, last file name, "Dr
 
 ### DefaultContent subcomponent (lines 370-387)
 
-Extracted to keep the main render clean. Shows the upload icon, adaptive text (touch vs. desktop), file size constraints, and a sample CSV template download link. The link points to `/templates/sample-data.csv` — a static file served by Next.js from `public/templates/`. The `download` attribute triggers a save dialog instead of navigation. `stopPropagation` prevents the click from bubbling to the dropzone's file picker.
+Extracted to keep the main render clean. Shows the upload icon, adaptive text (touch vs. desktop), file size constraints, and a sample CSV template download link. The link points to `/templates/sample-data.csv` — a static file served by Next.js from `public/templates/`. The `download` attribute triggers a save dialog instead of navigation. Both `onClick` and `onKeyDown` call `stopPropagation` — the click handler prevents the dropzone file picker from opening, and the keydown handler prevents the dropzone's Enter/Space handler from intercepting keyboard activation of the link.
 
 ### Template download links (default + error states)
 
