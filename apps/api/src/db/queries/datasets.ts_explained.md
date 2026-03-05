@@ -12,11 +12,15 @@ Query functions for the `datasets` table that handle CRUD operations and the dem
 
 ## Code Walkthrough
 
+**Imports and cross-query dependency (lines 1-8):** `NormalizedRow` is imported from the normalizer service rather than redefined locally — a code review caught the duplicate type. The import of `insertBatch` from `dataRows.ts` has a comment explaining the one-way dependency: `persistUpload` orchestrates both modules, but `dataRows.ts` should never import from `datasets.ts` (circular dependency risk). This kind of deliberate comment prevents future developers from casually adding the reverse import.
+
+**`persistUpload(orgId, userId, fileName, normalizedRows)`** — The orchestrator. Wraps seed cleanup, dataset creation, row insertion, and demo state derivation in a single transaction. Returns `{ datasetId, rowCount, demoState }`.
+
 **`createDataset(orgId, data, client?)`** — Inserts a dataset and returns the created row. `orgId` is always required (tenant isolation). `isSeedData` defaults to `false` in the schema but can be overridden by the seed script. The optional `client` parameter accepts either the global `db` connection or a `DbTransaction` handle — both expose the same `.insert()` interface, so the function doesn't need to know which it got. The default `= db` means existing callers don't break. When a caller needs atomicity (e.g., creating a dataset and inserting rows together), it passes its transaction handle: `createDataset(orgId, data, tx)`.
 
 **`getDatasetsByOrg(orgId)`** — Returns all datasets for an org, newest first. Used by the dashboard to list uploaded files and by the demo mode logic to determine available data sources.
 
-**`getUserOrgDemoState(orgId, client?)`** — The demo mode state machine. Queries for a single non-seed dataset. If found, the org has its own data (`user_only`). If not, the org is empty and the dashboard should fall back to seed data (`empty`). The other two enum values (`seed_only`, `seed_plus_user`) only apply to the seed-demo org itself. The optional `client` parameter (defaults to `db`) lets the confirm endpoint read state inside the same transaction that writes data — so the returned state reflects the just-committed changes, not a stale snapshot.
+**`getUserOrgDemoState(orgId, client?)`** — The demo mode state machine. Queries for a single non-seed dataset. If found, the org has its own data (`user_only`). If not, the org is empty and the dashboard should fall back to seed data (`empty`). The JSDoc (lines 53-55) documents why `seed_plus_user` is intentionally unreachable: under Option C, user orgs never contain seed data. Seed org states (`seed_only`) are handled at the view layer. The optional `client` parameter (defaults to `db`) lets the confirm endpoint read state inside the same transaction that writes data — so the returned state reflects the just-committed changes, not a stale snapshot.
 
 **`getSeedDataset(orgId)`** — Finds the seed dataset for an org. Returns `undefined` if no seed dataset exists.
 

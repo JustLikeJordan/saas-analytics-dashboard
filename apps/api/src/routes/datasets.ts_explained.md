@@ -32,9 +32,9 @@ Think of a notarized document. The notary (server) stamps it with a tamper-evide
 
 **What's happening:** When you compare two strings with `===`, the computer stops comparing as soon as it finds a difference. An attacker can measure how long the comparison takes to figure out how many bytes of their forged signature are correct, then iterate. `timingSafeEqual` always takes the same time regardless of where the difference is.
 
-**How to say it in an interview:** "I used Node's `timingSafeEqual` for the HMAC comparison to prevent timing side-channel attacks. Regular string comparison leaks information about how many bytes match, which lets an attacker forge signatures iteratively."
+**How to say it in an interview:** "I used Node's `timingSafeEqual` for both the HMAC signature and the SHA-256 file hash comparison. Regular string comparison leaks timing information — an attacker can measure how long the comparison takes to figure out how many bytes match, then iterate toward a valid forgery."
 
-**Over alternative:** Plain `===` comparison. Functionally correct but leaks timing information. One line fix for a real attack vector.
+**Over alternative:** Plain `===` comparison. Functionally correct but leaks timing information. A code review caught that the original implementation only used timing-safe comparison for the HMAC but used plain comparison for the file hash.
 
 ### Decision 4: Key normalization in `normalizeSampleRows` at the route level
 
@@ -76,9 +76,9 @@ Configures file upload handling with in-memory storage, a 10MB size limit, and M
 
 Multer throws its own error objects with a `code` property. This middleware intercepts `LIMIT_FILE_SIZE` and converts it into a user-friendly `ValidationError` that flows through the standard error handler. Other multer errors pass through unchanged.
 
-### Column type inference (lines 41-57)
+### Column type inference (lines 40-70)
 
-`inferColumnType` guesses whether a cell value is a date, number, or text by trying numeric parsing first, then date parsing. `buildColumnTypes` samples the first non-empty value per column. This drives the type badges shown in the preview UI.
+`inferColumnType` guesses whether a cell value is a date, number, or text. Number check comes first (cheapest). Date check uses the same `DATE_SHAPE` regex as the csvAdapter — without it, V8's Date constructor would classify strings like "Revenue" as valid dates. `buildColumnTypes` samples the first 5 non-empty values per column and uses majority voting. This drives the type badges shown in the preview UI.
 
 ### Sample row normalization (lines 59-68)
 
@@ -86,17 +86,19 @@ The bridge between csv-parse's original-cased row objects and the lowercase head
 
 This was Critical fix #1 from code review.
 
-### TOCTOU protection functions (lines 70-107)
+### TOCTOU protection functions (lines 83-131)
 
 Four functions working together:
 - `computeFileHash`: SHA-256 of the raw file buffer
 - `signPreviewToken`: Packs hash + orgId + timestamp into a JSON payload, HMAC-signs it, base64url-encodes the whole thing
-- `verifyPreviewToken`: Decodes the token, recomputes the HMAC, checks hash/org/TTL with timing-safe comparison
+- `verifyPreviewToken`: Decodes the token, recomputes the HMAC, checks hash/org/TTL. Both the HMAC signature and file hash use `timingSafeEqual` — a code review caught that the original only used it for the HMAC.
 - The 30-minute TTL prevents stale tokens from being reused indefinitely
+
+The comment above `PREVIEW_TOKEN_TTL_MS` (lines 83-85) documents a known gap: no replay protection. The same token can confirm duplicates within the TTL window. Acceptable for MVP — duplicate uploads are user-visible and self-correcting.
 
 The token format is `base64url(JSON({ hash, orgId, iat, sig }))`. The signature covers `hash:orgId:iat` — all three fields are bound, so you can't swap any of them independently.
 
-This was Critical fix #3 from code review — closing the TOCTOU gap.
+Verification uses cheap rejections first (org mismatch, expiry) before the expensive operations (HMAC recompute, SHA-256 file hash).
 
 ### Preview endpoint — `POST /` (lines 111-179)
 
@@ -184,9 +186,9 @@ Instead of nesting validation inside if/else blocks, each check bails out immedi
 
 A comparison technique that always takes the same amount of time regardless of input. Prevents attackers from measuring response times to gradually guess correct values byte by byte.
 
-**Where it appears:** `verifyPreviewToken` uses `timingSafeEqual` at line 97.
+**Where it appears:** `verifyPreviewToken` uses `timingSafeEqual` twice — once for the HMAC signature (line 120) and once for the SHA-256 file hash (line 125). Both comparisons convert hex strings to Buffers first, since `timingSafeEqual` requires Buffer inputs of equal length.
 
-**Interview-ready line:** "Standard string comparison short-circuits on the first mismatch, which leaks timing information. `timingSafeEqual` compares every byte regardless, closing the side-channel."
+**Interview-ready line:** "Both the HMAC signature and file hash use timing-safe comparison. Standard string comparison short-circuits on the first mismatch, leaking how many bytes match. `timingSafeEqual` compares every byte regardless, closing both side-channels."
 
 ### BFF (Backend For Frontend) Pattern
 

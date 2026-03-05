@@ -1,6 +1,6 @@
 # interface.ts — Interview-Ready Documentation
 
-> Source file: `apps/api/src/services/adapters/interface.ts` (43 lines)
+> Source file: `apps/api/src/services/adapters/interface.ts` (35 lines)
 
 ---
 
@@ -16,7 +16,7 @@ This file defines the contract that every data source must implement. Right now 
 
 ### Decision 1: Separate interfaces instead of one big blob
 
-**What's happening:** There are five distinct interfaces here: `ColumnValidationError`, `ValidationResult`, `ParsedRow`, `ParseResult`, and `PreviewData`. Each represents one step of the pipeline. Errors are separate from results, parsed rows are separate from the metadata around them. You could lump everything into one "UploadResult" type, but then every consumer would get fields it doesn't care about.
+**What's happening:** There are four interfaces defined here plus two re-exported from the shared package: `ColumnValidationError` and `PreviewData` (aliased as `CsvPreviewData` in shared). `ValidationResult`, `ParsedRow`, `ParseResult`, and `DataSourceAdapter` are defined locally since they're API-internal concepts. Each represents one step of the pipeline. Errors are separate from results, parsed rows are separate from the metadata around them.
 
 **How to say it in an interview:** "Each interface maps to a pipeline stage. Separating them means a function that only needs validation results doesn't depend on preview-specific fields. Narrow types reduce coupling between pipeline stages."
 
@@ -42,27 +42,23 @@ This file defines the contract that every data source must implement. Right now 
 
 ## 3. Code Walkthrough
 
-### ColumnValidationError (lines 1-5)
+### Shared type re-exports (lines 1-8)
 
-The shape of a single column-level error. `column` identifies which column failed, `message` is human-readable, `row` is optional (for row-level errors vs. header-level errors). Used in both the API error response and the frontend error display — the shared type ensures they agree on the shape.
+`ColumnValidationError` and `PreviewData` are re-exported from the `shared/types` package rather than being defined here. An earlier version duplicated these type definitions, which meant the API and shared package could drift. Now there's a single source of truth in `shared/types`, and this file re-exports them so API-internal code can import from one barrel (`../adapters/index.js`). The `as SharedColumnValidationError` alias avoids a name collision with the local re-export.
 
-### ValidationResult (lines 7-10)
+### ValidationResult (lines 10-13)
 
 A pass/fail wrapper. `valid: boolean` gates the fast path. If false, `errors` contains one or more `ColumnValidationError` entries. The route handler checks `valid` before proceeding to parse — this is the cheap pre-flight check.
 
-### ParsedRow (lines 12-14)
+### ParsedRow (lines 15-17)
 
 A single row as a string-keyed record. All values are strings — type coercion (string to number, string to Date) happens later in the pipeline, not in the adapter. This keeps the adapter's job simple: turn raw bytes into structured strings.
 
-### ParseResult (lines 16-21)
+### ParseResult (lines 19-24)
 
 The output of `adapter.parse()`. Contains the normalized `headers` array, all `rows`, a `rowCount` for display, and `warnings` for non-fatal issues (like "2 rows had blank dates and were skipped"). Warnings don't prevent the upload — they surface in the preview UI so the user knows what was dropped.
 
-### PreviewData (lines 23-33)
-
-The shape that reaches the frontend. Adds `sampleRows` (first N rows for the preview table), `validRowCount` / `skippedRowCount` for the summary, `columnTypes` (inferred types like 'date', 'number', 'text' for the preview badges), `fileName`, and `previewToken` (HMAC-signed token for TOCTOU protection on confirm). This is a superset of `ParseResult` — it includes everything the preview UI needs.
-
-### DataSourceAdapter (lines 40-43)
+### DataSourceAdapter (lines 31-34)
 
 The contract. `parse(buffer: Buffer)` and `validate(headers: string[])`. That's it. The JSDoc comment calls out the architectural intent: CSV adapter now, financial API adapters in the Growth tier. The comment names QuickBooks and Stripe specifically so a future developer knows this isn't speculative abstraction — there's a product roadmap behind it.
 
@@ -177,6 +173,14 @@ TypeScript interfaces don't exist at runtime. They're a compile-time tool for ca
 **Why it matters:** Most interviewers have seen over-engineered abstractions ("we might need this someday"). This one is different — there's a product roadmap behind it. The JSDoc comment names the specific integrations. That's an abstraction with a clear, documented justification.
 
 **How to bring it up:** "The adapter interface exists because the product roadmap includes financial API integrations — QuickBooks and Stripe in the Growth tier. The route handler already depends on the interface, not the CSV implementation. When those adapters ship, the existing code doesn't change."
+
+### Single Source of Truth via Re-exports
+
+**What's happening:** `ColumnValidationError` and `PreviewData` are defined once in the shared package and re-exported here. An earlier version duplicated these type definitions — the API had its own copy that could drift from the shared package. A code review caught it: if someone added a field to `CsvPreviewData` in `shared/types`, the API's local copy wouldn't have it, and you'd get a type error only when the two packages were used together (or worse, no error at all if someone forgot to update both).
+
+**Why it matters:** Type duplication is a time bomb. It works fine until someone changes one copy. The re-export pattern keeps the adapter barrel as the single import point for API-internal code while routing the actual type definitions through the shared package.
+
+**How to bring it up:** "I re-export shared types through the adapter barrel rather than duplicating them. API-internal code imports from one place, but the type definitions live in the shared package. A code review caught the original duplication — it's the kind of thing that compiles fine until someone changes one copy and not the other."
 
 ### Compile-Time-Only Architecture
 

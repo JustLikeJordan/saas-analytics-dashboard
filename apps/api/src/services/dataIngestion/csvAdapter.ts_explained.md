@@ -30,15 +30,15 @@ Now, headers come from `Object.keys(records[0])` when data rows exist, or from a
 
 **Over alternative:** The naive `split(',')` was simpler but incorrect for any header containing commas, quotes, or escaped characters. This was caught in code review as a critical bug.
 
-### Decision 3: Sample-based row validation (100 rows max)
+### Decision 3: Full-row validation with regex pre-gate
 
-**What's happening:** Instead of validating every single row (up to 50,000), we check the first 100. If more than half of those fail, the whole file is rejected.
+**What's happening:** Every row gets validated, not just a sample. An earlier version only checked 100 rows, which meant bad data in rows 101+ could slip through. The 50% threshold still applies — if more than half the rows fail, the file is rejected entirely.
 
-Data quality problems are almost always systemic — if the date column uses "Jan 15, 2025" format, that's wrong in row 1 and wrong in row 50,000. Checking 100 rows catches systemic issues while keeping validation fast. The 50% threshold means "more of your data is bad than good, so this file probably has the wrong format."
+Date validation uses a two-step approach: a regex (`DATE_SHAPE`) checks that the string looks like a date (contains digits and separators in a plausible pattern), then `new Date()` verifies it parses. The regex gate matters because V8's Date constructor is absurdly permissive — `new Date("hello 1")` returns a valid date. Without the regex, strings like "Revenue" or "true" could pass date validation.
 
-**How to say it in an interview:** "Row validation uses statistical sampling — 100 rows — to detect systemic data quality issues without scanning the full dataset. The 50% failure threshold distinguishes 'wrong format' from 'a few typos,' which determines whether to reject the file or accept it with warnings."
+**How to say it in an interview:** "Row validation covers every row, not a sample — a code review caught the data integrity gap where bad rows beyond the sample boundary slipped through. Date validation uses a regex pre-gate because V8's Date constructor accepts garbage like `new Date('hello 1')`. The regex ensures the string has a date-like shape before we hand it to the parser."
 
-**Over alternative:** Full-scan validation would catch every bad row but adds latency proportional to file size. For non-technical users waiting on an upload, speed matters.
+**Over alternative:** The previous sample-based approach was faster but created a data integrity gap — validating 100 rows but filtering all rows meant unvalidated rows could have bad data.
 
 ### Decision 4: Synchronous parsing with csv-parse/sync
 
@@ -62,11 +62,9 @@ Rejecting an entire 10,000-row file because 5 rows have typos is terrible UX. Th
 
 ## 3. Code Walkthrough
 
-### Block 1: Constants (lines 10-14)
+### Block 1: Constants and imports (lines 1-15)
 
-Five configuration values govern the adapter's behavior. `REQUIRED_COLUMNS` and `OPTIONAL_COLUMNS` define the schema contract. `ALL_KNOWN_COLUMNS` combines them for the header map builder. `MAX_ROWS` caps at 50,000 to prevent memory exhaustion. `VALIDATION_SAMPLE_SIZE` limits row-level validation to 100 rows.
-
-The `as const` assertions give these arrays literal element types — TypeScript knows `REQUIRED_COLUMNS[0]` is specifically `'date'`, not `string`.
+`CSV_REQUIRED_COLUMNS`, `CSV_OPTIONAL_COLUMNS`, and `CSV_MAX_ROWS` are imported from `shared/constants` — the single source of truth. An earlier version defined these locally, which meant the API and shared package could drift out of sync. `ALL_KNOWN_COLUMNS` combines required + optional for the header map builder.
 
 ### Block 2: Utility functions (lines 16-37)
 
@@ -74,16 +72,16 @@ Four small, pure functions:
 
 - **`stripBom`** — Checks if the first character is the Unicode BOM (`U+FEFF`) and slices it off. Excel on Windows prepends this to UTF-8 files. Without stripping, the first header becomes `\uFEFFdate` and fails the column check.
 - **`normalizeHeader`** — Trim and lowercase. Turns `" Date "` into `"date"`.
-- **`isValidDate`** — Trims, constructs a `Date`, checks if it's valid. Accepts any format `new Date()` understands.
+- **`isValidDate`** — Two-step check: a `DATE_SHAPE` regex rejects strings that don't look like dates (digits + separators), then `new Date()` verifies the actual parse. The regex matters because V8's `Date` constructor accepts nonsense like `"hello 1"` or `"true"` as valid dates.
 - **`isValidAmount`** — Strips commas (for `"1,234.56"`), checks if the result is a valid number.
 
 ### Block 3: validateHeaders (lines 39-53)
 
 Checks that every required column exists in the normalized header list. Returns a `ValidationResult` with specific error messages listing both the missing column and the actual columns present.
 
-### Block 4: validateRowValues (lines 55-106)
+### Block 4: validateRowValues (lines 58-108)
 
-The sample-based row validator. Iterates through `min(rows.length, 100)` rows, checking date, amount, and category values. Each failed row gets its number pushed to `skippedRows`. The `rowNum = i + 2` offset matches spreadsheet row numbering (header = row 1, data starts row 2).
+The full-scan row validator. Iterates through every row, checking date, amount, and category values. Each failed row gets its number pushed to `skippedRows`. The `rowNum = i + 2` offset matches spreadsheet row numbering (header = row 1, data starts row 2). An earlier version only sampled 100 rows — a code review caught that this created a gap where bad data beyond the sample boundary could slip into the database.
 
 ### Block 5: buildHeaderMap (lines 113-122)
 
@@ -114,7 +112,7 @@ Utility functions exported for direct unit testing. Production code imports `csv
 
 ## 4. Complexity and Trade-offs
 
-**Sample validation is a bet.** Checking 100 rows assumes data quality problems are consistent. If a CSV has problems only in rows 40,000-50,000, the sample won't catch it. For SMB-scale data from single exports, this is acceptable. Full-scan validation would catch everything but adds latency proportional to file size.
+**Full-row validation is thorough but adds latency.** Every row gets checked, not a sample. For a 50,000-row file, that's 50K date regex tests + 50K number parses. Still fast (tens of milliseconds), but it scales linearly with file size. The trade-off is worth it — a code review caught that sample-based validation left a data integrity gap.
 
 **Synchronous parsing blocks the event loop.** For a 50,000-row file, that's maybe 200ms of CPU time where no other requests get handled. The 50K row limit bounds the worst case. For higher concurrency or larger files, you'd switch to streaming + worker threads.
 
@@ -122,7 +120,7 @@ Utility functions exported for direct unit testing. Production code imports `csv
 
 **Two-path header extraction adds a conditional.** The `if (records.length > 0)` branch uses `Object.keys`, the else branch re-parses with `columns: false`. This exists because csv-parse in `columns: true` mode doesn't expose raw headers when there are no data rows. The two paths handle the same concern (get headers) via different mechanisms, which is worth noting for maintainability.
 
-**How to say it in an interview:** "The trade-offs are sample size vs. validation thoroughness, sync vs. async parsing, and strict vs. lenient thresholds. Each favors user experience over theoretical correctness, which is the right call for an SMB product."
+**How to say it in an interview:** "The trade-offs are full-scan validation latency vs. data integrity, sync vs. async parsing, and strict vs. lenient thresholds. We chose full-scan after a code review caught that sample-based validation left unvalidated rows reaching the database. The DATE_SHAPE regex was another code review catch — V8's Date constructor accepts strings that aren't remotely dates."
 
 ---
 
@@ -192,7 +190,7 @@ Header validation (structural) and row validation (content) are separate functio
 
 **Context if you need it:** Tests ability to reason about heuristics and how you'd iterate on them.
 
-**Strong answer:** "Check 100 rows, reject if >50 fail. High failure rate signals a structural problem — wrong format, wrong file. Whether 50% is right is empirical. I'd log failure rates for every upload and whether users re-upload after rejection. If users get rejected at 55% but the data was mostly usable, the threshold is too strict."
+**Strong answer:** "Every row gets validated. If more than half fail, the file is rejected — high failure rate signals a structural problem like the wrong format or wrong file entirely. Whether 50% is right is empirical. I'd log failure rates for every upload and whether users re-upload after rejection. If users get rejected at 55% but the data was mostly usable, the threshold is too strict."
 
 **Red flag answer:** "50% seems reasonable." No ability to evaluate or iterate on a heuristic.
 
@@ -242,13 +240,13 @@ Header validation (structural) and row validation (content) are separate functio
 
 ### Linear Scan with Early Accumulation
 
-**What it is:** `validateRowValues` iterates through the sample once, collecting errors and skipped row numbers as it goes. Single pass, no backtracking.
+**What it is:** `validateRowValues` iterates through every row once, collecting errors and skipped row numbers as it goes. Single pass, no backtracking.
 
-**Where it appears:** The for-loop in `validateRowValues`, lines 67-103.
+**Where it appears:** The for-loop in `validateRowValues`, lines 69-105.
 
-**Why this one:** A multi-pass approach (one loop for dates, one for amounts, one for categories) would traverse the sample 3 times. Single-pass is cleaner and 3x fewer iterations.
+**Why this one:** A multi-pass approach (one loop for dates, one for amounts, one for categories) would traverse the data 3 times. Single-pass is cleaner and 3x fewer iterations.
 
-**Complexity:** O(s) where s is sample size (max 100). The cap makes this effectively O(1) relative to file size.
+**Complexity:** O(n) where n is row count (up to 50,000). Each row does constant-time work (regex test + Date parse + number parse).
 
 ---
 

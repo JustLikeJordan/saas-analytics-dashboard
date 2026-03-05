@@ -74,13 +74,17 @@ This is the complete file upload interface for the analytics dashboard. It handl
 
 Two groups: React hooks and Next.js router, then project internals. `DropzoneState` is a union of 6 string literals — the state machine's values. `UploadError` carries an error message, optional per-column validation errors, and the file name. `CsvPreview` is imported from the sibling presentational component.
 
-### Touch detection and constants (lines 21-24)
+### Touch detection via useSyncExternalStore (lines 21-27)
 
-`isTouchDevice` runs once at module scope (guarded by `typeof window` for SSR safety). Used to swap prompt text: "Tap to select" for mobile, "Drag your CSV here" for desktop. `REDIRECT_DELAY_S` is extracted as a named constant.
+Touch detection uses React 19's `useSyncExternalStore` hook — the idiomatic pattern for reading browser APIs without hydration mismatches. Three pieces work together: `noop` (a subscribe function that does nothing — we don't need reactivity since touch capability doesn't change), `getTouch` (the client snapshot — checks `ontouchstart` and `maxTouchPoints`), and `getServerTouch` (always returns `false` for SSR). An earlier version used `useState` + `useEffect`, which React 19's `react-hooks/set-state-in-effect` lint rule rejected. `useSyncExternalStore` is the correct primitive for this — it avoids the brief flash of wrong content that the effect-based approach would cause.
 
-### State declarations (lines 26-38)
+### Constants (line 29)
 
-Eight `useState` hooks and three refs. The core `state` variable drives the render. Supporting states: `uploadProgress` (0-100 for the progress bar), `error` (terminal error data), `previewData` (the server's preview response including the HMAC token), `lastFile` (the File object, preserved across retries and cancel), `isConfirming` (loading flag during confirm), `confirmedRowCount` (for the success message), `countdown` (redirect timer). Refs target the hidden file input, the dropzone container, and the error alert.
+`REDIRECT_DELAY_S` is extracted as a named constant for the 3-second countdown.
+
+### State declarations (lines 31-45)
+
+Eight `useState` hooks and four refs. The core `state` variable drives the render. Supporting states: `uploadProgress` (0-100 for the progress bar), `error` (terminal error data), `previewData` (the server's preview response including the HMAC token), `lastFile` (the File object, preserved across retries and cancel), `isConfirming` (loading flag during confirm), `confirmedRowCount` (for the success message), `countdown` (redirect timer). Refs target the hidden file input, the dropzone container, the error alert, and `dragCountRef` — a counter for reliable drag event tracking.
 
 ### Redirect countdown effect (lines 41-51)
 
@@ -106,9 +110,11 @@ The confirm flow. Builds a new `FormData` with the original file (`lastFile`) an
 
 Resets to `default` state. Clears preview data and confirming flag, but preserves `lastFile` — so if the user later hits an error, they still see "Last attempt: filename.csv" instead of a blank prompt.
 
-### File selection and drag handlers (lines 191-231)
+### File selection and drag handlers (lines 198-235)
 
-`handleFileSelect` delegates to `uploadFile`. Drag handlers manage the `dragHover` state. `handleDragLeave` guards against bubbling: `e.currentTarget === e.target` prevents false resets when the cursor crosses child element boundaries. `handleInputChange` resets the input value after selection so re-selecting the same file still triggers `onChange`.
+`handleFileSelect` delegates to `uploadFile`. Drag handlers manage the `dragHover` state using a counter pattern (`dragCountRef`). The counter increments on `dragenter`, decrements on `dragleave`, and resets to 0 on `drop`. This is more reliable than `e.currentTarget === e.target` for nested elements — when the cursor crosses from the dropzone onto a child element, the browser fires `dragleave` on the parent then `dragenter` on the child. The counter tracks the net enter/leave balance, so the hover state only clears when the cursor truly leaves the dropzone boundary.
+
+`handleInputChange` resets the input value after selection so re-selecting the same file still triggers `onChange`.
 
 `handleKeyDown` maps Enter and Space to opening the file picker — standard keyboard accessibility for custom buttons.
 
@@ -186,6 +192,18 @@ The dropzone is a `<div>` acting as a button: `role="button"`, `tabIndex={0}`, k
 
 **Interview-ready:** "The dropzone implements the WAI-ARIA button pattern: role, tabIndex, keyboard events, focus styles. One clear interaction target for screen readers."
 
+### useSyncExternalStore for Browser APIs
+
+React 19's preferred pattern for reading values from browser APIs (like touch detection) without hydration mismatches. Three arguments: a subscribe function (how to listen for changes), a client snapshot (current value in the browser), and a server snapshot (value during SSR). Since touch capability doesn't change, the subscribe function is a no-op. The server snapshot returns `false` to avoid hydration mismatches — the server can't know the device type.
+
+**Interview-ready:** "`useSyncExternalStore` is the correct primitive for reading browser APIs in React 19. It avoids the hydration mismatch that `useState` + `useEffect` causes, and it satisfies the `react-hooks/set-state-in-effect` lint rule that React 19 enforces."
+
+### Drag Counter Pattern
+
+A ref-based counter tracks net `dragenter`/`dragleave` events. More reliable than `e.currentTarget === e.target` for dropzones with nested child elements, because the browser fires leave/enter pairs when the cursor crosses element boundaries within the dropzone.
+
+**Interview-ready:** "The drag counter tracks the net enter/leave balance. When the cursor moves from the dropzone onto a child element, the browser fires a leave on the parent and an enter on the child. The counter stays positive, so the hover state holds. It only clears when the counter returns to zero — meaning the cursor actually left the dropzone."
+
 ---
 
 ## 6. Potential Interview Questions
@@ -226,7 +244,7 @@ The dropzone is a `<div>` acting as a button: `role="button"`, `tabIndex={0}`, k
 
 **Context if you need it:** Drag events in the browser are notoriously tricky. The interviewer wants to know if you've dealt with the bubbling issue.
 
-**Strong answer:** "dragenter sets the hover state. dragover calls preventDefault — without that, the browser opens the file. dragleave has a guard: e.currentTarget === e.target. Drag events bubble, so moving from the dropzone onto a child fires dragleave on the parent. The guard prevents flickering by only resetting when you actually leave the dropzone boundary."
+**Strong answer:** "dragenter increments a ref counter and sets the hover state. dragover calls preventDefault — without that, the browser opens the file instead of allowing the drop. dragleave decrements the counter and only clears the hover when it hits zero. This counter pattern is more reliable than `e.currentTarget === e.target` because drag events bubble through nested elements — moving from the dropzone onto a child fires dragleave on the parent, but the counter stays positive. On drop, the counter resets to zero."
 
 **Red flag:** "I just handle onDrop." — Missing the preventDefault on dragover means the drop event won't fire at all.
 
