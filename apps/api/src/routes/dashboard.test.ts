@@ -5,6 +5,7 @@ const mockVerifyAccessToken = vi.fn();
 const mockGetChartData = vi.fn();
 const mockGetSeedOrgId = vi.fn();
 const mockFindOrgById = vi.fn();
+const mockGetUserOrgDemoState = vi.fn();
 const mockTrackEvent = vi.fn();
 
 vi.mock('../services/auth/tokenService.js', () => ({
@@ -13,6 +14,7 @@ vi.mock('../services/auth/tokenService.js', () => ({
 
 vi.mock('../db/queries/index.js', () => ({
   chartsQueries: { getChartData: mockGetChartData },
+  datasetsQueries: { getUserOrgDemoState: mockGetUserOrgDemoState },
   orgsQueries: { getSeedOrgId: mockGetSeedOrgId, findOrgById: mockFindOrgById },
 }));
 
@@ -87,6 +89,7 @@ describe('GET /dashboard/charts', () => {
     expect(res.status).toBe(200);
     expect(body.data.isDemo).toBe(true);
     expect(body.data.orgName).toBe('Sunrise Cafe');
+    expect(body.data.demoState).toBe('seed_only');
     expect(mockGetSeedOrgId).toHaveBeenCalledOnce();
     expect(mockGetChartData).toHaveBeenCalledWith(99, undefined);
   });
@@ -99,6 +102,7 @@ describe('GET /dashboard/charts', () => {
       isAdmin: false,
     });
     mockFindOrgById.mockResolvedValueOnce({ id: 10, name: 'Acme Corp', slug: 'acme' });
+    mockGetUserOrgDemoState.mockResolvedValueOnce('user_only');
 
     const res = await fetch(`${baseUrl}/dashboard/charts`, {
       headers: { Cookie: 'access_token=valid-jwt' },
@@ -108,6 +112,7 @@ describe('GET /dashboard/charts', () => {
     expect(res.status).toBe(200);
     expect(body.data.isDemo).toBe(false);
     expect(body.data.orgName).toBe('Acme Corp');
+    expect(body.data.demoState).toBe('user_only');
     expect(mockGetChartData).toHaveBeenCalledWith(10, undefined);
     expect(mockGetSeedOrgId).not.toHaveBeenCalled();
   });
@@ -123,6 +128,7 @@ describe('GET /dashboard/charts', () => {
     expect(res.status).toBe(200);
     expect(body.data.isDemo).toBe(true);
     expect(body.data.orgName).toBe('Sunrise Cafe');
+    expect(body.data.demoState).toBe('seed_only');
     expect(mockGetSeedOrgId).toHaveBeenCalledOnce();
   });
 
@@ -143,6 +149,7 @@ describe('GET /dashboard/charts', () => {
       isAdmin: false,
     });
     mockFindOrgById.mockResolvedValueOnce({ id: 10, name: 'Acme Corp', slug: 'acme' });
+    mockGetUserOrgDemoState.mockResolvedValueOnce('user_only');
 
     await fetch(`${baseUrl}/dashboard/charts`, {
       headers: { Cookie: 'access_token=valid-jwt' },
@@ -185,6 +192,27 @@ describe('GET /dashboard/charts', () => {
     expect(mockGetChartData).toHaveBeenCalledWith(99, undefined);
   });
 
+  it('falls back to demoState empty when getUserOrgDemoState fails', async () => {
+    mockVerifyAccessToken.mockResolvedValueOnce({
+      sub: '42',
+      org_id: 10,
+      role: 'owner',
+      isAdmin: false,
+    });
+    mockFindOrgById.mockResolvedValueOnce({ id: 10, name: 'Acme Corp', slug: 'acme' });
+    mockGetUserOrgDemoState.mockRejectedValueOnce(new Error('DB timeout'));
+
+    const res = await fetch(`${baseUrl}/dashboard/charts`, {
+      headers: { Cookie: 'access_token=valid-jwt' },
+    });
+    const body = await res.json() as { data: Record<string, unknown> };
+
+    expect(res.status).toBe(200);
+    expect(body.data.isDemo).toBe(false);
+    expect(body.data.orgName).toBe('Acme Corp');
+    expect(body.data.demoState).toBe('empty');
+  });
+
   it('fires chart.filtered event when filters are present', async () => {
     mockVerifyAccessToken.mockResolvedValueOnce({
       sub: '42',
@@ -193,6 +221,7 @@ describe('GET /dashboard/charts', () => {
       isAdmin: false,
     });
     mockFindOrgById.mockResolvedValueOnce({ id: 10, name: 'Acme Corp', slug: 'acme' });
+    mockGetUserOrgDemoState.mockResolvedValueOnce('user_only');
 
     await fetch(`${baseUrl}/dashboard/charts?from=2025-01-01&categories=Rent`, {
       headers: { Cookie: 'access_token=valid-jwt' },

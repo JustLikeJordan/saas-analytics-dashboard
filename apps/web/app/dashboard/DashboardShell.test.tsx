@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 
 const mockMutate = vi.fn();
+const mockPush = vi.fn();
 let mockSwrReturn = {
   data: undefined as unknown,
   isLoading: false,
@@ -13,6 +14,10 @@ vi.mock('swr', () => ({
     ...mockSwrReturn,
     data: mockSwrReturn.data ?? opts.fallbackData,
   }),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
 }));
 
 vi.mock('@/lib/api-client', () => ({
@@ -51,6 +56,20 @@ vi.mock('./FilterBar', () => ({
   computeDateRange: () => null,
 }));
 
+vi.mock('./AiSummarySkeleton', () => ({
+  AiSummarySkeleton: ({ className }: { className?: string }) => (
+    <div data-testid="ai-summary-skeleton" className={className}>AI Skeleton</div>
+  ),
+}));
+
+vi.mock('@/components/common/DemoModeBanner', () => ({
+  DemoModeBanner: ({ demoState, onUploadClick }: { demoState: string; onUploadClick: () => void }) => (
+    <div data-testid="demo-mode-banner" data-demo-state={demoState}>
+      <button onClick={onUploadClick}>Upload CSV</button>
+    </div>
+  ),
+}));
+
 import { DashboardShell } from './DashboardShell';
 import type { ChartData } from 'shared/types';
 
@@ -67,6 +86,7 @@ const fullData: ChartData = {
   isDemo: false,
   availableCategories: ['Payroll', 'Rent'],
   dateRange: { min: '2025-01-01', max: '2025-12-31' },
+  demoState: 'user_only',
 };
 
 const emptyData: ChartData = {
@@ -76,6 +96,7 @@ const emptyData: ChartData = {
   isDemo: true,
   availableCategories: [],
   dateRange: null,
+  demoState: 'seed_only',
 };
 
 afterEach(() => {
@@ -92,16 +113,23 @@ describe('DashboardShell', () => {
     expect(screen.getByRole('heading', { name: 'Acme Corp' })).toBeInTheDocument();
   });
 
-  it('shows demo banner when isDemo is true', () => {
-    render(<DashboardShell initialData={{ ...fullData, isDemo: true }} />);
+  it('passes demoState to DemoModeBanner', () => {
+    render(<DashboardShell initialData={{ ...fullData, demoState: 'seed_only' }} />);
 
-    expect(screen.getByText(/Viewing sample data/)).toBeInTheDocument();
+    expect(screen.getByTestId('demo-mode-banner')).toHaveAttribute('data-demo-state', 'seed_only');
   });
 
-  it('hides demo banner when isDemo is false', () => {
+  it('passes user_only demoState when not demo', () => {
     render(<DashboardShell initialData={fullData} />);
 
-    expect(screen.queryByText(/Viewing sample data/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('demo-mode-banner')).toHaveAttribute('data-demo-state', 'user_only');
+  });
+
+  it('navigates to /upload when banner upload is clicked', () => {
+    render(<DashboardShell initialData={{ ...fullData, demoState: 'seed_only' }} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /upload csv/i }));
+    expect(mockPush).toHaveBeenCalledWith('/upload');
   });
 
   it('renders both charts when data exists', () => {
@@ -123,6 +151,15 @@ describe('DashboardShell', () => {
     expect(screen.queryByTestId('filter-bar')).not.toBeInTheDocument();
   });
 
+  it('shows FilterBar skeleton during loading when data exists', () => {
+    mockSwrReturn = { data: emptyData, isLoading: true, mutate: mockMutate };
+
+    render(<DashboardShell initialData={fullData} />);
+
+    expect(screen.getByTestId('filter-bar-skeleton')).toBeInTheDocument();
+    expect(screen.queryByTestId('filter-bar')).not.toBeInTheDocument();
+  });
+
   it('shows empty state with upload CTA when no data', () => {
     render(<DashboardShell initialData={emptyData} />);
 
@@ -130,13 +167,27 @@ describe('DashboardShell', () => {
     expect(screen.getByRole('link', { name: 'Upload a CSV' })).toHaveAttribute('href', '/upload');
   });
 
-  it('shows skeletons during loading with no fallback data', () => {
+  it('shows chart skeletons during loading with no data', () => {
     mockSwrReturn = { data: emptyData, isLoading: true, mutate: mockMutate };
 
     render(<DashboardShell initialData={emptyData} />);
 
     expect(screen.getByTestId('skeleton-line')).toBeInTheDocument();
     expect(screen.getByTestId('skeleton-bar')).toBeInTheDocument();
+  });
+
+  it('shows AI summary skeleton during loading with no data', () => {
+    mockSwrReturn = { data: emptyData, isLoading: true, mutate: mockMutate };
+
+    render(<DashboardShell initialData={emptyData} />);
+
+    expect(screen.getByTestId('ai-summary-skeleton')).toBeInTheDocument();
+  });
+
+  it('hides AI summary skeleton when data is loaded', () => {
+    render(<DashboardShell initialData={fullData} />);
+
+    expect(screen.queryByTestId('ai-summary-skeleton')).not.toBeInTheDocument();
   });
 
   it('only renders revenue chart when expense data is empty', () => {

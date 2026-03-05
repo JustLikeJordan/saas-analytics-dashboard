@@ -2,8 +2,9 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { AUTH, ANALYTICS_EVENTS } from 'shared/constants';
 import { chartFiltersSchema } from 'shared/schemas';
+import type { DemoModeState } from 'shared/types';
 import { verifyAccessToken } from '../services/auth/tokenService.js';
-import { chartsQueries, orgsQueries } from '../db/queries/index.js';
+import { chartsQueries, datasetsQueries, orgsQueries } from '../db/queries/index.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
 import { logger } from '../lib/logger.js';
 
@@ -37,6 +38,7 @@ dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => 
   let orgId: number;
   let orgName: string;
   let isDemo = true;
+  let demoState: DemoModeState = 'seed_only';
   let authedUser: { userId: number; orgId: number } | null = null;
 
   const token = req.cookies?.[AUTH.COOKIE_NAMES.ACCESS_TOKEN];
@@ -50,6 +52,11 @@ dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => 
       const org = await orgsQueries.findOrgById(orgId);
       orgName = org?.name ?? 'Your Organization';
       isDemo = false;
+      try {
+        demoState = await datasetsQueries.getUserOrgDemoState(orgId);
+      } catch {
+        demoState = 'empty';
+      }
     } catch {
       // expired or invalid token — fall through to seed org
       orgId = await orgsQueries.getSeedOrgId();
@@ -85,6 +92,7 @@ dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => 
       ...chartData,
       orgName,
       isDemo,
+      demoState,
     },
   });
 });
