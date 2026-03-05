@@ -1,6 +1,6 @@
 # Story 2.2: CSV Upload & Validation
 
-Status: review
+Status: done
 
 ## Story
 

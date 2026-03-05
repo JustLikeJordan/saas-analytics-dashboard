@@ -51,7 +51,7 @@ development_status:
   epic-1-retrospective: done
 
   # ── Epic 2: Data Pipeline & Visualization ──
-  epic-2: in-progress
+  epic-2: done
   2-1-seed-data-demo-mode-foundation: done
   2-2-csv-upload-validation: done
   2-3-csv-preview-confirmation: done
@@ -60,7 +60,7 @@ development_status:
   2-6-interactive-dashboard-charts: done
   2-7-date-range-category-filters: done
   2-8-loading-states-demo-mode-banner: done
-  epic-2-retrospective: optional
+  epic-2-retrospective: done
 
   # ── Epic 3: AI-Powered Business Insights ──
   epic-3: backlog

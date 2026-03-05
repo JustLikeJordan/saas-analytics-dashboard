@@ -2,5 +2,10 @@ date,amount,category,parent_category,label
 2026-01-15,14500.00,Revenue,Income,Monthly sales
 2026-01-15,6000.00,Payroll,Expenses,Staff wages
 2026-01-15,950.00,Marketing,Expenses,Social media ads
-2026-01-15,3000.00,Rent,Expenses,Store lease
-2026-01-15,1800.00,Supplies,Expenses,Coffee beans and packaging
+2026-02-15,15200.00,Revenue,Income,Monthly sales
+2026-02-15,6100.00,Payroll,Expenses,Staff wages
+2026-02-15,1050.00,Marketing,Expenses,Digital campaign
+2026-03-15,13800.00,Revenue,Income,Monthly sales
+2026-03-15,6000.00,Payroll,Expenses,Staff wages
+2026-03-15,3000.00,Rent,Expenses,Store lease
+2026-03-15,1800.00,Supplies,Expenses,Coffee beans and packaging

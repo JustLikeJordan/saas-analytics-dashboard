@@ -1,4 +1,9 @@
 import { parse } from 'csv-parse/sync';
+import {
+  CSV_REQUIRED_COLUMNS,
+  CSV_OPTIONAL_COLUMNS,
+  CSV_MAX_ROWS,
+} from 'shared/constants';
 import type {
   DataSourceAdapter,
   ParseResult,
@@ -7,11 +12,7 @@ import type {
   ParsedRow,
 } from '../adapters/index.js';
 
-const REQUIRED_COLUMNS = ['date', 'amount', 'category'] as const;
-const OPTIONAL_COLUMNS = ['label', 'parent_category'] as const;
-const ALL_KNOWN_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS];
-const MAX_ROWS = 50_000;
-const VALIDATION_SAMPLE_SIZE = 100;
+const ALL_KNOWN_COLUMNS = [...CSV_REQUIRED_COLUMNS, ...CSV_OPTIONAL_COLUMNS];
 
 function stripBom(content: string): string {
   return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
@@ -21,11 +22,13 @@ function normalizeHeader(header: string): string {
   return header.trim().toLowerCase();
 }
 
+// Reject garbage that V8's Date constructor would accept (e.g. "hello 1", "true")
+const DATE_SHAPE = /\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/;
+
 function isValidDate(value: string): boolean {
   const trimmed = value.trim();
-  if (!trimmed) return false;
+  if (!trimmed || !DATE_SHAPE.test(trimmed)) return false;
 
-  // ISO 8601 (YYYY-MM-DD) preferred, but also accept common formats
   const d = new Date(trimmed);
   return !isNaN(d.getTime());
 }
@@ -40,7 +43,7 @@ function validateHeaders(headers: string[]): ValidationResult {
   const normalized = headers.map(normalizeHeader);
   const errors: ColumnValidationError[] = [];
 
-  for (const required of REQUIRED_COLUMNS) {
+  for (const required of CSV_REQUIRED_COLUMNS) {
     if (!normalized.includes(required)) {
       errors.push({
         column: required,
@@ -58,13 +61,12 @@ function validateRowValues(
 ): { errors: ColumnValidationError[]; skippedRows: number[] } {
   const errors: ColumnValidationError[] = [];
   const skippedRows: number[] = [];
-  const sampleSize = Math.min(rows.length, VALIDATION_SAMPLE_SIZE);
 
   const dateKey = headerMap.get('date')!;
   const amountKey = headerMap.get('amount')!;
   const categoryKey = headerMap.get('category')!;
 
-  for (let i = 0; i < sampleSize; i++) {
+  for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
     const rowNum = i + 2; // +2 because row 1 is header, data starts at row 2
     let rowHasError = false;
@@ -160,12 +162,12 @@ export const csvAdapter: DataSourceAdapter = {
       };
     }
 
-    if (records.length > MAX_ROWS) {
+    if (records.length > CSV_MAX_ROWS) {
       return {
         headers: rawHeaders,
         rows: [],
         rowCount: records.length,
-        warnings: [`File has ${records.length.toLocaleString()} rows, which exceeds our limit of ${MAX_ROWS.toLocaleString()}. Try splitting your data into smaller files.`],
+        warnings: [`File has ${records.length.toLocaleString()} rows, which exceeds our limit of ${CSV_MAX_ROWS.toLocaleString()}. Try splitting your data into smaller files.`],
       };
     }
 
@@ -179,7 +181,7 @@ export const csvAdapter: DataSourceAdapter = {
     }
 
     const { skippedRows } = validateRowValues(records, headerMap);
-    const failRate = skippedRows.length / Math.min(records.length, VALIDATION_SAMPLE_SIZE);
+    const failRate = records.length > 0 ? skippedRows.length / records.length : 0;
 
     if (failRate > 0.5) {
       // >50% of sampled rows failed — reject entirely

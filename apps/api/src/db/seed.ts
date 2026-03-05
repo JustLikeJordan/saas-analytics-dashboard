@@ -56,7 +56,7 @@ function buildSeedRows(orgId: number, datasetId: number) {
       date, amount: payroll, label: null,
     });
 
-    // Marketing: $800–$1200 baseline, Q3 (Jul/Aug/Sep) drops to $200–$300
+    // Marketing: $800–$1200 baseline, Q3 (Jul/Aug/Sep) drops to ~$200–$218 (lerp over 3 months)
     const isQ3 = m >= 6 && m <= 8;
     const marketing = isQ3
       ? lerp('200.00', '300.00', m - 6)
