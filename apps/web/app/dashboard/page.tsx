@@ -10,6 +10,7 @@ const EMPTY_CHART_DATA: ChartData = {
   isDemo: true,
   availableCategories: [],
   dateRange: null,
+  demoState: 'empty',
 };
 
 export default async function DashboardPage() {

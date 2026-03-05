@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { demoModeStateSchema } from './datasets.js';
 
 export const revenueTrendPointSchema = z.object({
   month: z.string(),
@@ -22,4 +23,5 @@ export const chartDataSchema = z.object({
   isDemo: z.boolean(),
   availableCategories: z.array(z.string()),
   dateRange: datasetDateRangeSchema.nullable(),
+  demoState: demoModeStateSchema,
 });

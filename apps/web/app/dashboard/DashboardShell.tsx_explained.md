@@ -1,14 +1,16 @@
 # DashboardShell.tsx — Interview-Ready Documentation
 
-> Source file: `apps/web/app/dashboard/DashboardShell.tsx` (~189 lines)
+> Source file: `apps/web/app/dashboard/DashboardShell.tsx` (~207 lines)
 
 ---
 
 ## 1. 30-Second Elevator Pitch
 
-DashboardShell is the top-level client component that owns the dashboard's data lifecycle and filter state. It accepts server-fetched `initialData` as a prop, hands it to SWR as `fallbackData` so the page renders instantly with zero loading spinners, then quietly revalidates in the background. Filter state (date range preset + expense category) is encoded directly into the SWR cache key — when filters change, the key changes, SWR treats it as a new request, and charts update with filtered data. It also contains a class-based error boundary, three distinct empty states (loading / filtered-empty / no-data), and the responsive chart grid.
+DashboardShell is the top-level client component that owns the dashboard's data lifecycle, filter state, and loading presentation. It accepts server-fetched `initialData` as a prop, hands it to SWR as `fallbackData` so the page renders instantly with zero loading spinners, then quietly revalidates in the background. Filter state (date range preset + expense category) is encoded directly into the SWR cache key — when filters change, the key changes, SWR treats it as a new request, and charts update with filtered data.
 
-**How to say it in an interview:** "DashboardShell bridges server and client rendering by passing server-fetched data into SWR's fallbackData. Filter state is encoded into the SWR cache key, so filter changes trigger automatic refetches. The component distinguishes between 'no data at all' and 'filters exclude all data' with separate empty states."
+Story 2.8 added three meaningful pieces to that foundation: a `DemoModeBanner` that replaces the old inline demo indicator and renders conditionally based on a 4-state enum from the API, an `AiSummarySkeleton` that appears above the chart grid during initial cold loads, and a FilterBar skeleton (three pill-shaped placeholders) that fills the filter row while data is in flight. The shell now has five distinct visual states: initial-loading-skeleton, loaded-with-data, filtered-empty, no-data-empty, and error — plus two overlay-style additions (the banner and AI skeleton) that sit on top of those states.
+
+**How to say it in an interview:** "DashboardShell bridges server and client rendering by passing server-fetched data into SWR's fallbackData. Filter state is encoded into the SWR cache key so filter changes trigger automatic refetches. Story 2.8 added a proper DemoModeBanner driven by a 4-state enum, an AiSummarySkeleton for cold load feedback, and a FilterBar skeleton so nothing janks during initial data fetch."
 
 ---
 
@@ -16,11 +18,11 @@ DashboardShell is the top-level client component that owns the dashboard's data 
 
 ### Decision 1: SWR fallbackData for zero-flash hydration
 
-**What's happening:** The parent server component fetches chart data during SSR and passes it as `initialData`. DashboardShell feeds that into SWR's `fallbackData` option. SWR treats it as the initial cache value — the component renders immediately with real data instead of showing a loading skeleton. After hydration, SWR can revalidate in the background if you enable it.
+**What's happening:** The parent server component fetches chart data during SSR and passes it as `initialData`. DashboardShell feeds that into SWR's `fallbackData` option. SWR treats it as the initial cache value — the component renders immediately with real data instead of showing a loading skeleton. After hydration, SWR revalidates in the background on tab focus.
 
 **How to say it in an interview:** "fallbackData seeds SWR's cache with server-fetched data. The component hydrates with content already in place — no layout shift, no loading state on first paint. It's the stale-while-revalidate pattern applied to SSR hydration."
 
-**Over alternative:** Using `useSWR` without fallback would show a skeleton on first client render, even though we already have the data from the server. Two-pass rendering for no reason. Using React Server Components alone would mean no client-side revalidation — stale data until a full page refresh.
+**Over alternative:** Using `useSWR` without fallback would show a skeleton on first client render, even though the data was already fetched on the server. Two-pass rendering for no reason. Using React Server Components alone would mean no client-side revalidation — stale data until a full page refresh.
 
 ### Decision 2: Class component error boundary in a functional codebase
 
@@ -36,77 +38,119 @@ DashboardShell is the top-level client component that owns the dashboard's data 
 
 **How to say it in an interview:** "I skip the sm: breakpoint because charts need minimum width to be legible. The jump from single-column to two-column happens at md: (768px), where each chart gets at least 350px. The sm: range (640-767px) doesn't warrant a different layout."
 
-**Over alternative:** Using `sm:grid-cols-2` would cram charts into ~300px columns on a 640px screen. The axes, labels, and tooltips would overlap or truncate.
+**Over alternative:** Using `sm:grid-cols-2` would cram charts into roughly 300px columns on a 640px screen. The axes, labels, and tooltips would overlap or truncate.
 
-### Decision 4: Three-tier empty state
+### Decision 4: Five-tier visual states (not three)
 
-**What's happening:** The dashboard now has three distinct "no data" branches instead of one. (1) Loading skeleton — data is being fetched. (2) FilteredEmptyState — data exists but current filters exclude everything, showing "No data matches these filters" with a reset button. (3) EmptyState — no data at all, showing upload CTA. The order matters: `isLoading` > `filtered empty` > `empty` > `has data`. The `hasActiveFilters` check distinguishes a genuine empty org from a filter that narrowed results to zero.
+**What's happening:** Before Story 2.8, the dashboard had three rendering branches. Now there are five, with two overlays that sit across multiple branches:
 
-**How to say it in an interview:** "I distinguish between 'no data uploaded' and 'filters too narrow' with separate empty states. The filtered-empty state offers a reset button instead of an upload CTA — the user's data exists, they just need to widen their filters."
+1. **Initial-loading-skeleton** — `isLoading && !hasData`. Shows ChartSkeleton pairs inside the error boundary, a FilterBar skeleton above, and the AiSummarySkeleton above the chart grid.
+2. **Loaded-with-data** — charts render. AiSummarySkeleton disappears. DemoModeBanner may be visible.
+3. **Filtered-empty** — data exists but current filters exclude everything, showing "No data matches these filters" with a reset button.
+4. **No-data-empty** — no data at all, showing upload CTA.
+5. **Error** — ChartErrorBoundary fallback with a retry button.
 
-### Decision 5: Filter state encoded in SWR cache key
+The `DemoModeBanner` and `AiSummarySkeleton` are overlays, not branches — they appear on top of states 1 and 2 depending on `demoState` and `isLoading`.
 
-**What's happening:** Instead of managing filter state separately from data fetching, filters are encoded directly into the SWR key string. `buildSwrKey()` converts `FilterState` into query params like `/dashboard/charts?from=2025-12-01&to=2026-03-01&categories=Payroll`. When the filter changes, the key changes, SWR sees a new cache entry, and fires a fresh request. Old filter combinations stay in SWR's cache, so switching back is instant.
+**How to say it in an interview:** "I distinguish between five visual states rather than just 'loading / data / empty.' The DemoModeBanner and AiSummarySkeleton are orthogonal to that — they render based on their own conditions across multiple states. It keeps each concern at the right level."
+
+### Decision 5: DemoModeBanner driven by 4-state enum instead of boolean
+
+**What's happening:** The old code used `data.isDemo` (a boolean) to show a simple `<p>` tag below the org name. Story 2.8 replaces that with a `DemoModeBanner` component that accepts a `demoState` prop typed as `DemoModeState` — a 4-value union: `seed_only`, `seed_plus_user`, `user_only`, `empty`. The banner component decides what to render (or whether to render at all) based on that state. The `seed_plus_user` and `user_only` states return null — no banner. The `seed_only` state shows a dismissible notice. The `empty` state shows a CTA to get started.
+
+**How to say it in an interview:** "I replaced a boolean demo flag with a 4-state enum. A boolean can't express 'has user data but is also viewing seed data' vs. 'has only seed data' vs. 'has neither.' The enum lets the banner show the right message or hide entirely without DashboardShell needing to know which case it is."
+
+**Over alternative:** Keeping the boolean and conditionally rendering different messages in DashboardShell would mean DashboardShell knows too much about demo state semantics. That logic belongs in the banner component.
+
+### Decision 6: Filter state encoded in SWR cache key
+
+**What's happening:** Instead of managing filter state separately from data fetching, filters are encoded directly into the SWR key string. `buildSwrKey()` converts `FilterState` into query params like `/dashboard/charts?from=2025-12-01&to=2026-03-01&categories=Payroll`. When filters change, the key changes, SWR sees a new cache entry, and fires a fresh request. Old filter combinations stay in SWR's cache, so switching back is instant.
 
 **How to say it in an interview:** "Filters are encoded into the SWR cache key rather than managed as separate state that triggers fetches. This gives us automatic cache per filter combination — switching between 'Last 3 months' and 'Last year' serves from cache after the first load."
 
 **Over alternative:** Keeping filter state separate and calling `mutate()` on change would work but loses the per-key caching benefit. Every filter change would refetch even if we'd seen that combination before.
 
+### Decision 7: FilterBar skeleton matches pill shape, not generic rectangles
+
+**What's happening:** The FilterBar skeleton (shown when `isLoading && hasAnyData && !hasData`) renders three rounded shapes: two `w-[120px] rounded-full` divs and one `w-[80px] rounded-md` div. These dimensions aren't arbitrary — they match the approximate shape of the actual FilterBar's date preset dropdown, category dropdown, and reset button. When the real FilterBar renders, nothing jumps.
+
+**How to say it in an interview:** "The FilterBar skeleton matches the real component's shape so the layout is stable when real filters appear. Skeleton fidelity matters — a generic gray box that snaps to a different-shaped filter control causes layout shift."
+
+### Decision 8: AiSummarySkeleton above charts, outside the error boundary
+
+**What's happening:** `AiSummarySkeleton` renders with `{isLoading && !hasData && <AiSummarySkeleton className="mb-6" />}` — it's positioned inside the `<section>` but outside `ChartErrorBoundary`. This is deliberate. The AI summary panel will be a separate UI concern from the chart grid. Putting it inside the error boundary would mean a chart render error could mask the AI section. Putting it outside means each area fails independently.
+
+**How to say it in an interview:** "The AiSummarySkeleton sits outside the chart error boundary because the AI summary and charts are independent UI regions. A chart crash shouldn't suppress the AI panel, and vice versa."
+
+### Decision 9: useRouter for upload navigation instead of a Link component
+
+**What's happening:** `DemoModeBanner` needs to navigate to `/upload` when the user clicks the "Upload CSV" button. DashboardShell passes `handleUploadClick` — a `useCallback` wrapping `router.push('/upload')` — as the `onUploadClick` prop. This is an imperative navigation call, not a declarative `<Link>`. The banner is deep inside the component tree; passing the router down through props is the right call here rather than giving the banner its own router instance.
+
+**How to say it in an interview:** "I pass a navigation callback down instead of letting the banner own a router. The banner stays a pure presentational component — it fires a callback, DashboardShell decides where to go."
+
+### Decision 10: section element with aria-labelledby
+
+**What's happening:** The chart area is now wrapped in `<section aria-labelledby="dashboard-heading">` where `dashboard-heading` is the `id` on the `<h1>` that shows `data.orgName`. This means screen readers announce the heading when entering the section, giving users context before they encounter the charts.
+
+**How to say it in an interview:** "The section/h1 pairing with aria-labelledby creates a labeled landmark. Screen readers can navigate by landmark and will announce the org name when entering the chart section. It's a small addition with meaningful accessibility impact."
+
 ---
 
 ## 3. Code Walkthrough
 
-### Imports and interface (lines 1-18)
+### Imports and interface (lines 1-21)
 
-Standard split: React, Next.js, SWR, Lucide icons, then project internals. The `DashboardShellProps` interface takes `initialData` (the server-fetched chart payload). `FilterState`, `computeDateRange`, and `FilterBar` itself are imported from the `FilterBar` module. The `Filter` icon from Lucide is used for the FilteredEmptyState component.
+The imports follow the standard ordering: React, Next.js, third-party (SWR, Lucide), then internal modules. Story 2.8 added `useRouter` from `next/navigation`, `AiSummarySkeleton` from the local dashboard module, and `DemoModeBanner` from `@/components/common`. The `DashboardShellProps` interface still takes `initialData: ChartData`. `ChartData` now includes `demoState: DemoModeState` (a shared schema field added in Story 2.8).
 
-### Constants, buildSwrKey, and fetchChartData (lines 20-42)
+### Constants, buildSwrKey, and fetchChartData (lines 23-45)
 
 `EMPTY_FILTERS` defines the starting state — both `datePreset` and `category` null. `buildSwrKey` converts `FilterState` into a URL string with query params. It calls `computeDateRange` to turn a preset like `'last-3-months'` into `from` and `to` ISO dates, and appends a `categories` param if set. The resulting string (e.g., `/dashboard/charts?from=2025-12-02&to=2026-03-02&categories=Payroll`) becomes the SWR cache key. `fetchChartData` takes this key string and passes it directly to `apiClient` as the request path — the query params travel with it.
 
-### ChartErrorBoundary (lines 44-73)
+### ChartErrorBoundary (lines 47-76)
 
-A class component with minimal state: `{ hasError: boolean }`. `getDerivedStateFromError` flips the flag. `componentDidCatch` logs for debugging. The render method shows either the fallback (retry button + message) or `this.props.children`. The retry button does two things: resets `hasError` to false (so the boundary re-renders children) and calls `onRetry()` to trigger SWR refetch.
+A class component with minimal state: `{ hasError: boolean }`. `getDerivedStateFromError` flips the flag. The render method shows either the fallback (retry button + message) or `this.props.children`. The retry button resets `hasError` to false and calls `onRetry()` to trigger SWR refetch. The `col-span-full` class on the fallback ensures it spans the entire grid.
 
-The `col-span-full` class on the fallback ensures it spans the entire grid, not just one column.
+### EmptyState and FilteredEmptyState (lines 78-107)
 
-### EmptyState (lines 75-88)
+Both are presentational components. `EmptyState` renders when no data exists at all — dashed border, Upload icon, Link to `/upload`. `FilteredEmptyState` renders when data exists but current filters exclude everything — shows a Filter icon and a reset button instead of an upload CTA. The distinction matters: a user who sees "No data matches these filters" has data, they just need to widen their search.
 
-A presentational component. Dashed border, Upload icon, text, and a Link to `/upload`. Also uses `col-span-full` to span the grid. The Link gets button-like styling via utility classes.
+### DashboardShell — state setup (lines 109-147)
 
-### FilteredEmptyState (lines 90-104)
+The main export. `useRouter` is now initialized at the top alongside `useSidebar`. `filters` state starts at `EMPTY_FILTERS`. SWR is configured with `fallbackData: initialData`, `keepPreviousData: true`, and focus revalidation on.
 
-Distinct from `EmptyState` — this renders when data exists but current filters exclude everything. Shows a Filter icon and "No data matches these filters" with a reset button. The `onReset` prop calls `handleResetFilters` to clear both filter fields. This prevents the confusing case where a user sees "No data" when they actually have data — they just need to widen their filters.
+`handleUploadClick` (lines 139-141) is a new `useCallback` wrapping `router.push('/upload')`. This gets passed to `DemoModeBanner` as `onUploadClick`. Memoized so DemoModeBanner doesn't re-render on unrelated state changes.
 
-### DashboardShell (lines 106-188)
+Four data presence booleans (lines 143-146): `hasRevenue`, `hasExpenses`, `hasData` (filtered), `hasAnyData` (from initialData, filter-agnostic). `hasAnyData` drives FilterBar and its skeleton — an empty org gets neither.
 
-The main export. Destructures `initialData` from props.
+### DashboardShell — layout (lines 148-205)
 
-**SWR setup (lines 112-121):** The `useSWR` call uses the dynamic `swrKey` (which changes when filters change). `fallbackData` is always `initialData` — the server-fetched unfiltered data seeds every cache entry. `keepPreviousData: true` prevents a flash of empty content when switching between filter combinations — the old data stays visible while the new request is in flight. Earlier, `fallbackData` was conditional (only set when no filters were active), but that caused a flash-to-skeleton on the first filter interaction.
+**DemoModeBanner (line 150):** Rendered first, outside the max-width container, passing `data.demoState` and `handleUploadClick`. The banner manages its own visibility — DashboardShell doesn't need to know which states show the banner.
 
-**Filter state (lines 108-110):** `useState<FilterState>` starts with `EMPTY_FILTERS` (both fields null). `buildSwrKey` converts this into the SWR cache key. `hasActiveFilters` is a simple null check that drives the filtered-empty state branch.
+**FilterBar / FilterBar skeleton (lines 152-169):** A three-way conditional: if `isLoading && hasAnyData && !hasData`, render the pill skeleton. If `hasAnyData` (and not loading), render the real FilterBar. Otherwise null. The skeleton and real FilterBar live at the same vertical position, so the transition is seamless.
 
-**Filter handlers (lines 127-133):** `handleFilterChange` wraps `setFilters` in `useCallback`. `handleResetFilters` sets both fields to null. Both are memoized to avoid re-renders in the FilterBar.
+**Section element (line 171):** `<section aria-labelledby="dashboard-heading">` wraps everything from the org name heading to the chart grid. The heading's `id="dashboard-heading"` links the two.
 
-**Data checks (lines 135-138):** Four booleans: `hasRevenue`, `hasExpenses`, `hasData` (for current filtered data), and `hasAnyData` (from unfiltered initialData — used to decide whether to show FilterBar at all). The FilterBar only renders when `hasAnyData` is true — an empty org with no data doesn't need filter controls.
+**AiSummarySkeleton (line 176):** `{isLoading && !hasData && <AiSummarySkeleton className="mb-6" />}`. Renders above the chart grid, below the org name. Disappears once data arrives. Positioned outside ChartErrorBoundary to keep AI and chart concerns separate.
 
-**Layout (lines 140-187):** FilterBar renders above the main content when data exists. The content area has a max-width constraint. The heading shows `data.orgName`, with a demo banner if `data.isDemo`. The chart grid is wrapped in `ChartErrorBoundary` with `mutate` as the retry callback.
-
-**Conditional rendering (lines 161-183):** Four branches: loading skeleton (only when loading AND no cached data), filtered-empty state (data exists but filters exclude everything), empty state (no data at all), or the chart grid. Each chart is wrapped in `LazyChart` for mobile viewport-based lazy loading.
+**Chart area (lines 178-202):** ChartErrorBoundary wraps a four-branch conditional: loading skeleton, filtered-empty, empty, or chart grid. Each branch is self-contained. Charts are wrapped in `LazyChart` for mobile viewport-based lazy loading.
 
 ---
 
 ## 4. Complexity and Trade-offs
 
-**Single error boundary for all charts.** One chart failing takes down the entire grid — both charts show the retry fallback. The trade-off is simplicity vs. granularity. For a two-chart dashboard, this is fine. If the grid grew to 6+ charts, individual boundaries would let healthy charts remain visible.
+**AiSummarySkeleton is a placeholder.** The AI summary panel doesn't exist yet — the skeleton just reserves space where it will eventually render. This is intentional. The skeleton teaches users to expect an AI section without the API integration being live. The risk is that the skeleton disappears and nothing replaces it — that's acceptable for now because the section is positioned for a future story.
 
-**revalidateOnFocus enabled.** Focus revalidation is turned on so returning to the tab picks up fresh data. `revalidateOnReconnect` is disabled since network reconnection doesn't correlate with data changes. `keepPreviousData: true` ensures filter switches don't flash a skeleton — the previous filter's data stays visible while the new request is in flight.
+**DemoModeBanner owns all demo state logic.** DashboardShell passes `demoState` and `onUploadClick` and stops caring. The banner decides whether to render, what message to show, when to dissolve. This means DashboardShell is simpler, but it also means you have to look at two files to understand the full demo experience.
 
-**No error state for fetch failures.** If `fetchChartData` fails after initial load, SWR keeps showing the last good data and sets `error` — but we don't render an error banner for it. The error boundary only catches render errors, not fetch errors. This could be confusing if the API goes down after initial load and the user doesn't realize they're seeing stale data. Worth adding an error toast in a future iteration.
+**Single error boundary for all charts.** One chart failing takes down the entire grid — both charts show the retry fallback. For a two-chart dashboard this is fine. If the grid grew to 6+ charts, individual boundaries would let healthy charts remain visible.
 
-**Demo banner is text-only.** The `data.isDemo` indicator is a small paragraph below the org name. No dismiss button, no "upgrade" CTA. It's informational, not actionable. Good enough for now — the upload CTA already exists in the empty state.
+**revalidateOnFocus enabled.** Focus revalidation is on so returning to the tab picks up fresh data. `revalidateOnReconnect` is off since network reconnection doesn't correlate with data changes. `keepPreviousData: true` prevents skeleton flashes during filter switches.
 
-**How to say it in an interview:** "The main trade-off is a shared error boundary for the chart grid. One broken chart takes down both. For a two-chart layout it's pragmatic, but I'd switch to per-chart boundaries if the grid expanded. keepPreviousData prevents skeleton flashes during filter switches but means the user briefly sees stale data — a reasonable UX trade-off."
+**No error state for fetch failures after initial load.** If `fetchChartData` fails after hydration, SWR keeps showing the last good data and sets `error` — but there's no error banner. The error boundary only catches render errors, not fetch errors. Worth adding a toast for persistent failures in a future iteration.
+
+**FilterBar skeleton has hardcoded widths.** The `w-[120px]` and `w-[80px]` values approximate the actual FilterBar button sizes. If FilterBar changes shape, the skeleton won't automatically follow. This is a minor maintenance concern, not a bug.
+
+**How to say it in an interview:** "The main trade-offs are skeleton-as-placeholder for the AI section and a shared error boundary for the chart grid. The skeleton is forward-looking — it sets user expectations before the feature ships. The shared boundary is pragmatic for two charts. DemoModeBanner owning its own logic keeps DashboardShell focused on layout and data, but splits demo UX across two files."
 
 ---
 
@@ -114,7 +158,7 @@ The main export. Destructures `initialData` from props.
 
 ### SWR fallbackData (Stale-While-Revalidate Hydration)
 
-You can think of `fallbackData` as pre-filling SWR's cache before the component mounts. The server component fetches data, passes it as a prop, and SWR uses it as if it was already cached. The component renders with data immediately. SWR can still revalidate in the background — you get SSR speed with client-side freshness.
+`fallbackData` pre-fills SWR's cache before the component mounts. The server component fetches data, passes it as a prop, and SWR uses it as if it was already cached. The component renders with data immediately. SWR can still revalidate in the background — you get SSR speed with client-side freshness.
 
 **Interview-ready:** "fallbackData bridges SSR and client caching. The server fetch seeds SWR's cache, so the client hydrates with real data. No loading skeleton on first render. Background revalidation keeps it fresh without the user noticing."
 
@@ -122,19 +166,31 @@ You can think of `fallbackData` as pre-filling SWR's cache before the component 
 
 Error boundaries are the one thing you still need class components for in React. There's no `useErrorBoundary` hook. The pattern: wrap a subtree, catch render errors, show a fallback, optionally expose a reset mechanism. Libraries like `react-error-boundary` wrap this in a nicer API, but the underlying mechanism is still `getDerivedStateFromError`.
 
-**Interview-ready:** "Error boundaries require class components because React's hook system can't intercept render-phase errors. This is a deliberate React API gap — the team has discussed hook-based boundaries but hasn't shipped them."
+**Interview-ready:** "Error boundaries require class components because React's hook system can't intercept render-phase errors. This is a deliberate React API gap — the team has discussed it but hasn't shipped a hook-based alternative."
 
-### Conditional Rendering with Data Presence Checks
+### Conditional Rendering with Orthogonal Concerns
 
-The three-branch conditional (`loading && !hasData`, `!hasData`, else) is a common pattern for data-driven UIs. The loading check uses `!hasData` (not just `isLoading`) to avoid showing a skeleton when cached data exists. Think of it as: show skeleton only on a true cold start.
+The five-state branching for charts and the two-overlay approach for DemoModeBanner and AiSummarySkeleton are orthogonal. The banner doesn't care whether we're loading or filtered-empty — it renders based on `demoState`. The AiSummarySkeleton doesn't care about filter state — it renders based on `isLoading && !hasData`. Keeping these conditions separate prevents an explosion of nested conditionals.
 
-**Interview-ready:** "The loading branch gates on both isLoading and data absence. If SWR has cached data, we show it — even if it's revalidating in the background. Skeletons are for cold starts only."
+**Interview-ready:** "I separate chart state branches from overlay conditions. The banner and skeleton are independent of the chart state machine — they evaluate their own conditions. It avoids nesting five states inside two overlays inside each other."
+
+### 4-State Enums for Progressive State Machines
+
+`DemoModeState = 'seed_only' | 'seed_plus_user' | 'user_only' | 'empty'` models how a new user transitions through onboarding: starts with only seed data, eventually has both, then moves to user-only data. A boolean can't express all four states — it can only tell you "is demo or not," which collapses two distinct states (`seed_plus_user` and `user_only`) into one.
+
+**Interview-ready:** "When you have more than two meaningful states, reach for an enum instead of a boolean. A boolean is a type-level lie when you have four distinct cases — the fourth case will either be a bug or a weird edge case that never gets handled."
+
+### Skeleton Fidelity and Layout Stability
+
+The FilterBar skeleton uses widths and border-radius values that approximate the real component's shape. When the real FilterBar appears, the layout doesn't shift. The AiSummarySkeleton uses a card-shaped container with realistic text-line proportions. Both skeletons exist to keep layout stable, not just to signal "something is loading."
+
+**Interview-ready:** "A skeleton's job is to prevent layout shift, not just show a spinner. If your skeleton is a generic gray box that snaps to a different-shaped component when content arrives, you've made the UX worse. Match the shape."
 
 ### LazyChart Wrapper for Mobile Optimization
 
 Charts are expensive to render. On mobile, where they stack vertically and the second chart is below the fold, `LazyChart` defers rendering until the element scrolls into view. On desktop, both charts are visible at once, so it renders immediately. The wrapper abstracts this concern away from each chart component.
 
-**Interview-ready:** "LazyChart uses IntersectionObserver on mobile to defer below-fold charts. Desktop renders immediately since both charts are in-viewport. The wrapper pattern keeps each chart component unaware of its loading strategy."
+**Interview-ready:** "LazyChart uses IntersectionObserver on mobile to defer below-fold charts. Desktop renders immediately since both charts are in-viewport. The wrapper keeps each chart component unaware of its loading strategy."
 
 ---
 
@@ -154,9 +210,17 @@ Charts are expensive to render. On mobile, where they stack vertically and the s
 
 **Strong answer:** "React has no hook equivalent for getDerivedStateFromError or componentDidCatch. Error boundaries that catch render-phase exceptions can only be implemented as class components. This is a known API gap — the React team has discussed it but hasn't shipped a hook-based alternative. It's the one legitimate reason to still write a class component."
 
-**Red flag:** "I prefer class components for complex logic." — Suggests you don't know why it HAS to be a class here.
+**Red flag:** "I prefer class components for complex logic." — Suggests you don't know why it has to be a class here.
 
-### Q3: "What happens if the API returns an error during background revalidation?"
+### Q3: "Why did you replace the isDemo boolean with a 4-state DemoModeState enum?"
+
+**Context if you need it:** Tests whether you can articulate when a boolean isn't enough.
+
+**Strong answer:** "A boolean can only express 'is demo' vs. 'not demo.' But there are four distinct cases: only seed data exists, seed plus user data exists, only user data exists, or nothing exists. The 'seed_plus_user' state is particularly important — the user has uploaded data but seed data is still mixed in. The banner should behave differently there than when only seed data exists. A boolean collapses these cases and forces you to handle the edge cases with implicit logic elsewhere."
+
+**Red flag:** "It's more extensible." — True but vague. Give the concrete example.
+
+### Q4: "What happens if the API returns an error during background revalidation?"
 
 **Context if you need it:** Probes your understanding of SWR's error handling.
 
@@ -164,7 +228,15 @@ Charts are expensive to render. On mobile, where they stack vertically and the s
 
 **Red flag:** "The error boundary catches it." — Error boundaries catch render errors, not async fetch errors. Different mechanism entirely.
 
-### Q4: "Why use keepPreviousData in the SWR config?"
+### Q5: "Why is AiSummarySkeleton outside the ChartErrorBoundary?"
+
+**Context if you need it:** Tests understanding of error boundary scope.
+
+**Strong answer:** "The AI summary and chart grid are independent UI regions. If charts throw during render, the error boundary should contain that failure — it shouldn't also suppress the AI summary area. Putting the skeleton outside the boundary means the AI section can fail independently of the chart section. When the AI summary panel is fully implemented, it'll likely have its own error handling."
+
+**Red flag:** "It's just easier to put it outside." — You need to articulate why the boundary granularity matters.
+
+### Q6: "Why use keepPreviousData in the SWR config?"
 
 **Context if you need it:** Checks whether you understand SWR's rendering behavior when cache keys change.
 
@@ -172,7 +244,7 @@ Charts are expensive to render. On mobile, where they stack vertically and the s
 
 **Red flag:** "To avoid re-fetching." — It still re-fetches. keepPreviousData affects what's displayed during the fetch, not whether it happens.
 
-### Q5: "How would you handle the case where one chart fails but the other is fine?"
+### Q7: "How would you handle the case where one chart fails but the other is fine?"
 
 **Context if you need it:** Tests your understanding of error boundary granularity.
 
@@ -184,21 +256,31 @@ Charts are expensive to render. On mobile, where they stack vertically and the s
 
 ### ChartData (from shared/types)
 
-**What it is:** The API response shape for the dashboard charts endpoint. Contains `orgName` (string), `isDemo` (boolean), `revenueTrend` (array of monthly revenue points), and `expenseBreakdown` (array of category totals). It's the single payload that drives the entire dashboard.
+**What it is:** The API response shape for the dashboard charts endpoint. Contains `orgName` (string), `isDemo` (boolean), `demoState` (DemoModeState — 4-value union), `revenueTrend` (array of monthly revenue points), `expenseBreakdown` (array of category totals), `availableCategories` (string array for filter dropdowns), and `dateRange` (nullable min/max bounds). Story 2.8 added `demoState` to this type via the shared Zod schema in `packages/shared/src/schemas/charts.ts`.
 
-**Where it appears:** Props interface, SWR generic parameter, the `data` variable throughout rendering.
+**Where it appears:** Props interface, SWR generic parameter, the `data` variable throughout rendering. `data.demoState` now drives DemoModeBanner. `data.orgName` drives both the heading and the sidebar context.
 
 **Why this shape:** One API call returns everything the dashboard needs. No waterfall of separate chart requests. The backend aggregates from `data_rows` and returns pre-computed points — the client doesn't do any data transformation.
 
-**How to say it in an interview:** "ChartData is a single payload containing both chart datasets plus metadata. One request, no client-side aggregation. The backend owns the computation, the frontend owns the presentation."
+**How to say it in an interview:** "ChartData is a single payload containing both chart datasets, metadata, and demo state. One request, no client-side aggregation. demoState is a 4-value enum that the DemoModeBanner consumes directly — DashboardShell doesn't interpret it."
+
+### DemoModeState (from shared/types)
+
+**What it is:** `'seed_only' | 'seed_plus_user' | 'user_only' | 'empty'`. A 4-state enum modeled in Zod as `z.enum([...])` in `packages/shared/src/schemas/datasets.ts` and re-exported from the shared types barrel.
+
+**Where it appears:** `ChartData.demoState`, `DemoModeBanner` props interface, the `MESSAGES` map inside DemoModeBanner.
+
+**Why this shape:** The states model the demo data lifecycle. `seed_only` means the org has no user data yet. `seed_plus_user` means the user has uploaded data but seed data still exists in the system. `user_only` means only user-uploaded data. `empty` means nothing. The banner needs all four to show the right message (or no message) at each stage.
+
+**How to say it in an interview:** "DemoModeState is a discriminated union that maps to distinct product states. The backend computes which state applies based on what data rows exist for the org. The frontend consumes it without having to re-derive that logic."
 
 ### SWR Cache Entry
 
-**What it is:** SWR maintains an internal cache keyed by the first argument to `useSWR` — in this case, the string `/dashboard/charts`. The cache entry holds the most recent successful response. `fallbackData` seeds this entry before the first fetch.
+**What it is:** SWR maintains an internal cache keyed by the first argument to `useSWR` — in this case, the string from `buildSwrKey(filters)`. The cache entry holds the most recent successful response. `fallbackData` seeds this entry before the first fetch.
 
-**Where it appears:** Implicitly — SWR manages this internally. The cache key `/dashboard/charts` is shared across any component that calls `useSWR` with the same key.
+**Where it appears:** Implicitly — SWR manages this internally. The cache key changes as filters change, giving each filter combination its own cache slot.
 
-**Why this matters:** If another component on the page also called `useSWR('/dashboard/charts')`, it would get the same cached data. The cache key is the coordination mechanism. mutate() invalidates this specific key.
+**Why this matters:** `mutate()` (called from ChartErrorBoundary's retry) invalidates the current key, triggering a re-fetch for all subscribers of that key.
 
 **How to say it in an interview:** "SWR's cache is keyed by the first argument — a string or array. Any component using the same key shares the same cache entry. mutate() invalidates by key, triggering re-fetch for all subscribers."
 
@@ -212,20 +294,28 @@ Charts are expensive to render. On mobile, where they stack vertically and the s
 
 **Why it matters:** CLS (Cumulative Layout Shift) is a Core Web Vital that affects SEO rankings. A skeleton-to-content swap shifts layout. `fallbackData` means the content is in place from the first client render — measurably better CLS scores.
 
-**How to bring it up:** "I used SWR's fallbackData to eliminate the hydration flash between server render and client data fetch. The server component passes real data into the client component's cache, so there's no skeleton-to-content swap and no CLS hit. It's one of those patterns where you get better UX AND better performance metrics."
+**How to bring it up:** "I used SWR's fallbackData to eliminate the hydration flash between server render and client data fetch. The server component passes real data into the client component's cache, so there's no skeleton-to-content swap and no CLS hit. It's one of those patterns where you get better UX and better performance metrics simultaneously."
 
 ### The Error Boundary + SWR Retry Loop Is Self-Healing
 
-**What's happening:** When a chart throws during render, the error boundary catches it and shows a retry button. The retry does two things: resets the boundary's `hasError` flag and calls `mutate()`. This triggers SWR to re-fetch fresh data AND re-render the children. If the error was caused by bad data (like a NaN in the chart), the fresh fetch might fix it. If it was a transient rendering bug, the re-render might clear it. The system self-heals without a full page refresh.
+**What's happening:** When a chart throws during render, the error boundary catches it and shows a retry button. The retry does two things: resets the boundary's `hasError` flag and calls `mutate()`. This triggers SWR to re-fetch fresh data and re-render the children. If the error was caused by bad data (like a NaN in the chart), the fresh fetch might fix it. If it was a transient rendering bug, the re-render might clear it. The system self-heals without a full page refresh.
 
 **Why it matters:** Most error boundaries are dead ends — "Something went wrong, refresh the page." This one recovers gracefully because the retry callback hooks into the data layer. It shows you understand error recovery, not just error display.
 
-**How to bring it up:** "The error boundary's retry resets the catch state AND triggers SWR's mutate. It re-fetches data and re-renders with fresh state, so a data-driven error can self-correct without a full page reload."
+**How to bring it up:** "The error boundary's retry resets the catch state and triggers SWR's mutate. It re-fetches data and re-renders with fresh state, so a data-driven error can self-correct without a full page reload."
 
-### Demo Mode Is a Product Decision, Not a Technical One
+### The DemoModeBanner Dissolve Animation Models a State Transition Visually
 
-**What's happening:** When `data.isDemo` is true, a subtle banner appears below the org name: "Viewing sample data — upload your own CSV to see insights about your business." This isn't a technical necessity — it's a product onboarding choice. New users land on a populated dashboard (seed data) so they understand what the product does before committing to upload their own data. The banner contextualizes what they're seeing.
+**What's happening:** When `demoState` transitions from `seed_only` to anything else, DemoModeBanner doesn't just disappear — it triggers a dissolve animation. A `useEffect` watches for that specific transition, sets `dissolving: true`, and the component applies `animate-banner-dissolve`. When the animation ends, `dismissed` gets set and the banner unmounts. This animation only plays for the `seed_only → *` transition, not for other state changes.
 
-**Why it matters:** Talking about this in an interview shows you think about the user journey, not just the code. Why does this boolean exist? Because an empty dashboard on first visit would make users bounce. The demo data reduces time-to-value. The banner prevents confusion about whose data it is.
+**Why it matters:** State transitions are invisible by default in React — a component either renders or it doesn't. Adding an exit animation for meaningful state changes gives users a visual signal that something changed. It's a small UX detail but it shows you think about the user's mental model, not just the code state.
 
-**How to bring it up:** "The isDemo flag drives a banner that tells users they're seeing sample data. It's a product decision — new users see a populated dashboard instead of an empty state, which reduces bounce rate. The banner maintains trust by being transparent about the data source."
+**How to bring it up:** "The banner uses a dissolve animation specifically when the org transitions from seed-only to having real data. It's not just a fade-out — it's timed to a meaningful product event. When a user's first CSV upload completes and the demo banner dissolves, that's a moment of product clarity. The animation makes it feel intentional."
+
+### Skeleton Placement Communicates Future Features
+
+**What's happening:** `AiSummarySkeleton` appears above the chart grid during initial loads, even though no AI summary feature exists yet in the UI. The skeleton reserves space for a section that will come in a future story. This is deliberate product scaffolding — users see the loading animation, and when the real AI summary panel ships, it fills that space naturally.
+
+**Why it matters:** You don't need all features built before you can communicate their presence. The skeleton tells users "there's an AI feature here" before the feature is ready. It sets expectations, reduces surprise on launch, and keeps the UI layout stable across stories.
+
+**How to bring it up:** "The AiSummarySkeleton is a forward-looking placeholder. The AI summary feature isn't live yet, but the skeleton reserves its space in the layout and gives users a preview of what's coming. When the real panel ships, it drops into place without any layout change."

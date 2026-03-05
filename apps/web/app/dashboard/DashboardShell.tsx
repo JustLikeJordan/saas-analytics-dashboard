@@ -1,6 +1,7 @@
 'use client';
 
 import { Component, type ReactNode, useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useSWR from 'swr';
 import { Upload, Filter } from 'lucide-react';
@@ -12,6 +13,8 @@ import { ExpenseChart } from './charts/ExpenseChart';
 import { ChartSkeleton } from './charts/ChartSkeleton';
 import { LazyChart } from './charts/LazyChart';
 import { FilterBar, computeDateRange, type FilterState } from './FilterBar';
+import { AiSummarySkeleton } from './AiSummarySkeleton';
+import { DemoModeBanner } from '@/components/common/DemoModeBanner';
 
 interface DashboardShellProps {
   initialData: ChartData;
@@ -104,6 +107,7 @@ function FilteredEmptyState({ onReset }: { onReset: () => void }) {
 }
 
 export function DashboardShell({ initialData }: DashboardShellProps) {
+  const router = useRouter();
   const { setOrgName } = useSidebar();
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const swrKey = buildSwrKey(filters);
@@ -132,6 +136,10 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
     setFilters(EMPTY_FILTERS);
   }, []);
 
+  const handleUploadClick = useCallback(() => {
+    router.push('/upload');
+  }, [router]);
+
   const hasRevenue = data.revenueTrend.length > 0;
   const hasExpenses = data.expenseBreakdown.length > 0;
   const hasData = hasRevenue || hasExpenses;
@@ -139,23 +147,33 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
 
   return (
     <>
-      {hasAnyData && (
+      <DemoModeBanner demoState={data.demoState} onUploadClick={handleUploadClick} />
+
+      {isLoading && hasAnyData && !hasData ? (
+        <div
+          className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-3 md:px-6 lg:px-8"
+          role="status"
+          aria-label="Loading filters"
+          data-testid="filter-bar-skeleton"
+        >
+          <div className="h-9 w-[120px] rounded-full bg-muted animate-skeleton-pulse motion-reduce:animate-none" />
+          <div className="h-9 w-[120px] rounded-full bg-muted animate-skeleton-pulse motion-reduce:animate-none" />
+          <div className="h-9 w-[80px] rounded-md bg-muted animate-skeleton-pulse motion-reduce:animate-none" />
+        </div>
+      ) : hasAnyData ? (
         <FilterBar
           filters={filters}
           onFilterChange={handleFilterChange}
           availableCategories={data.availableCategories ?? []}
         />
-      )}
+      ) : null}
 
-      <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
+      <section className="mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8" aria-labelledby="dashboard-heading">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-foreground">{data.orgName}</h1>
-          {data.isDemo && (
-            <p className="mt-1 text-sm text-muted-foreground">
-              Viewing sample data &mdash; upload your own CSV to see insights about your business.
-            </p>
-          )}
+          <h1 id="dashboard-heading" className="text-2xl font-semibold text-foreground">{data.orgName}</h1>
         </div>
+
+        {isLoading && !hasData && <AiSummarySkeleton className="mb-6" />}
 
         <ChartErrorBoundary onRetry={() => mutate()}>
           {isLoading && !hasData ? (
@@ -182,7 +200,7 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
             </div>
           )}
         </ChartErrorBoundary>
-      </div>
+      </section>
     </>
   );
 }
