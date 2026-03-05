@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { Upload, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { MAX_FILE_SIZE, ACCEPTED_FILE_TYPES } from 'shared/constants';
@@ -18,13 +18,19 @@ interface UploadError {
   fileName?: string;
 }
 
-const isTouchDevice =
-  typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+const noop = () => () => {};
+const getTouch = () => 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+const getServerTouch = () => false;
+
+function useIsTouchDevice() {
+  return useSyncExternalStore(noop, getTouch, getServerTouch);
+}
 
 const REDIRECT_DELAY_S = 3;
 
 export function UploadDropzone() {
   const router = useRouter();
+  const isTouchDevice = useIsTouchDevice();
   const [state, setState] = useState<DropzoneState>('default');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<UploadError | null>(null);
@@ -36,6 +42,7 @@ export function UploadDropzone() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropzoneRef = useRef<HTMLDivElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
+  const dragCountRef = useRef(0);
 
   // Redirect countdown after successful confirm
   useEffect(() => {
@@ -195,6 +202,7 @@ export function UploadDropzone() {
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    dragCountRef.current++;
     setState('dragHover');
   }, []);
 
@@ -206,7 +214,9 @@ export function UploadDropzone() {
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.currentTarget === e.target) {
+    dragCountRef.current--;
+    if (dragCountRef.current <= 0) {
+      dragCountRef.current = 0;
       setState((s) => (s === 'dragHover' ? 'default' : s));
     }
   }, []);
@@ -214,6 +224,7 @@ export function UploadDropzone() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    dragCountRef.current = 0;
     const file = e.dataTransfer.files[0];
     handleFileSelect(file);
   }, [handleFileSelect]);

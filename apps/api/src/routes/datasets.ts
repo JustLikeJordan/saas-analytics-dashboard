@@ -11,7 +11,7 @@ import { trackEvent } from '../services/analytics/trackEvent.js';
 import { logger } from '../lib/logger.js';
 import type { PreviewData, ParsedRow } from '../services/adapters/index.js';
 import { normalizeHeader } from '../services/dataIngestion/index.js';
-import { persistUpload } from '../db/queries/datasets.js';
+import { datasetsQueries } from '../db/queries/index.js';
 import { env } from '../config.js';
 
 const upload = multer({
@@ -37,11 +37,12 @@ function handleMulterError(err: unknown, _req: Request, _res: Response, next: Ne
   next(err);
 }
 
+const DATE_SHAPE = /\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/;
+
 function inferColumnType(value: string): 'date' | 'number' | 'text' {
   const trimmed = value.trim().replace(/,/g, '');
   if (!isNaN(Number(trimmed)) && trimmed !== '') return 'number';
-  const d = new Date(trimmed);
-  if (!isNaN(d.getTime()) && trimmed.length >= 8) return 'date';
+  if (DATE_SHAPE.test(trimmed) && !isNaN(new Date(trimmed).getTime())) return 'date';
   return 'text';
 }
 
@@ -79,6 +80,9 @@ function normalizeSampleRows(rows: ParsedRow[], rawHeaders: string[]): Record<st
   });
 }
 
+// Known gap: no replay protection. Same token can confirm duplicates within the TTL window.
+// Acceptable for MVP — duplicate uploads are user-visible and self-correcting. To harden:
+// either a UNIQUE(org_id, file_hash) constraint or Redis-based token consumption.
 const PREVIEW_TOKEN_TTL_MS = 30 * 60 * 1000;
 
 function computeFileHash(buffer: Buffer): string {
@@ -116,7 +120,9 @@ function verifyPreviewToken(token: string, buffer: Buffer, orgId: number, secret
     if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return false;
 
     // file hash is the most expensive check — SHA-256 over up to 10MB
-    if (computeFileHash(buffer) !== hash) return false;
+    const actualHash = Buffer.from(computeFileHash(buffer), 'hex');
+    const expectedHash = Buffer.from(hash, 'hex');
+    if (actualHash.length !== expectedHash.length || !timingSafeEqual(actualHash, expectedHash)) return false;
 
     return true;
   } catch {
@@ -236,7 +242,7 @@ datasetsRouter.post(
     }
 
     const normalizedRows = normalizeRows(parseResult.rows, parseResult.headers);
-    const result = await persistUpload(orgId, userId, fileName, normalizedRows);
+    const result = await datasetsQueries.persistUpload(orgId, userId, fileName, normalizedRows);
 
     trackEvent(orgId, userId, ANALYTICS_EVENTS.DATASET_CONFIRMED, {
       datasetId: result.datasetId,

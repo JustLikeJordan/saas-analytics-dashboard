@@ -2,17 +2,10 @@ import { eq, and, desc } from 'drizzle-orm';
 import type { DemoModeState } from 'shared/types';
 import { db, type DbTransaction } from '../../lib/db.js';
 import { datasets } from '../schema.js';
+import type { NormalizedRow } from '../../services/dataIngestion/normalizer.js';
+// Deliberate cross-query import — persistUpload orchestrates both query modules.
+// Do NOT add imports from datasets.ts into dataRows.ts (circular dependency risk).
 import { insertBatch } from './dataRows.js';
-
-interface NormalizedRow {
-  sourceType?: 'csv';
-  category: string;
-  parentCategory?: string | null;
-  date: Date;
-  amount: string;
-  label?: string | null;
-  metadata?: Record<string, unknown> | null;
-}
 
 /** Atomic upload: delete seed data, insert dataset + rows, compute demo state. */
 export async function persistUpload(
@@ -57,7 +50,9 @@ export async function getDatasetsByOrg(orgId: number) {
   });
 }
 
-/** User orgs only: returns 'empty' or 'user_only'. Seed org states handled separately. */
+/** User orgs only: returns 'empty' or 'user_only'. 'seed_plus_user' is intentionally
+ *  unreachable — under Option C, user orgs never contain seed data. Seed org states
+ *  ('seed_only') are handled at the view layer, not here. */
 export async function getUserOrgDemoState(
   orgId: number,
   client: typeof db | DbTransaction = db,

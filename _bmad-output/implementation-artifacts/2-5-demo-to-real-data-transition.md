@@ -1,6 +1,6 @@
 # Story 2.5: Demo-to-Real Data Transition
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -16,40 +16,52 @@ So that I see my own data without manual cleanup steps.
 
 ## Tasks / Subtasks
 
-- [ ] Task 0: Read existing code touched by this story
-  - [ ] 0a. Read `datasets.ts` (queries), `datasets.ts` (routes), `dataRows.ts`, `schema.ts`
-  - [ ] 0b. Understand `getUserOrgDemoState` and `getSeedDataset` functions
-  - [ ] 0c. Verify cascade delete on `data_rows.dataset_id` foreign key
+- [x] Task 0: Read existing code touched by this story
+  - [x] 0a. Read `datasets.ts` (queries), `datasets.ts` (routes), `dataRows.ts`, `schema.ts`
+  - [x] 0b. Understand `getUserOrgDemoState` and `getSeedDataset` functions
+  - [x] 0c. Verify cascade delete on `data_rows.dataset_id` foreign key
 
-- [ ] Task 1: Add `deleteSeedDatasets` query function (AC: 1)
-  - [ ] 1a. Add function to `apps/api/src/db/queries/datasets.ts`
-  - [ ] 1b. Accepts `orgId` and optional `client` (transaction support)
-  - [ ] 1c. Deletes all datasets where `isSeedData = true` for the given org
-  - [ ] 1d. Data rows cascade-deleted via FK constraint
+- [x] Task 1: Add `deleteSeedDatasets` query function (AC: 1)
+  - [x] 1a. Add function to `apps/api/src/db/queries/datasets.ts`
+  - [x] 1b. Accepts `orgId` and optional `client` (transaction support)
+  - [x] 1c. Deletes all datasets where `isSeedData = true` for the given org
+  - [x] 1d. Data rows cascade-deleted via FK constraint
 
-- [ ] Task 2: Update `getUserOrgDemoState` to accept optional client (AC: 1)
-  - [ ] 2a. Add optional `client` parameter with `= db` default
-  - [ ] 2b. Change `db.query` to `client.query`
-  - [ ] 2c. Backward-compatible — no callers break
+- [x] Task 2: Update `getUserOrgDemoState` to accept optional client (AC: 1)
+  - [x] 2a. Add optional `client` parameter with `= db` default
+  - [x] 2b. Change `db.query` to `client.query`
+  - [x] 2c. Backward-compatible — no callers break
 
-- [ ] Task 3: Enhance confirm endpoint (AC: 1)
-  - [ ] 3a. Import `deleteSeedDatasets` and `getUserOrgDemoState`
-  - [ ] 3b. Inside transaction: call `deleteSeedDatasets(orgId, tx)` before creating user dataset
-  - [ ] 3c. Inside transaction: call `getUserOrgDemoState(orgId, tx)` after inserting rows
-  - [ ] 3d. Return `demoState` in response alongside `datasetId` and `rowCount`
+- [x] Task 3: Enhance confirm endpoint (AC: 1)
+  - [x] 3a. Import `deleteSeedDatasets` and `getUserOrgDemoState`
+  - [x] 3b. Inside transaction: call `deleteSeedDatasets(orgId, tx)` before creating user dataset
+  - [x] 3c. Inside transaction: call `getUserOrgDemoState(orgId, tx)` after inserting rows
+  - [x] 3d. Return `demoState` in response alongside `datasetId` and `rowCount`
 
-- [ ] Task 4: Write tests (AC: 1)
-  - [ ] 4a. `datasets.test.ts` (queries) — test `deleteSeedDatasets`, test updated `getUserOrgDemoState`
-  - [ ] 4b. `datasets.test.ts` (routes) — confirm response includes `demoState: 'user_only'`
-  - [ ] 4c. Verify `deleteSeedDatasets` called within transaction mock
+- [x] Task 4: Write tests (AC: 1)
+  - [x] 4a. `datasets.test.ts` (queries) — test `deleteSeedDatasets`, test updated `getUserOrgDemoState`
+  - [x] 4b. `datasets.test.ts` (routes) — confirm response includes `demoState: 'user_only'`
+  - [x] 4c. Verify `deleteSeedDatasets` called within transaction mock
 
-- [ ] Task 5: Update `_explained.md` docs
-  - [ ] 5a. `datasets_explained.md` (queries) — add `deleteSeedDatasets`, update `getUserOrgDemoState`
-  - [ ] 5b. `datasets.ts_explained.md` (routes) — update confirm walkthrough
+- [x] Task 5: Update `_explained.md` docs
+  - [x] 5a. `datasets_explained.md` (queries) — add `deleteSeedDatasets`, update `getUserOrgDemoState`
+  - [x] 5b. `datasets.ts_explained.md` (routes) — update confirm walkthrough
 
-- [ ] Task 6: Lint, type-check, verify
-  - [ ] 6a. `pnpm type-check` — clean
-  - [ ] 6b. `pnpm test` — all tests pass
+- [x] Task 6: Lint, type-check, verify
+  - [x] 6a. `pnpm type-check` — clean
+  - [x] 6b. `pnpm test` — all tests pass
+
+## Dev Agent Record
+
+> Story file updated retroactively on 2026-03-05. Code was implemented during Epic 2 development but the story file was not updated at the time.
+
+### Completion Notes
+- `deleteSeedDatasets` implemented at `datasets.ts:80-88` with orgId + optional tx client
+- `getUserOrgDemoState` updated at `datasets.ts:61-69` with optional client parameter (default `= db`)
+- Confirm endpoint wraps both calls inside `persistUpload` transaction (`datasets.ts:24-37`)
+- Response includes `{ datasetId, rowCount, demoState }`
+- Route-level test confirms `demoState: 'user_only'` in confirm response
+- Both `_explained.md` docs (queries + routes) updated with full coverage
 
 ## Dev Notes
 
