@@ -8,13 +8,23 @@ Think of it like a newspaper editor deciding which stories make the front page. 
 
 ## 2. Why This Approach?
 
-### Module-level config loading
+### Exported module-level config loading
 
-Line 49: `const config = loadConfig();` runs once when the module first imports. Not inside a function, not lazily — right at the top level. This means the server either starts with valid config or crashes immediately. There's no scenario where a request arrives and *then* you discover the config file is missing. In an interview, you'd say: "We front-load validation to fail fast at startup rather than at request time."
+Line 49: `export const scoringConfig = loadConfig();` runs once when the module first imports. Not inside a function, not lazily — right at the top level. This means the server either starts with valid config or crashes immediately. There's no scenario where a request arrives and *then* you discover the config file is missing.
+
+The config is exported (and renamed from `config` to `scoringConfig`) because the orchestrator (`index.ts`) needs to read `scoringConfig.thresholds.trendMinDataPoints` and pass it to the computation layer. The computation layer is pure — it doesn't load files — so the orchestrator threads this value as a parameter.
+
+**How to say it:** "We front-load validation to fail fast at startup rather than at request time. The config is exported so the orchestrator can thread threshold values to other layers without breaking their purity."
+
+### Exhaustive switch without default
+
+The `noveltyScore` and `actionabilityScore` functions use `switch (stat.statType)` with all five cases covered — and no `default` branch. This is intentional. With the discriminated union on `ComputedStat`, TypeScript knows every possible `statType` value. If all cases are handled, TypeScript confirms all paths return. If someone adds a sixth `StatType` later and forgets to update these functions, the compiler will flag it: "Not all code paths return a value." A `default` case would silently absorb new stat types and return some fallback score — which masks the fact that you haven't thought about how to score the new type.
+
+**How to say it:** "We omit the default case so the compiler catches unhandled stat types. It's a maintenance safety net — new variants force updates to every switch that touches them."
 
 ### Intrinsic scoring functions instead of a lookup table
 
-Each scoring dimension (novelty, actionability, specificity) is its own function with a `switch` over stat types. You might think a simple `Map<StatType, number>` would be cleaner. But look at `noveltyScore` for trends (line 57-60) — the score depends on how large the growth percentage is, not just the stat type. A flat lookup table can't express conditional logic like "trends with >10% growth score 0.8, otherwise 0.4." Functions give you that flexibility without overcomplicating things.
+Each scoring dimension (novelty, actionability, specificity) is its own function with a `switch` over stat types. You might think a simple `Map<StatType, number>` would be cleaner. But look at `noveltyScore` for trends — the score depends on how large the growth percentage is, not just the stat type. A flat lookup table can't express conditional logic like "trends with >10% growth score 0.8, otherwise 0.4." Functions give you that flexibility without overcomplicating things.
 
 ### JSON config file over environment variables
 
@@ -37,32 +47,44 @@ Three steps, each with its own error handling:
 *What's happening*: Three-layer defensive parsing of a config file.
 *How to say it in an interview*: "The function separates file I/O, JSON parsing, and schema validation into distinct error domains so each failure produces a specific, debuggable error message."
 
-### noveltyScore, actionabilityScore, specificityScore (lines 52-104)
+### noveltyScore, actionabilityScore, specificityScore (lines 51-86)
 
 Each function takes a `ComputedStat` and returns a number between 0 and 1. They're pure functions — no side effects, no mutations, same input always gives same output.
 
+With the discriminated union, the switch cases now narrow the type automatically. Inside `case StatType.Trend:`, TypeScript knows `stat` is a `TrendStat` and `stat.details` is `TrendDetails`. That means `stat.details.growthPercent` is a plain `number` — no `as number | undefined` cast, no `?? 0` fallback. The code went from:
+
+```typescript
+const growth = Math.abs(((stat.details.growthPercent as number | undefined) ?? 0));
+```
+
+to:
+
+```typescript
+return Math.abs(stat.details.growthPercent) > scoringConfig.thresholds.significantChangePercent ? 0.8 : 0.4;
+```
+
+Same for `actionabilityScore` accessing `stat.details.zScore` inside the Anomaly case. The type narrowing makes these one-liners safe.
+
 The scoring logic follows a pattern: anomalies are generally the most interesting, then trends (conditionally), then breakdowns, then averages, then totals. But the *dimensions* differ:
 
-- **Novelty** asks "how surprising?" — anomalies score 0.9 because unexpected things are inherently novel. Totals score 0.1 because knowing your total revenue is expected, not surprising.
-- **Actionability** asks "can you do something?" — an anomaly with a z-score above the threshold (default 2.0) scores 0.9 because it probably needs attention. A total scores 0.2 because there's no obvious next step.
+- **Novelty** asks "how surprising?" — anomalies score 0.9. Totals score 0.1.
+- **Actionability** asks "can you do something?" — an anomaly with a z-score above the threshold scores 0.9. A total scores 0.2.
 - **Specificity** is simpler — if the stat has a `category` (like "revenue for Product X" vs. "total revenue"), it's more specific. Category-level anomalies hit 0.95.
 
-*What's happening*: Three heuristic functions that convert stat metadata into 0-1 scores.
-*How to say it in an interview*: "Each scoring dimension is a heuristic function that maps statistical metadata to a normalized score, with conditional logic for stats that carry magnitude information like z-scores and growth percentages."
+*How to say it in an interview*: "Each scoring dimension is a pure function that maps discriminated union variants to normalized scores. TypeScript narrows the stat type in each switch case, giving type-safe access to stat-specific details like growth percentage and z-score."
 
-### scoreInsights (lines 106-129)
+### scoreInsights (lines 88-111)
 
-The exported function and the only public API. It:
+The exported function and the only public scoring API. It:
 
-1. Short-circuits on empty input (line 107)
+1. Short-circuits on empty input (line 89)
 2. Maps each stat through all three scoring functions
 3. Computes a weighted sum: `novelty * 0.35 + actionability * 0.40 + specificity * 0.25`
 4. Sorts descending by score
-5. Slices to `config.topN` (default 8)
+5. Slices to `scoringConfig.topN` (default 8)
 
-The `breakdown` object is preserved on each `ScoredInsight` so downstream code (or debugging) can see *why* something ranked where it did. That's a nice touch — without it, you'd only see the final number.
+The `breakdown` object is preserved on each `ScoredInsight` so downstream code (or debugging) can see *why* something ranked where it did. Without it, you'd only see the final number.
 
-*What's happening*: Weighted scoring, sort, and top-N selection.
 *How to say it in an interview*: "The function applies a weighted linear combination of three scoring dimensions, then returns the top-N results — a standard ranking pattern similar to how search engines combine relevance signals."
 
 ## 4. Complexity and Trade-offs
@@ -75,19 +97,23 @@ The `breakdown` object is preserved on each `ScoredInsight` so downstream code (
 
 **Trade-off: synchronous config loading**. `readFileSync` blocks the event loop. That's fine at startup — the server isn't handling requests yet. But if someone moved this call into a request handler, it would be a performance problem. The module-level placement makes this safe.
 
-**Trade-off: no weight normalization**. The weights (0.35 + 0.40 + 0.25 = 1.0) sum to 1.0, but nothing enforces that. If someone edits the config to `{novelty: 0.5, actionability: 0.5, specificity: 0.5}`, the scores would range up to 1.5 instead of 1.0. The ranking would still work correctly (relative order is preserved), but the raw score values would be less interpretable. A stricter approach would normalize the weights, but that adds complexity for a minor issue.
+**Trade-off: no weight normalization**. The weights (0.35 + 0.40 + 0.25 = 1.0) sum to 1.0, enforced by a Zod `.refine()` check. If the schema ever loosens this constraint, scores could range above 1.0. The ranking would still work correctly (relative order is preserved), but raw scores would be less interpretable.
 
 ## 5. Patterns and Concepts Worth Knowing
 
-**Weighted linear combination** — This is the same math behind college GPA calculations. Each dimension contributes proportionally to its weight. It's one of the simplest and most common ranking techniques in production systems.
+**Discriminated union narrowing in switch cases** — When you `switch (stat.statType)` and `ComputedStat` is a discriminated union, TypeScript narrows `stat` to the specific variant in each case. Inside `case 'trend':`, `stat` is `TrendStat`, so `stat.details.growthPercent` is `number`. No casts. This is one of the most powerful TypeScript patterns for working with heterogeneous data.
 
-**Fail-fast initialization** — The server either starts healthy or doesn't start at all. You'll see this pattern everywhere in production code: validate all configuration before accepting traffic. The alternative — lazy loading that might fail on the 1000th request — is much harder to debug.
+**Exhaustive switch on discriminated unions** — By covering all variants and omitting `default`, you get a compiler error if a new variant is added without updating the switch. This is a maintenance guardrail — the compiler tracks which code needs updating when the union grows.
 
-**Module-level singletons** — `const config = loadConfig()` creates a value that lives for the process lifetime. Every call to `scoreInsights` uses the same config object. This is a common Node.js pattern — ES modules are evaluated once and cached.
+**Weighted linear combination** — The same math behind college GPA calculations. Each dimension contributes proportionally to its weight. It's one of the simplest and most common ranking techniques in production systems.
 
-**Separation of scoring dimensions** — Each dimension is a separate function. If you need to add a fourth dimension (say, "recency"), you write one new function and add one weight to the config. Nothing else changes. This is the Open/Closed Principle in practice — open for extension, closed for modification.
+**Fail-fast initialization** — The server either starts healthy or doesn't start at all. Validate all configuration before accepting traffic. The alternative — lazy loading that might fail on the 1000th request — is much harder to debug.
 
-**Zod schema as config contract** — The `scoringConfigSchema` acts as a contract between the JSON file and the code that consumes it. Anyone editing the config file can look at the schema to understand what's valid. It's living documentation.
+**Module-level singletons** — `export const scoringConfig = loadConfig()` creates a value that lives for the process lifetime. Every call to `scoreInsights` uses the same config object. This is a common Node.js pattern — ES modules are evaluated once and cached.
+
+**Separation of scoring dimensions** — Each dimension is a separate function. If you need to add a fourth dimension (say, "recency"), you write one new function and add one weight to the config. Nothing else changes. This is the Open/Closed Principle in practice.
+
+**Zod schema as config contract** — The `scoringConfigSchema` acts as a contract between the JSON file and the code that consumes it. Anyone editing the config file can look at the schema to understand what's valid.
 
 ## 6. Potential Interview Questions
 
@@ -95,10 +121,18 @@ The `breakdown` object is preserved on each `ScoredInsight` so downstream code (
 Because this runs at module initialization, before the server accepts any connections. Blocking the event loop here is harmless — there are no requests to delay. Using async would require top-level await or a more complex initialization pattern for no real benefit.
 
 **Q: What happens if the weights don't sum to 1.0?**
-The ranking still works correctly because we only care about relative ordering, not absolute scores. If weights sum to 1.5, all scores scale up proportionally, but the sort order stays the same. You could normalize by dividing each weight by the sum, but it's unnecessary for ranking.
+The Zod schema's `.refine()` check enforces this — if weights sum to anything other than 1.0 (within floating-point tolerance), the server won't start. If you removed that check, the ranking would still work correctly because we only care about relative ordering.
 
 **Q: How would you make the scoring dimensions configurable per-customer?**
-You'd move the scoring functions from using module-level config to accepting a config parameter. `scoreInsights(stats, customerConfig)` instead of `scoreInsights(stats)`. The default config becomes a fallback. The function signatures of the dimension functions would grow by one parameter.
+The `scoringConfig` is already exported, so you could use it as a base and spread customer-specific overrides: `{ ...scoringConfig, weights: customerWeights }`. You'd change `scoreInsights` to accept an optional config parameter (or call the scoring functions directly with different thresholds). The dimension functions themselves would need the config passed in rather than reading the module-level constant.
+
+**Q: What happens if you add a new StatType but forget to update the scoring functions?**
+
+*Context if you need it:* The scoring functions use `switch` over the discriminated union with no `default` case.
+
+*Strong answer:* "TypeScript's exhaustiveness checking catches it at compile time. If I add `StatType.Forecast` and create a `ForecastStat` in the union, the `noveltyScore` and `actionabilityScore` functions will produce a type error — 'Not all code paths return a value' — because the switch doesn't handle `'forecast'`. The build breaks until I explicitly decide how to score the new type."
+
+*Red flag answer:* "I'd add a default case that returns 0.5." That defeats the purpose — the whole point is that the compiler forces you to make a deliberate choice for each stat type.
 
 **Q: This is a pure ranking system with no learning. How would you improve it?**
 Track which insights users actually click on or find useful. Use that engagement data to train a simple model (even logistic regression) that predicts insight value. The weighted linear combination becomes learned weights instead of hand-tuned ones. The interface stays the same — `ComputedStat[] -> ScoredInsight[]`.
@@ -106,12 +140,9 @@ Track which insights users actually click on or find useful. Use that engagement
 **Q: Why separate novelty, actionability, and specificity instead of one combined score function?**
 Separation lets you tune each dimension independently and debug ranking decisions. When an insight ranks unexpectedly high, you check the `breakdown` field and immediately see which dimension drove it. A monolithic scoring function would be a black box.
 
-**Q: What's the role of Zod here vs. TypeScript types?**
-TypeScript types disappear at runtime — they can't catch a JSON file with `"topN": "eight"` instead of `"topN": 8`. Zod validates at runtime, at the boundary where untyped data enters the system. After `safeParse` succeeds, TypeScript's type system takes over.
-
 ## 7. Data Structures & Algorithms Used
 
-**ComputedStat** — The input type. Contains a `statType` enum, an optional `category` string, a numeric `value`, and a `details` bag (`Record<string, unknown>`) for type-specific metadata like `growthPercent` or `zScore`. The `details` bag uses `unknown` because different stat types carry different fields.
+**ComputedStat (discriminated union)** — The input type. A union of five stat-specific interfaces, each tagged by `statType`. Each variant carries typed `details`: `TrendStat` has `TrendDetails` (slope, growthPercent, etc.), `AnomalyStat` has `AnomalyDetails` (zScore, iqrBounds, etc.). Inside switch cases, TypeScript narrows to the specific variant, giving type-safe access to all detail fields.
 
 **ScoredInsight** — The output type. Wraps a `ComputedStat` with a `score` (the weighted sum) and a `breakdown` object showing individual dimension scores. This is the "decorated" version of the input — same data, plus ranking metadata.
 
@@ -121,8 +152,10 @@ TypeScript types disappear at runtime — they can't catch a JSON file with `"to
 
 ## 8. Impress the Interviewer
 
-**"This is a privacy-by-architecture boundary."** The scoring layer only sees `ComputedStat[]` — aggregated statistics. It never touches raw data rows. This is a deliberate architectural constraint: even if the LLM prompt is leaked or logged, it contains "revenue grew 23% in Q3" rather than individual customer records. Mention this when discussing data handling or system design.
+**"This is a privacy-by-architecture boundary."** The scoring layer only sees `ComputedStat[]` — aggregated statistics. It never touches raw data rows. Even if the LLM prompt is leaked or logged, it contains "revenue grew 23% in Q3" rather than individual customer records.
 
-**"The breakdown field is an observability decision, not just debugging."** By preserving per-dimension scores on every insight, you get free auditability. A product manager can ask "why did the system highlight this anomaly over that trend?" and you can answer with numbers: novelty 0.9 vs. 0.4, actionability 0.9 vs. 0.3. In ML ranking systems, this is called "feature attribution" and it's often an afterthought. Here it's built in from day one.
+**"The breakdown field is an observability decision, not just debugging."** By preserving per-dimension scores on every insight, you get free auditability. A product manager can ask "why did the system highlight this anomaly over that trend?" and you can answer with numbers. In ML ranking systems, this is called "feature attribution" and it's often an afterthought. Here it's built in from day one.
 
-**"The config versioning enables A/B testing of scoring strategies."** The `"version": "1.0"` field in the JSON isn't decorative. If you store the config version alongside generated insights, you can compare how version 1.0 weights perform against version 2.0 weights in terms of user engagement. The system is ready for experimentation without any code changes — just swap the config file and track which version produced which results.
+**"Exhaustive switches catch new stat types at compile time."** If someone adds `StatType.Forecast`, every scoring function will produce a type error until they handle the new case. A `default` branch would silently assign a fallback score — you'd ship code that scores forecasts as if they were totals. Removing `default` makes the compiler your reviewer. Bring this up when discussing how type systems prevent maintenance bugs.
+
+**"The config versioning enables A/B testing of scoring strategies."** The `"version": "1.0"` field in the JSON isn't decorative. If you store the config version alongside generated insights, you can compare how version 1.0 weights perform against version 2.0 in terms of user engagement. The system is ready for experimentation without code changes — swap the config file and track which version produced which results.

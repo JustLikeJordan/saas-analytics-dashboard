@@ -1,7 +1,7 @@
 import { logger } from '../../lib/logger.js';
 import { dataRowsQueries } from '../../db/queries/index.js';
 import { computeStats } from './computation.js';
-import { scoreInsights } from './scoring.js';
+import { scoreInsights, scoringConfig } from './scoring.js';
 import type { ScoredInsight } from './types.js';
 
 export async function runCurationPipeline(
@@ -17,7 +17,9 @@ export async function runCurationPipeline(
 
   logger.info({ orgId, datasetId, rowCount: rows.length }, 'curation pipeline started');
 
-  const stats = computeStats(rows);
+  const stats = computeStats(rows, {
+    trendMinPoints: scoringConfig.thresholds.trendMinDataPoints,
+  });
   logger.info({ orgId, statCount: stats.length }, 'curation layer 1 complete');
 
   const insights = scoreInsights(stats);

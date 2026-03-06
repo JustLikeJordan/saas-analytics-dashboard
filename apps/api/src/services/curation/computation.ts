@@ -86,22 +86,24 @@ function computeAverages(
   const stats: ComputedStat[] = [];
 
   for (const [cat, group] of groups) {
+    const med = median(group.amounts);
     stats.push({
       statType: StatType.Average,
       category: cat,
       value: mean(group.amounts),
-      comparison: median(group.amounts),
-      details: { scope: 'category', median: median(group.amounts) },
+      comparison: med,
+      details: { scope: 'category', median: med },
     });
   }
 
   if (allAmounts.length > 0) {
+    const med = median(allAmounts);
     stats.push({
       statType: StatType.Average,
       category: null,
       value: mean(allAmounts),
-      comparison: median(allAmounts),
-      details: { scope: 'overall', median: median(allAmounts) },
+      comparison: med,
+      details: { scope: 'overall', median: med },
     });
   }
 
@@ -218,7 +220,10 @@ function computeCategoryBreakdowns(
   return stats;
 }
 
-export function computeStats(rows: DataRow[]): ComputedStat[] {
+export function computeStats(
+  rows: DataRow[],
+  opts?: { trendMinPoints?: number },
+): ComputedStat[] {
   if (rows.length === 0) return [];
 
   const groups = groupByCategory(rows);
@@ -230,8 +235,7 @@ export function computeStats(rows: DataRow[]): ComputedStat[] {
 
   if (allAmounts.length === 0) return [];
 
-  // intentionally independent from scoring config — computation defines its own statistical minimum
-  const trendMinPoints = 3;
+  const trendMinPoints = opts?.trendMinPoints ?? 3;
 
   return [
     ...computeTotals(groups, allAmounts),

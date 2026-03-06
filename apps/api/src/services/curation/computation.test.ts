@@ -175,7 +175,7 @@ describe('computeStats', () => {
     const trend = stats.find(
       (s) => s.statType === StatType.Trend && s.category === 'Fees',
     );
-    if (trend) {
+    if (trend && trend.statType === StatType.Trend) {
       expect(trend.details.slope).toBeCloseTo(0, 5);
     }
   });
@@ -196,6 +196,14 @@ describe('computeStats', () => {
       expect(detailKeys).not.toContain('datasetId');
       expect(detailKeys).not.toContain('rows');
     }
+  });
+
+  it('respects trendMinPoints option — suppresses trends below threshold', () => {
+    const stats = computeStats(fixture.multiCategory, { trendMinPoints: 5 });
+    const trends = stats.filter((s) => s.statType === StatType.Trend);
+
+    // multiCategory has 4 rows per category — below threshold of 5
+    expect(trends).toHaveLength(0);
   });
 
   it('uses absolute values for category breakdown percentages with negative amounts', () => {

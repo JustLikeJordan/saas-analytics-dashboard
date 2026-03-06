@@ -10,13 +10,79 @@ export const StatType = {
 
 export type StatType = (typeof StatType)[keyof typeof StatType];
 
-export interface ComputedStat {
-  statType: StatType;
+// typed detail shapes per stat — the contract between computation and scoring layers
+
+export interface TotalDetails {
+  scope: string;
+  count: number;
+}
+
+export interface AverageDetails {
+  scope: string;
+  median: number;
+}
+
+export interface TrendDetails {
+  slope: number;
+  intercept: number;
+  growthPercent: number;
+  dataPoints: number;
+  firstValue: number;
+  lastValue: number;
+}
+
+export interface AnomalyDetails {
+  direction: 'above' | 'below';
+  zScore: number;
+  iqrBounds: { lower: number; upper: number };
+  deviation: number;
+}
+
+export interface CategoryBreakdownDetails {
+  percentage: number;
+  absoluteTotal: number;
+  transactionCount: number;
+  min: number;
+  max: number;
+}
+
+interface BaseComputedStat {
   category: string | null;
   value: number;
   comparison?: number;
-  details: Record<string, unknown>;
 }
+
+export interface TotalStat extends BaseComputedStat {
+  statType: 'total';
+  details: TotalDetails;
+}
+
+export interface AverageStat extends BaseComputedStat {
+  statType: 'average';
+  details: AverageDetails;
+}
+
+export interface TrendStat extends BaseComputedStat {
+  statType: 'trend';
+  details: TrendDetails;
+}
+
+export interface AnomalyStat extends BaseComputedStat {
+  statType: 'anomaly';
+  details: AnomalyDetails;
+}
+
+export interface CategoryBreakdownStat extends BaseComputedStat {
+  statType: 'category_breakdown';
+  details: CategoryBreakdownDetails;
+}
+
+export type ComputedStat =
+  | TotalStat
+  | AverageStat
+  | TrendStat
+  | AnomalyStat
+  | CategoryBreakdownStat;
 
 export interface ScoredInsight {
   stat: ComputedStat;

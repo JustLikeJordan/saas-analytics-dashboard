@@ -46,58 +46,40 @@ function loadConfig(): ScoringConfig {
   return result.data;
 }
 
-const config = loadConfig();
+export const scoringConfig = loadConfig();
 
-// intrinsic novelty — how surprising is this stat type?
 function noveltyScore(stat: ComputedStat): number {
   switch (stat.statType) {
     case StatType.Anomaly:
       return 0.9;
-    case StatType.Trend: {
-      const growth = Math.abs(
-        ((stat.details.growthPercent as number | undefined) ?? 0),
-      );
-      return growth > config.thresholds.significantChangePercent ? 0.8 : 0.4;
-    }
+    case StatType.Trend:
+      return Math.abs(stat.details.growthPercent) > scoringConfig.thresholds.significantChangePercent ? 0.8 : 0.4;
     case StatType.CategoryBreakdown:
       return 0.3;
     case StatType.Average:
       return 0.2;
     case StatType.Total:
       return 0.1;
-    default:
-      return 0.1;
   }
 }
 
-// how actionable is this insight for a business owner?
 function actionabilityScore(stat: ComputedStat): number {
   switch (stat.statType) {
-    case StatType.Anomaly: {
-      const zScore = Math.abs((stat.details.zScore as number | undefined) ?? 0);
-      return zScore >= config.thresholds.anomalyZScore ? 0.9 : 0.5;
-    }
-    case StatType.Trend: {
-      const growth = Math.abs(
-        ((stat.details.growthPercent as number | undefined) ?? 0),
-      );
-      return growth > config.thresholds.significantChangePercent ? 0.85 : 0.3;
-    }
+    case StatType.Anomaly:
+      return Math.abs(stat.details.zScore) >= scoringConfig.thresholds.anomalyZScore ? 0.9 : 0.5;
+    case StatType.Trend:
+      return Math.abs(stat.details.growthPercent) > scoringConfig.thresholds.significantChangePercent ? 0.85 : 0.3;
     case StatType.CategoryBreakdown:
       return 0.5;
     case StatType.Average:
       return 0.3;
     case StatType.Total:
       return 0.2;
-    default:
-      return 0.2;
   }
 }
 
-// how specific / granular is this stat?
 function specificityScore(stat: ComputedStat): number {
   if (stat.category !== null) {
-    // category-level stats are more specific than overall
     return stat.statType === StatType.Anomaly ? 0.95 : 0.7;
   }
   return 0.2;
@@ -112,9 +94,9 @@ export function scoreInsights(stats: ComputedStat[]): ScoredInsight[] {
     const spec = specificityScore(stat);
 
     const score =
-      nov * config.weights.novelty +
-      act * config.weights.actionability +
-      spec * config.weights.specificity;
+      nov * scoringConfig.weights.novelty +
+      act * scoringConfig.weights.actionability +
+      spec * scoringConfig.weights.specificity;
 
     return {
       stat,
@@ -125,5 +107,5 @@ export function scoreInsights(stats: ComputedStat[]): ScoredInsight[] {
 
   scored.sort((a, b) => b.score - a.score);
 
-  return scored.slice(0, config.topN);
+  return scored.slice(0, scoringConfig.topN);
 }

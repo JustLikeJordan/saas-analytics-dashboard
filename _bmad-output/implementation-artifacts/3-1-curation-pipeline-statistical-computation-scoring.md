@@ -1,6 +1,6 @@
 # Story 3.1: Curation Pipeline — Statistical Computation & Scoring
 
-Status: review
+Status: done
 
 ## Story
 
@@ -312,3 +312,4 @@ Claude Opus 4.6
 
 ### Change Log
 - 2026-03-05: Implemented Story 3.1 — Curation Pipeline Statistical Computation & Scoring. Created 3-layer pipeline types, pure-function statistical computation (simple-statistics 7.8.x), configurable scoring with JSON weights + Zod validation, and pipeline orchestrator. 26 tests added across 3 test files. Privacy-by-architecture enforced at type level — DataRow[] never leaves computation.ts
+- 2026-03-06: Code review fixes — 2 MEDIUM, 3 LOW issues resolved. (M1) Wired trendMinDataPoints config into computation via opts parameter. (M2) Replaced untyped Record details with discriminated union per StatType. (L1) Cached median() in computeAverages. Added 1 test for trendMinPoints. 246 tests passing, type-check clean.

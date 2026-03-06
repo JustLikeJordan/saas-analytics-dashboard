@@ -64,7 +64,7 @@ development_status:
 
   # ── Epic 3: AI-Powered Business Insights ──
   epic-3: in-progress
-  3-1-curation-pipeline-statistical-computation-scoring: review
+  3-1-curation-pipeline-statistical-computation-scoring: done
   3-2-curation-pipeline-prompt-assembly-llm-integration: backlog
   3-3-sse-streaming-delivery-ai-summary-card: backlog
   3-4-ai-summary-timeout-error-handling: backlog

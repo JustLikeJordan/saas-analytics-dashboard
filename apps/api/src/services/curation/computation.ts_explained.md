@@ -5,7 +5,7 @@
 This file is the statistical engine behind the curation pipeline. It takes raw user data (rows from a CSV upload), crunches numbers across five dimensions — totals, averages, trends, anomalies, and category breakdowns — and spits out a flat array of `ComputedStat[]` objects. That array is *all* the rest of the system ever sees. Raw data stops here. The LLM that writes plain-English summaries never touches a single `DataRow`. That boundary is the whole point.
 
 **What's happening:** A module that transforms raw financial data into statistical summaries.
-**How to say it in an interview:** "Layer 1 of our curation pipeline enforces a privacy boundary — it's the only module that receives raw data, and its output is purely statistical. TypeScript types make it impossible for downstream consumers to access individual records."
+**How to say it in an interview:** "Layer 1 of our curation pipeline enforces a privacy boundary — it's the only module that receives raw data, and its output is purely statistical. TypeScript's discriminated union types make it impossible for downstream consumers to access individual records."
 
 ---
 
@@ -17,9 +17,17 @@ Every function in this file takes data in, returns data out. No database calls, 
 
 **How to say it:** "We kept the computation layer pure so it's deterministic and trivially testable. No I/O, no side effects — just math."
 
+### Configurable trend threshold via opts parameter
+
+`computeStats` accepts an optional second argument: `opts?: { trendMinPoints?: number }`. The default is 3 (you need at least 3 data points for a meaningful trend). The orchestrator passes the actual value from the scoring config: `scoringConfig.thresholds.trendMinDataPoints`.
+
+Why not just import the scoring config directly? Because that would break purity. The scoring config is loaded from a JSON file via `readFileSync` — that's I/O. If computation imported it, you'd need to mock file system calls in every computation test. Instead, the orchestrator reads the config and passes a plain number. Computation doesn't know or care where it came from.
+
+**How to say it:** "The function accepts configuration as parameters instead of importing it directly. This keeps the module pure — no file I/O dependency — while still allowing external configuration through the orchestrator."
+
 ### IQR over z-score for anomaly detection
 
-The Interquartile Range method flags outliers by looking at where the middle 50% of data falls, then drawing fences at 1.5x that range above and below. Z-score assumes your data is normally distributed — bell-curve shaped. Small business financial data almost never is. A coffee shop might have 300 days of \$800 revenue and one catering order for \$12,000. IQR catches that without caring about distribution shape.
+The Interquartile Range method flags outliers by looking at where the middle 50% of data falls, then drawing fences at 1.5x that range above and below. Z-score assumes your data is normally distributed — bell-curve shaped. Small business financial data almost never is. A coffee shop might have 300 days of $800 revenue and one catering order for $12,000. IQR catches that without caring about distribution shape.
 
 **How to say it:** "We chose IQR-based outlier detection because it's distribution-agnostic. Z-score assumes normality, which doesn't hold for typical small business transaction data."
 
@@ -31,9 +39,9 @@ The `DataRow` interface is defined right here in the file, not imported from Dri
 
 ### Privacy boundary enforced by types
 
-The pipeline has three layers: computation, scoring, assembly. Only computation receives `DataRow[]`. Scoring and assembly receive `ComputedStat[]`. There's no way for the LLM prompt assembly layer to accidentally include raw user data because the type system won't allow it. This is privacy by architecture, not by discipline.
+The pipeline has three layers: computation, scoring, assembly. Only computation receives `DataRow[]`. Scoring and assembly receive `ComputedStat[]` — now a discriminated union where each stat type carries only its own typed details (no raw data fields). There's no way for the LLM prompt assembly layer to accidentally include raw user data because the type system won't allow it.
 
-**How to say it:** "We enforce a privacy boundary through TypeScript's type system. The assembly layer that builds LLM prompts literally cannot accept raw data — it only takes `ComputedStat[]`. Privacy is structural, not a code review checkbox."
+**How to say it:** "We enforce a privacy boundary through TypeScript's discriminated union types. The assembly layer that builds LLM prompts literally cannot accept raw data — it only takes `ComputedStat[]`. Privacy is structural, not a code review checkbox."
 
 ### Amount string parsing
 
@@ -60,20 +68,23 @@ Think of it like sorting receipts into labeled folders. Each folder gets the dol
 
 ### `computeTotals` (lines 55-80)
 
-Sums amounts per category, then computes an overall total. Each result is a `ComputedStat` with `statType: 'total'`. The `details` object carries metadata like the row count and whether it's a category-level or overall stat.
+Sums amounts per category, then computes an overall total. Each result is a `ComputedStat` with `statType: 'total'`. The `details` object is typed as `TotalDetails` — carrying `scope` and `count`.
 
-### `computeAverages` (lines 82-109)
+### `computeAverages` (lines 82-111)
 
-Same structure as totals, but computes both `mean` and `median`. The median goes into both the `comparison` field and `details`. Why both? The `comparison` field is a standardized slot that the scoring layer uses — it doesn't have to dig into `details` to find it. The `details` object is for the LLM prompt assembly layer, which might want to say "the average was \$X but the median was \$Y."
+Computes both `mean` and `median` for each category and overall. The median is cached in a local `const med` variable to avoid computing it twice (median involves sorting the array internally). The cached value goes into both the `comparison` field and `details.median`. The `comparison` field is a standardized slot that the scoring layer can use without digging into details.
 
-### `computeTrends` (lines 111-143)
+**What's happening:** Mean and median per category, with the median result cached.
+**How to say it:** "We cache the median computation since it requires an internal sort. The median appears in both the comparison field (for scoring) and the details (for the LLM prompt)."
 
-This is where linear regression enters. For each category with enough data points (default: 3), it sorts the time series chronologically, runs `linearRegression` from simple-statistics, and records the slope. A positive slope means the category's amounts are generally increasing over time. It also calculates a simple growth percentage from first to last value.
+### `computeTrends` (lines 113-143)
+
+This is where linear regression enters. For each category with enough data points (controlled by the `minPoints` parameter, default 3), it sorts the time series chronologically, runs `linearRegression` from simple-statistics, and records the slope. A positive slope means the category's amounts are generally increasing over time. It also calculates a simple growth percentage from first to last value.
 
 **What's happening:** Fitting a line through time-ordered data points to detect upward or downward trends.
 **How to say it:** "We use least-squares linear regression on the time series to compute a slope for each category. The slope becomes the stat's primary value, and we include growth percentage for human-readable context."
 
-The `minPoints` guard (line 118) is important. Linear regression on two points always gives a perfect fit — the line goes through both dots. That tells you nothing. Three points minimum means the regression has at least some signal.
+The `minPoints` guard (line 118) is important. Linear regression on two points always gives a perfect fit — the line goes through both dots. That tells you nothing. Three points minimum means the regression has at least some signal. This threshold is now configurable via the `opts` parameter — the orchestrator passes `scoringConfig.thresholds.trendMinDataPoints`.
 
 ### `detectAnomalies` (lines 145-184)
 
@@ -87,23 +98,26 @@ The IQR method in action. For each category with at least 3 data points:
 
 For each anomaly found, it also computes the z-score. Wait — didn't we just say IQR is better than z-score? Yes, for *detection*. But z-score is still useful for *describing* how far off an outlier is. "This value is 3.2 standard deviations above the mean" is a meaningful sentence to include in an AI summary.
 
-**What's happening:** Finding outliers using IQR fences, then describing them with z-scores.
 **How to say it:** "We detect anomalies using the IQR method for robustness, then annotate each outlier with its z-score so the downstream summary can describe the magnitude of deviation."
 
-### `computeCategoryBreakdowns` (lines 186-218)
+### `computeCategoryBreakdowns` (lines 187-219)
 
-Computes what percentage of the total each category represents. Uses absolute values for the percentage calculation — if you have \$5,000 in revenue and -\$2,000 in refunds, refunds should show as ~29% of activity, not negative. Each breakdown includes min, max, and transaction count for that category.
+Computes what percentage of the total each category represents. Uses absolute values for the percentage calculation — if you have $5,000 in revenue and -$2,000 in refunds, refunds should show as ~29% of activity, not negative. Each breakdown includes min, max, and transaction count.
 
-### `computeStats` — the orchestrator (lines 220-241)
+### `computeStats` — the orchestrator (lines 221-245)
 
 The single exported function. It:
 1. Bails early if there are no rows
 2. Groups everything by category
 3. Flattens all amounts into one array (for overall stats)
 4. Bails if no amounts parsed successfully
-5. Calls all five computation functions and spreads the results into one flat array
+5. Reads `opts?.trendMinPoints ?? 3` for the configurable trend threshold
+6. Calls all five computation functions and spreads the results into one flat array
 
-No conditional logic about which stats to compute. Every dataset gets all five types. The scoring layer (Layer 2) decides which ones matter most.
+No conditional logic about which stats to compute. Every dataset gets all five types. The scoring layer decides which ones matter most.
+
+**What's happening:** The function accepts an optional `opts` parameter for configuration (currently just `trendMinPoints`). This keeps the function pure — it receives all configuration as arguments rather than importing config files.
+**How to say it:** "The computation function is externally configurable through an options parameter while maintaining purity. The orchestrator reads the scoring config and passes relevant thresholds as plain values."
 
 ---
 
@@ -113,11 +127,13 @@ No conditional logic about which stats to compute. Every dataset gets all five t
 
 **Memory:** The `groupByCategory` pass creates a copy of every amount and timestamp. For a 10,000-row CSV, that's ~10,000 numbers and ~10,000 timestamp-amount pairs — maybe 300KB. Not a concern.
 
-**Trade-off — precision vs. simplicity:** `parseAmount` uses JavaScript's `Number()`, which is IEEE 754 double-precision. For financial data, you lose precision past ~15 significant digits. A \$999,999,999.99 value is fine. But this module is computing *statistics*, not ledger balances. The precision loss in a mean or standard deviation is negligible.
+**Trade-off — precision vs. simplicity:** `parseAmount` uses JavaScript's `Number()`, which is IEEE 754 double-precision. For financial data, you lose precision past ~15 significant digits. But this module is computing *statistics*, not ledger balances. The precision loss in a mean or standard deviation is negligible.
 
 **Trade-off — single pass vs. multiple passes:** We iterate the groups map once per stat type (5 times). We could do one pass and compute everything simultaneously, but the code would be a tangled mess. Five clean passes over a Map of maybe 10-20 categories is nothing. Clarity wins over micro-optimization here.
 
 **Trade-off — no streaming:** The entire `DataRow[]` array must fit in memory. For the MVP (CSV uploads, max ~50,000 rows), this is fine. If the product grows to handle millions of rows, you'd need a streaming/chunked approach.
+
+**Trade-off — opts parameter:** The options parameter adds a small amount of API surface. The alternative was importing the scoring config directly, but that would couple this pure module to file I/O. A plain parameter keeps testing trivial — no mocks needed.
 
 ---
 
@@ -133,7 +149,7 @@ Using `Map<string, CategoryGroup>` instead of a plain object (`Record<string, Ca
 
 ### Structural typing as a privacy mechanism
 
-TypeScript uses structural typing — if an object has the right shape, it fits the type. By defining `ComputedStat` without any raw data fields, you've made it structurally impossible for raw data to flow downstream *unless someone deliberately circumvents the type system*. That's a strong guarantee for a dynamic language ecosystem.
+TypeScript uses structural typing — if an object has the right shape, it fits the type. By defining `ComputedStat` as a discriminated union without any raw data fields, you've made it structurally impossible for raw data to flow downstream unless someone deliberately circumvents the type system. That's a strong guarantee for a dynamic language ecosystem.
 
 ### IQR (Interquartile Range) outlier detection
 
@@ -142,6 +158,10 @@ Think of lining up all your values from smallest to largest. Q1 is the value at 
 ### Linear regression (least squares)
 
 Given a scatter of points, linear regression finds the line y = mx + b that minimizes the total squared distance from each point to the line. The slope `m` tells you the trend direction and rate. In this code, x is a Unix timestamp and y is a dollar amount, so the slope represents "dollars per millisecond of change." Not super intuitive on its own — that's why the code also computes `growthPercent` for the LLM to use.
+
+### Configuration as parameters (dependency injection lite)
+
+`computeStats` accepts thresholds as an `opts` parameter rather than importing config. This is a lightweight form of dependency injection — the caller decides the values, the function just uses them. It keeps the function testable without mocks and decoupled from the config loading mechanism.
 
 ---
 
@@ -165,11 +185,15 @@ A pure function returns the same output for the same input and produces no side 
 
 ### "Why compute all five stat types for every dataset?"
 
-Separation of concerns. This layer's job is computation, not decision-making. The scoring layer (Layer 2) ranks which stats are most interesting based on configurable weights. If you skip computing a stat type here, the scoring layer loses the option to surface it. Compute everything, let the scorer filter.
+Separation of concerns. This layer's job is computation, not decision-making. The scoring layer ranks which stats are most interesting based on configurable weights. If you skip computing a stat type here, the scoring layer loses the option to surface it. Compute everything, let the scorer filter.
+
+### "Why accept an options parameter instead of importing the scoring config directly?"
+
+Purity. The scoring config is loaded from a JSON file using `readFileSync` — that's file I/O. If computation imported it, every test would need to mock the file system. With the opts parameter, tests just pass `{ trendMinPoints: 5 }` — no mocks, no setup. The orchestrator handles the bridging between config and computation.
 
 ### "Walk me through the growth percentage calculation on line 125."
 
-It takes the first and last values in the sorted time series: `((lastVal - firstVal) / |firstVal|) * 100`. The `Math.abs` in the denominator handles negative starting values correctly — if you go from -\$100 to \$50, that's a 150% change, not -150%. The zero guard prevents division by zero. It's a simple first-to-last comparison, not a regression-based growth rate, which is fine for a high-level summary.
+It takes the first and last values in the sorted time series: `((lastVal - firstVal) / |firstVal|) * 100`. The `Math.abs` in the denominator handles negative starting values correctly — if you go from -$100 to $50, that's a 150% change, not -150%. The zero guard prevents division by zero. It's a simple first-to-last comparison, not a regression-based growth rate, which is fine for a high-level summary.
 
 ---
 
@@ -193,7 +217,7 @@ Sorts the amounts array internally (via `quantile`), computes Q1 and Q3, derives
 
 ### Flat output array (spread concatenation)
 
-The orchestrator spreads five arrays into one: `[...totals, ...averages, ...trends, ...anomalies, ...breakdowns]`. This creates a single flat `ComputedStat[]` with no hierarchy. The scoring layer can iterate it uniformly without caring about stat types — it just looks at each stat's `statType` field.
+The orchestrator spreads five arrays into one: `[...totals, ...averages, ...trends, ...anomalies, ...breakdowns]`. This creates a single flat `ComputedStat[]` — a discriminated union where each element's `statType` tag identifies its variant. The scoring layer can iterate it uniformly using switch cases that narrow to the correct detail type.
 
 ---
 
@@ -201,11 +225,11 @@ The orchestrator spreads five arrays into one: `[...totals, ...averages, ...tren
 
 ### "This is privacy-by-architecture, not privacy-by-policy."
 
-Most systems rely on code review to make sure nobody accidentally passes PII to an external API. Here, the type system enforces it. `assembly.ts` accepts `ComputedStat[]`, which has no `DataRow` fields. You'd have to deliberately cast or restructure data to break the boundary. That's a meaningful architectural decision, not just good intentions.
+Most systems rely on code review to make sure nobody accidentally passes PII to an external API. Here, the type system enforces it. `assembly.ts` accepts `ComputedStat[]`, which is a discriminated union of typed stat interfaces — none of which have `DataRow` fields. You'd have to deliberately cast or restructure data to break the boundary.
 
 ### "Every function is independently testable with zero infrastructure."
 
-No database, no Redis, no running server. Feed an array of objects into `computeStats`, assert on the output. Feed a Map into `detectAnomalies`, check that outliers are flagged correctly. This level of testability comes from designing pure functions from the start, not from adding mocks after the fact.
+No database, no Redis, no running server. Feed an array of objects into `computeStats`, assert on the output. Feed a Map into `detectAnomalies`, check that outliers are flagged correctly. The new `opts` parameter for `trendMinPoints` is testable the same way — pass `{ trendMinPoints: 5 }` and verify trends are suppressed for categories with 4 rows. No mocks needed.
 
 ### "We chose IQR for detection but still report z-scores."
 
