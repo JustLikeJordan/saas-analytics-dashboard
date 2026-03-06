@@ -8,6 +8,7 @@ import { StatType } from './types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_VERSION = 'v1';
+const usd = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
 function loadTemplate(version: string): string {
   const templatePath = resolve(__dirname, 'config', 'prompt-templates', `${version}.md`);
@@ -40,7 +41,7 @@ function formatStat(insight: ScoredInsight): string {
 
   switch (stat.statType) {
     case StatType.Total:
-      return `- [${category}] Total: $${stat.value.toLocaleString()} (${stat.details.count} transactions, relevance: ${score.toFixed(2)})`;
+      return `- [${category}] Total: $${usd.format(stat.value)} (${stat.details.count} transactions, relevance: ${score.toFixed(2)})`;
     case StatType.Average:
       return `- [${category}] Average: $${stat.value.toFixed(2)}, median: $${stat.details.median.toFixed(2)} (relevance: ${score.toFixed(2)})`;
     case StatType.Trend: {
@@ -52,7 +53,7 @@ function formatStat(insight: ScoredInsight): string {
       return `- [${category}] Anomaly: $${stat.value.toFixed(2)} is ${dir} normal (z-score: ${stat.details.zScore.toFixed(2)}, expected range: $${stat.details.iqrBounds.lower.toFixed(0)}-$${stat.details.iqrBounds.upper.toFixed(0)}, relevance: ${score.toFixed(2)})`;
     }
     case StatType.CategoryBreakdown:
-      return `- [${category}] Breakdown: ${stat.details.percentage.toFixed(1)}% of total ($${stat.details.absoluteTotal.toLocaleString()}, ${stat.details.transactionCount} transactions, range: $${stat.details.min.toFixed(0)}-$${stat.details.max.toFixed(0)}, relevance: ${score.toFixed(2)})`;
+      return `- [${category}] Breakdown: ${stat.details.percentage.toFixed(1)}% of total ($${usd.format(stat.details.absoluteTotal)}, ${stat.details.transactionCount} transactions, range: $${stat.details.min.toFixed(0)}-$${stat.details.max.toFixed(0)}, relevance: ${score.toFixed(2)})`;
   }
 }
 
@@ -85,6 +86,7 @@ export function assemblePrompt(
   const statSummaries = insights.map(formatStat).join('\n');
   const statTypes = [...new Set(insights.map((i) => i.stat.statType))];
   const categories = new Set(insights.map((i) => i.stat.category).filter(Boolean));
+  // all insights share the same weight config — scoring.ts applies uniform weights
   const { breakdown } = insights[0]!;
 
   const prompt = template

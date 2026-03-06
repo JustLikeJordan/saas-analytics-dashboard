@@ -158,7 +158,9 @@ async function seed() {
 
     console.info(`Seeded "${SEED_ORG.name}" org (id=${orgId}) with ${rows.length} data rows`);
 
-    // Pre-generate AI summary for seed data — zero LLM calls for anonymous visitors
+    // Bypasses runFullPipeline because seed uses its own Drizzle instance (standalone
+    // postgres connection), not lib/db.ts which pulls in config.ts env validation.
+    // Duplicates the pipeline steps manually so seed can run without full app config.
     if (!process.env.CLAUDE_API_KEY) {
       console.warn('CLAUDE_API_KEY not set — skipping seed summary generation');
     } else {

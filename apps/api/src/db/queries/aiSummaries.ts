@@ -1,6 +1,6 @@
 import { eq, and, isNull } from 'drizzle-orm';
 
-import { db } from '../../lib/db.js';
+import { db, type DbTransaction } from '../../lib/db.js';
 import { aiSummaries } from '../schema.js';
 
 export async function getCachedSummary(orgId: number, datasetId: number) {
@@ -35,8 +35,11 @@ export async function storeSummary(
   return row!;
 }
 
-export async function markStale(orgId: number) {
-  await db
+export async function markStale(
+  orgId: number,
+  client: typeof db | DbTransaction = db,
+) {
+  await client
     .update(aiSummaries)
     .set({ staleAt: new Date() })
     .where(and(eq(aiSummaries.orgId, orgId), isNull(aiSummaries.staleAt)));

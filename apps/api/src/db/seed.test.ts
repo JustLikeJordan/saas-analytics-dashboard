@@ -228,33 +228,6 @@ describe('seed data generation', () => {
     });
   });
 
-  describe('seed summary env guard', () => {
-    it('skips summary generation when CLAUDE_API_KEY is not set', () => {
-      const originalKey = process.env.CLAUDE_API_KEY;
-      delete process.env.CLAUDE_API_KEY;
-
-      // the guard in seed.ts checks !process.env.CLAUDE_API_KEY
-      expect(!process.env.CLAUDE_API_KEY).toBe(true);
-
-      // restore
-      if (originalKey) process.env.CLAUDE_API_KEY = originalKey;
-    });
-
-    it('allows summary generation when CLAUDE_API_KEY is set', () => {
-      const originalKey = process.env.CLAUDE_API_KEY;
-      process.env.CLAUDE_API_KEY = 'sk-ant-test-key';
-
-      expect(!!process.env.CLAUDE_API_KEY).toBe(true);
-
-      // restore
-      if (originalKey) {
-        process.env.CLAUDE_API_KEY = originalKey;
-      } else {
-        delete process.env.CLAUDE_API_KEY;
-      }
-    });
-  });
-
   describe('RLS bypass', () => {
     it('SET LOCAL is first statement in the transaction', async () => {
       const callOrder: string[] = [];
