@@ -154,4 +154,16 @@ A: They'd need to add a new detail interface, a new stat interface, and add it t
 
 **"Zod bridges the compile-time/runtime gap."** TypeScript types vanish when you compile to JavaScript. For internal function calls, that's fine. But configuration files arrive at runtime where TypeScript can't help. The Zod schema validates at the boundary, and `z.infer` keeps the type and validator in sync. One source of truth, two enforcement layers.
 
-**"A hundred lines, four architectural concerns."** This file handles type definitions, a discriminated union contract, runtime validation, and privacy enforcement — all without a single line of business logic. Pointing out that a types file carries this much architectural weight shows you think about system design, not just code.
+**"A hundred lines, four architectural concerns."** This file handles type definitions, a discriminated union contract, runtime validation, and privacy enforcement -- all without a single line of business logic. Pointing out that a types file carries this much architectural weight shows you think about system design, not just code.
+
+---
+
+## Story 3.2 Additions
+
+### TransparencyMetadata and transparencyMetadataSchema
+
+Added in Story 3.2 to support the AI transparency panel (Story 3.6). `transparencyMetadataSchema` is a Zod schema that validates the JSONB shape stored in `ai_summaries.transparency_metadata`. It captures what the LLM saw: which stat types, how many categories, how many insights, what scoring weights were used, and which prompt version generated the summary. This metadata is validated before database storage (in `index.ts`) to catch shape drift early -- if the metadata shape evolves but the assembly layer doesn't keep up, the Zod parse fails at write time rather than silently storing bad data.
+
+### AssembledContext
+
+The return type of `assemblePrompt()` in `assembly.ts`. It bundles the prompt string (what goes to Claude) with the transparency metadata (what gets stored for auditing). This pairing ensures the metadata always travels with the prompt -- you can't generate a prompt without also generating the corresponding metadata.

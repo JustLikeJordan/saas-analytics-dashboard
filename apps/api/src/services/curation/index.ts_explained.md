@@ -85,4 +85,26 @@ No complex algorithms in this file. The orchestrator is glue code. The algorithm
 
 **"Observability belongs at the boundary, not in the core."** Pure functions are silent. The orchestrator — the only impure piece — owns all the logging. This means you can grep for `curation pipeline started` in production logs and see every pipeline run with its `orgId`, `datasetId`, and row count, without the noise of internal debug logs from computation or scoring. It's a pattern that scales well: as you add layers, you add one log line per layer in one file.
 
-**"Config threading keeps modules decoupled."** The scoring config defines thresholds. The computation layer uses them. But they don't know about each other — the orchestrator passes values as plain parameters. This is a lightweight version of dependency injection: instead of a framework, you just have a function that reads from one place and passes to another. It makes testing trivial and dependencies explicit.
+**"Config threading keeps modules decoupled."** The scoring config defines thresholds. The computation layer uses them. But they don't know about each other -- the orchestrator passes values as plain parameters. This is a lightweight version of dependency injection: instead of a framework, you just have a function that reads from one place and passes to another. It makes testing trivial and dependencies explicit.
+
+---
+
+## Story 3.2 Additions: `runFullPipeline()`
+
+### What changed
+
+The orchestrator grew from ~30 lines to ~70. It now exports two entry points:
+- `runCurationPipeline()` -- the original, returns `ScoredInsight[]` for consumers that need just the stats
+- `runFullPipeline()` -- the new one, runs the full loop: cache check -> compute -> score -> assemble -> Claude API -> store
+
+### Cache-aside pattern
+
+`runFullPipeline` implements cache-aside: check the database first (`getCachedSummary`), skip expensive work on a hit, run the full pipeline on a miss and store the result. There's no time-based TTL -- summaries stay fresh until the user uploads new data, at which point `markStale()` invalidates them in the same transaction as the upload.
+
+### Zod validation at the storage boundary
+
+Before storing transparency metadata in JSONB, we run `transparencyMetadataSchema.parse(metadata)`. This seems redundant since we just built the object, but it catches shape drift. If someone changes `TransparencyMetadata` without updating `assemblePrompt`, this parse fails at write time rather than silently storing malformed data that breaks Story 3.6's transparency panel.
+
+### Testing the mock boundary
+
+The test file's `readFileSync` mock got more sophisticated -- it now returns different content based on the file path (scoring config JSON vs. prompt template markdown). This is a common pattern when a single mock needs to serve multiple consumers, and it caught a real issue during development where the prompt template was getting the scoring config instead.

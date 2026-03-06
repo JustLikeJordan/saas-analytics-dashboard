@@ -1,31 +1,46 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the DB query layer — orchestrator calls it
 vi.mock('../../db/queries/index.js', () => ({
   dataRowsQueries: {
     getRowsByDataset: vi.fn(),
   },
+  aiSummariesQueries: {
+    getCachedSummary: vi.fn(),
+    storeSummary: vi.fn(),
+  },
 }));
 
-// Mock logger to avoid config.ts env validation
 vi.mock('../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-// Mock readFileSync for scoring config
-vi.mock('node:fs', () => ({
-  readFileSync: vi.fn(() =>
-    JSON.stringify({
-      version: '1.0',
-      topN: 8,
-      weights: { novelty: 0.35, actionability: 0.40, specificity: 0.25 },
-      thresholds: { anomalyZScore: 2.0, trendMinDataPoints: 3, significantChangePercent: 10 },
+vi.mock('node:fs', () => {
+  const scoring = JSON.stringify({
+    version: '1.0',
+    topN: 8,
+    weights: { novelty: 0.35, actionability: 0.40, specificity: 0.25 },
+    thresholds: { anomalyZScore: 2.0, trendMinDataPoints: 3, significantChangePercent: 10 },
+  });
+
+  const prompt = `You are a business analyst explaining financial data to a small business owner.
+{{statSummaries}}
+Stat types: {{statTypeList}}, Categories: {{categoryCount}}, Insights: {{insightCount}}`;
+
+  return {
+    readFileSync: vi.fn((...args: unknown[]) => {
+      const p = String(args[0]);
+      return p.includes('prompt-templates') ? prompt : scoring;
     }),
-  ),
+  };
+});
+
+vi.mock('../aiInterpretation/claudeClient.js', () => ({
+  generateInterpretation: vi.fn(),
 }));
 
-import { dataRowsQueries } from '../../db/queries/index.js';
-import { runCurationPipeline } from './index.js';
+import { dataRowsQueries, aiSummariesQueries } from '../../db/queries/index.js';
+import { generateInterpretation } from '../aiInterpretation/claudeClient.js';
+import { runCurationPipeline, runFullPipeline } from './index.js';
 
 const fixtureRows = [
   { id: 1, orgId: 1, datasetId: 1, sourceType: 'csv', category: 'Sales', parentCategory: null, date: new Date('2026-01-01'), amount: '1000.00', label: 'A', metadata: null, createdAt: new Date() },
@@ -41,8 +56,8 @@ describe('runCurationPipeline', () => {
     vi.clearAllMocks();
   });
 
-  it('orchestrates computation → scoring end-to-end', async () => {
-    vi.mocked(dataRowsQueries.getRowsByDataset).mockResolvedValue(fixtureRows as any);
+  it('orchestrates computation -> scoring end-to-end', async () => {
+    vi.mocked(dataRowsQueries.getRowsByDataset).mockResolvedValue(fixtureRows as never);
 
     const insights = await runCurationPipeline(1, 1);
 
@@ -60,7 +75,7 @@ describe('runCurationPipeline', () => {
   });
 
   it('returns sorted by score descending', async () => {
-    vi.mocked(dataRowsQueries.getRowsByDataset).mockResolvedValue(fixtureRows as any);
+    vi.mocked(dataRowsQueries.getRowsByDataset).mockResolvedValue(fixtureRows as never);
 
     const insights = await runCurationPipeline(1, 1);
 
@@ -77,7 +92,7 @@ describe('runCurationPipeline', () => {
   });
 
   it('never leaks DataRow references into output', async () => {
-    vi.mocked(dataRowsQueries.getRowsByDataset).mockResolvedValue(fixtureRows as any);
+    vi.mocked(dataRowsQueries.getRowsByDataset).mockResolvedValue(fixtureRows as never);
 
     const insights = await runCurationPipeline(1, 1);
 
@@ -89,5 +104,71 @@ describe('runCurationPipeline', () => {
       expect(statKeys).not.toContain('label');
       expect(statKeys).not.toContain('metadata');
     }
+  });
+});
+
+describe('runFullPipeline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns cached content on cache hit', async () => {
+    vi.mocked(aiSummariesQueries.getCachedSummary).mockResolvedValue({
+      id: 1,
+      orgId: 1,
+      datasetId: 1,
+      content: 'Cached summary here.',
+      transparencyMetadata: {},
+      promptVersion: 'v1',
+      isSeed: false,
+      createdAt: new Date(),
+      staleAt: null,
+    } as never);
+
+    const result = await runFullPipeline(1, 1);
+
+    expect(result.content).toBe('Cached summary here.');
+    expect(result.fromCache).toBe(true);
+    expect(dataRowsQueries.getRowsByDataset).not.toHaveBeenCalled();
+    expect(generateInterpretation).not.toHaveBeenCalled();
+  });
+
+  it('runs full pipeline and stores result on cache miss', async () => {
+    vi.mocked(aiSummariesQueries.getCachedSummary).mockResolvedValue(undefined as never);
+    vi.mocked(dataRowsQueries.getRowsByDataset).mockResolvedValue(fixtureRows as never);
+    vi.mocked(generateInterpretation).mockResolvedValue('Fresh AI analysis.');
+    vi.mocked(aiSummariesQueries.storeSummary).mockResolvedValue({} as never);
+
+    const result = await runFullPipeline(1, 1);
+
+    expect(result.content).toBe('Fresh AI analysis.');
+    expect(result.fromCache).toBe(false);
+    expect(dataRowsQueries.getRowsByDataset).toHaveBeenCalledWith(1, 1);
+    expect(generateInterpretation).toHaveBeenCalledWith(expect.stringContaining('business analyst'));
+    expect(aiSummariesQueries.storeSummary).toHaveBeenCalledWith(
+      1, 1,
+      'Fresh AI analysis.',
+      expect.objectContaining({ promptVersion: 'v1', insightCount: expect.any(Number) }),
+      'v1',
+    );
+  });
+
+  it('skips Claude call entirely on cache hit', async () => {
+    vi.mocked(aiSummariesQueries.getCachedSummary).mockResolvedValue({
+      id: 1,
+      orgId: 1,
+      datasetId: 1,
+      content: 'From cache.',
+      transparencyMetadata: {},
+      promptVersion: 'v1',
+      isSeed: false,
+      createdAt: new Date(),
+      staleAt: null,
+    } as never);
+
+    await runFullPipeline(1, 1);
+
+    expect(generateInterpretation).not.toHaveBeenCalled();
+    expect(aiSummariesQueries.storeSummary).not.toHaveBeenCalled();
   });
 });
