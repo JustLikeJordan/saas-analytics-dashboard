@@ -1,0 +1,41 @@
+import Anthropic from '@anthropic-ai/sdk';
+
+import { env } from '../../config.js';
+import { logger } from '../../lib/logger.js';
+import { ExternalServiceError } from '../../lib/appError.js';
+
+const client = new Anthropic({
+  apiKey: env.CLAUDE_API_KEY,
+  maxRetries: 2,
+  timeout: 15_000,
+});
+
+export async function generateInterpretation(prompt: string): Promise<string> {
+  try {
+    const message = await client.messages.create({
+      model: env.CLAUDE_MODEL,
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const block = message.content[0];
+    const text = block?.type === 'text' ? block.text : '';
+
+    logger.info(
+      { model: env.CLAUDE_MODEL, usage: message.usage },
+      'Claude API response received',
+    );
+
+    return text;
+  } catch (err) {
+    if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.BadRequestError) {
+      logger.error({ err: (err as Error).message }, 'Claude API non-retryable error');
+    } else {
+      logger.warn({ err: (err as Error).message }, 'Claude API retryable error exhausted');
+    }
+
+    throw new ExternalServiceError('Claude API', {
+      originalError: (err as Error).message,
+    });
+  }
+}

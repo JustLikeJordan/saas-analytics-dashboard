@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "topN": 8,
+  "weights": {
+    "novelty": 0.35,
+    "actionability": 0.40,
+    "specificity": 0.25
+  },
+  "thresholds": {
+    "anomalyZScore": 2.0,
+    "trendMinDataPoints": 3,
+    "significantChangePercent": 10
+  }
+}
