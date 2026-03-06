@@ -1,7 +1,10 @@
 import { logger } from '../../lib/logger.js';
-import { dataRowsQueries } from '../../db/queries/index.js';
+import { dataRowsQueries, aiSummariesQueries } from '../../db/queries/index.js';
 import { computeStats } from './computation.js';
 import { scoreInsights, scoringConfig } from './scoring.js';
+import { assemblePrompt } from './assembly.js';
+import { generateInterpretation } from '../aiInterpretation/claudeClient.js';
+import { transparencyMetadataSchema } from './types.js';
 import type { ScoredInsight } from './types.js';
 
 export async function runCurationPipeline(
@@ -28,5 +31,47 @@ export async function runCurationPipeline(
   return insights;
 }
 
-export type { ComputedStat, ScoredInsight, ScoringConfig } from './types.js';
+export interface FullPipelineResult {
+  content: string;
+  fromCache: boolean;
+}
+
+export async function runFullPipeline(
+  orgId: number,
+  datasetId: number,
+): Promise<FullPipelineResult> {
+  const cached = await aiSummariesQueries.getCachedSummary(orgId, datasetId);
+  if (cached) {
+    logger.info({ orgId, datasetId }, 'ai_summaries cache hit');
+    return { content: cached.content, fromCache: true };
+  }
+
+  logger.warn({ orgId, datasetId }, 'ai_summaries cache miss — generating fresh summary');
+
+  const insights = await runCurationPipeline(orgId, datasetId);
+  const { prompt, metadata } = assemblePrompt(insights);
+
+  const validatedMetadata = transparencyMetadataSchema.parse(metadata);
+
+  logger.info(
+    { orgId, datasetId, promptVersion: metadata.promptVersion, statCount: insights.length },
+    'calling Claude API',
+  );
+
+  const content = await generateInterpretation(prompt);
+
+  await aiSummariesQueries.storeSummary(
+    orgId,
+    datasetId,
+    content,
+    validatedMetadata,
+    metadata.promptVersion,
+  );
+
+  logger.info({ orgId, datasetId }, 'ai summary stored in cache');
+
+  return { content, fromCache: false };
+}
+
+export type { ComputedStat, ScoredInsight, ScoringConfig, AssembledContext, TransparencyMetadata } from './types.js';
 export { StatType } from './types.js';

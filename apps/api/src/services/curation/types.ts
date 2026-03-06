@@ -113,3 +113,23 @@ export const scoringConfigSchema = z.object({
 });
 
 export type ScoringConfig = z.infer<typeof scoringConfigSchema>;
+
+export const transparencyMetadataSchema = z.object({
+  statTypes: z.array(z.string()),
+  categoryCount: z.number(),
+  insightCount: z.number(),
+  scoringWeights: z.object({
+    novelty: z.number(),
+    actionability: z.number(),
+    specificity: z.number(),
+  }),
+  promptVersion: z.string(),
+  generatedAt: z.string(),
+});
+
+export type TransparencyMetadata = z.infer<typeof transparencyMetadataSchema>;
+
+export interface AssembledContext {
+  prompt: string;
+  metadata: TransparencyMetadata;
+}
