@@ -3,9 +3,10 @@ import type { DemoModeState } from 'shared/types';
 import { db, type DbTransaction } from '../../lib/db.js';
 import { datasets } from '../schema.js';
 import type { NormalizedRow } from '../../services/dataIngestion/normalizer.js';
-// Deliberate cross-query import — persistUpload orchestrates both query modules.
+// Deliberate cross-query imports — persistUpload orchestrates both query modules.
 // Do NOT add imports from datasets.ts into dataRows.ts (circular dependency risk).
 import { insertBatch } from './dataRows.js';
+import { markStale } from './aiSummaries.js';
 
 /** Atomic upload: delete seed data, insert dataset + rows, compute demo state. */
 export async function persistUpload(
@@ -24,7 +25,8 @@ export async function persistUpload(
     }, tx);
     await insertBatch(orgId, dataset.id, normalizedRows, tx);
 
-    // TODO(epic-3): invalidate ai_summaries for orgId — stale on data upload per architecture
+    await markStale(orgId, tx);
+
     const demoState = await getUserOrgDemoState(orgId, tx);
     return { datasetId: dataset.id, rowCount: normalizedRows.length, demoState };
   });

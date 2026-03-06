@@ -171,6 +171,28 @@ export const dataRows = pgTable(
   ],
 );
 
+export const aiSummaries = pgTable(
+  'ai_summaries',
+  {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    orgId: integer('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    datasetId: integer('dataset_id')
+      .notNull()
+      .references(() => datasets.id, { onDelete: 'cascade' }),
+    content: text('content').notNull(),
+    transparencyMetadata: jsonb('transparency_metadata').notNull().default('{}'),
+    promptVersion: varchar('prompt_version', { length: 20 }).notNull(),
+    isSeed: boolean('is_seed').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    staleAt: timestamp('stale_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('idx_ai_summaries_org_dataset').on(table.orgId, table.datasetId),
+  ],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   userOrgs: many(userOrgs),
   refreshTokens: many(refreshTokens),
@@ -185,6 +207,7 @@ export const orgsRelations = relations(orgs, ({ many }) => ({
   invites: many(orgInvites),
   analyticsEvents: many(analyticsEvents),
   datasets: many(datasets),
+  aiSummaries: many(aiSummaries),
 }));
 
 export const userOrgsRelations = relations(userOrgs, ({ one }) => ({
@@ -243,6 +266,7 @@ export const datasetsRelations = relations(datasets, ({ one, many }) => ({
     relationName: 'datasetUploader',
   }),
   rows: many(dataRows),
+  aiSummaries: many(aiSummaries),
 }));
 
 export const dataRowsRelations = relations(dataRows, ({ one }) => ({
@@ -253,5 +277,16 @@ export const dataRowsRelations = relations(dataRows, ({ one }) => ({
   org: one(orgs, {
     fields: [dataRows.orgId],
     references: [orgs.id],
+  }),
+}));
+
+export const aiSummariesRelations = relations(aiSummaries, ({ one }) => ({
+  org: one(orgs, {
+    fields: [aiSummaries.orgId],
+    references: [orgs.id],
+  }),
+  dataset: one(datasets, {
+    fields: [aiSummaries.datasetId],
+    references: [datasets.id],
   }),
 }));
