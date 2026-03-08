@@ -48,9 +48,11 @@ aiSummaryRouter.get('/:datasetId', async (req, res: Response) => {
   // if rateLimitAi already sent a 429, stop
   if (res.headersSent) return;
 
-  await streamToSSE(req, res, orgId, rawId);
+  const ok = await streamToSSE(req, res, orgId, rawId);
 
-  trackEvent(orgId, userId, ANALYTICS_EVENTS.AI_SUMMARY_COMPLETED, { datasetId: rawId });
+  if (ok) {
+    trackEvent(orgId, userId, ANALYTICS_EVENTS.AI_SUMMARY_COMPLETED, { datasetId: rawId });
+  }
 });
 
 export { aiSummaryRouter };

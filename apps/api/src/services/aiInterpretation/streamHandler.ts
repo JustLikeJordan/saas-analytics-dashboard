@@ -4,9 +4,7 @@ import type { SseTextEvent, SseDoneEvent, SseErrorEvent, SsePartialEvent } from 
 import { AI_TIMEOUT_MS } from 'shared/constants';
 import { logger } from '../../lib/logger.js';
 import { aiSummariesQueries } from '../../db/queries/index.js';
-import { runCurationPipeline } from '../curation/index.js';
-import { assemblePrompt } from '../curation/assembly.js';
-import { transparencyMetadataSchema } from '../curation/types.js';
+import { runCurationPipeline, assemblePrompt, transparencyMetadataSchema } from '../curation/index.js';
 import { streamInterpretation } from './claudeClient.js';
 
 function writeSseEvent(res: Response, event: string, data: unknown) {
@@ -24,7 +22,7 @@ export async function streamToSSE(
   res: Response,
   orgId: number,
   datasetId: number,
-) {
+): Promise<boolean> {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -60,7 +58,7 @@ export async function streamToSSE(
     const result = await streamInterpretation(
       prompt,
       (delta) => {
-        if (clientDisconnected) return;
+        if (clientDisconnected) return false;
         accumulatedText += delta;
         writeSseEvent(res, 'text', { text: delta } satisfies SseTextEvent);
       },
@@ -69,7 +67,7 @@ export async function streamToSSE(
 
     clearTimeout(timeout);
 
-    if (clientDisconnected) return;
+    if (clientDisconnected) return false;
 
     writeSseEvent(res, 'done', { usage: result.usage } satisfies SseDoneEvent);
     res.end();
@@ -83,12 +81,13 @@ export async function streamToSSE(
     );
 
     logger.info({ orgId, datasetId }, 'AI summary streamed and cached');
+    return true;
   } catch (err) {
     clearTimeout(timeout);
 
     if (clientDisconnected) {
       logger.info({ orgId, datasetId }, 'client disconnected during AI stream');
-      return;
+      return false;
     }
 
     if (timedOut && accumulatedText) {
@@ -96,7 +95,7 @@ export async function streamToSSE(
       writeSseEvent(res, 'partial', { text: accumulatedText } satisfies SsePartialEvent);
       writeSseEvent(res, 'done', { usage: null } satisfies SseDoneEvent);
       res.end();
-      return;
+      return false;
     }
 
     logger.error({ orgId, datasetId, err: (err as Error).message }, 'AI stream error');
@@ -106,5 +105,6 @@ export async function streamToSSE(
       retryable: isRetryable(err),
     } satisfies SseErrorEvent);
     res.end();
+    return false;
   }
 }

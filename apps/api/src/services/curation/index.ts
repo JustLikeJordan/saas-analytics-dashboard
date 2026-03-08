@@ -74,4 +74,5 @@ export async function runFullPipeline(
 }
 
 export type { ComputedStat, ScoredInsight, ScoringConfig, AssembledContext, TransparencyMetadata } from './types.js';
-export { StatType } from './types.js';
+export { StatType, transparencyMetadataSchema } from './types.js';
+export { assemblePrompt } from './assembly.js';

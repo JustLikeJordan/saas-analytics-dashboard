@@ -14,19 +14,11 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 const mockRunCurationPipeline = vi.fn();
+const mockAssemblePrompt = vi.fn();
 vi.mock('../curation/index.js', () => ({
   runCurationPipeline: (...args: unknown[]) => mockRunCurationPipeline(...args),
-}));
-
-const mockAssemblePrompt = vi.fn();
-vi.mock('../curation/assembly.js', () => ({
   assemblePrompt: (...args: unknown[]) => mockAssemblePrompt(...args),
-}));
-
-vi.mock('../curation/types.js', () => ({
-  transparencyMetadataSchema: {
-    parse: (v: unknown) => v,
-  },
+  transparencyMetadataSchema: { parse: (v: unknown) => v },
 }));
 
 const mockStreamInterpretation = vi.fn();
@@ -177,6 +169,37 @@ describe('streamToSSE', () => {
     const errorChunk = chunks.find((c) => c.startsWith('event: error'));
     expect(errorChunk).toBeDefined();
     expect(errorChunk).toContain('STREAM_ERROR');
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('sends partial event on timeout when text was already streamed', async () => {
+    mockStreamInterpretation.mockImplementation(
+      async (_prompt: string, onText: (d: string) => void, signal?: AbortSignal) => {
+        onText('Some partial ');
+        onText('content here');
+        // hang forever — timeout will abort
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      },
+    );
+
+    const { res, chunks } = createMockRes();
+    const req = createMockReq();
+
+    const { streamToSSE } = await import('./streamHandler.js');
+    const promise = streamToSSE(req, res, 1, 1);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    await promise;
+
+    const partialChunk = chunks.find((c) => c.startsWith('event: partial'));
+    expect(partialChunk).toBeDefined();
+    expect(partialChunk).toContain('Some partial content here');
+
+    const doneChunk = chunks.find((c) => c.startsWith('event: done'));
+    expect(doneChunk).toBeDefined();
+    expect(doneChunk).toContain('"usage":null');
     expect(res.end).toHaveBeenCalled();
   });
 

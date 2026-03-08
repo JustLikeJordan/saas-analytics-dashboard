@@ -84,7 +84,7 @@ export async function streamInterpretation(
     };
   } catch (err) {
     if (signal?.aborted) {
-      logger.info('Claude API stream aborted by client');
+      logger.info({ aborted: true }, 'Claude API stream aborted by client');
       throw err;
     }
 

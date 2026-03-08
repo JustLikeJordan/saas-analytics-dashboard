@@ -64,7 +64,8 @@ export function AiSummaryCard({ datasetId, cachedContent, className }: AiSummary
   const { status, text, error, start } = useAiStream(hasCached ? null : datasetId);
   const completedRef = useRef(false);
 
-  // fire client-side analytics on completion
+  // backend fires AI_SUMMARY_COMPLETED — client-side trackEvent
+  // will be added when web analytics infra lands (Epic 7)
   useEffect(() => {
     if (status === 'done' && !completedRef.current) {
       completedRef.current = true;

@@ -240,3 +240,42 @@ describe('GET /dashboard/charts', () => {
     });
   });
 });
+
+describe('GET /ai-summaries/:datasetId/cached', () => {
+  it('returns cached summary for valid datasetId', async () => {
+    mockGetCachedSummary.mockResolvedValueOnce({ content: 'Revenue grew 12% month over month.' });
+
+    const res = await fetch(`${baseUrl}/ai-summaries/1/cached`);
+    const body = await res.json() as { data: { content: string } };
+
+    expect(res.status).toBe(200);
+    expect(body.data.content).toBe('Revenue grew 12% month over month.');
+    expect(mockGetCachedSummary).toHaveBeenCalledWith(99, 1);
+  });
+
+  it('returns 404 when no cached summary exists', async () => {
+    mockGetCachedSummary.mockResolvedValueOnce(null);
+
+    const res = await fetch(`${baseUrl}/ai-summaries/1/cached`);
+    const body = await res.json() as { error: { code: string } };
+
+    expect(res.status).toBe(404);
+    expect(body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns 400 for invalid datasetId', async () => {
+    const res = await fetch(`${baseUrl}/ai-summaries/abc/cached`);
+    const body = await res.json() as { error: { code: string } };
+
+    expect(res.status).toBe(400);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 400 for negative datasetId', async () => {
+    const res = await fetch(`${baseUrl}/ai-summaries/-5/cached`);
+    const body = await res.json() as { error: { code: string } };
+
+    expect(res.status).toBe(400);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
