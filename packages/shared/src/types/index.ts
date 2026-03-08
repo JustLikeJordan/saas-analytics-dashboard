@@ -27,3 +27,10 @@ export type {
   ChartData,
   ChartFilters,
 } from './charts.js';
+
+export type {
+  SseTextEvent,
+  SseDoneEvent,
+  SseErrorEvent,
+  SsePartialEvent,
+} from './sse.js';

@@ -12,10 +12,14 @@ vi.mock('../services/auth/tokenService.js', () => ({
   verifyAccessToken: mockVerifyAccessToken,
 }));
 
+const mockGetDatasetsByOrg = vi.fn();
+const mockGetCachedSummary = vi.fn();
+
 vi.mock('../db/queries/index.js', () => ({
   chartsQueries: { getChartData: mockGetChartData },
-  datasetsQueries: { getUserOrgDemoState: mockGetUserOrgDemoState },
+  datasetsQueries: { getUserOrgDemoState: mockGetUserOrgDemoState, getDatasetsByOrg: mockGetDatasetsByOrg },
   orgsQueries: { getSeedOrgId: mockGetSeedOrgId, findOrgById: mockFindOrgById },
+  aiSummariesQueries: { getCachedSummary: mockGetCachedSummary },
 }));
 
 vi.mock('../services/analytics/trackEvent.js', () => ({
@@ -79,6 +83,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetChartData.mockResolvedValue(chartFixture);
   mockGetSeedOrgId.mockResolvedValue(99);
+  mockGetDatasetsByOrg.mockResolvedValue([{ id: 1 }]);
+  mockGetCachedSummary.mockResolvedValue(null);
 });
 
 describe('GET /dashboard/charts', () => {

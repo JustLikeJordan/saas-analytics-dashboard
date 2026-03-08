@@ -13,11 +13,12 @@ import { ExpenseChart } from './charts/ExpenseChart';
 import { ChartSkeleton } from './charts/ChartSkeleton';
 import { LazyChart } from './charts/LazyChart';
 import { FilterBar, computeDateRange, type FilterState } from './FilterBar';
-import { AiSummarySkeleton } from './AiSummarySkeleton';
+import { AiSummaryCard } from './AiSummaryCard';
 import { DemoModeBanner } from '@/components/common/DemoModeBanner';
 
 interface DashboardShellProps {
   initialData: ChartData;
+  cachedSummary?: string;
 }
 
 const EMPTY_FILTERS: FilterState = { datePreset: null, category: null };
@@ -106,7 +107,7 @@ function FilteredEmptyState({ onReset }: { onReset: () => void }) {
   );
 }
 
-export function DashboardShell({ initialData }: DashboardShellProps) {
+export function DashboardShell({ initialData, cachedSummary }: DashboardShellProps) {
   const router = useRouter();
   const { setOrgName } = useSidebar();
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
@@ -173,7 +174,11 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
           <h1 id="dashboard-heading" className="text-2xl font-semibold text-foreground">{data.orgName}</h1>
         </div>
 
-        {isLoading && !hasData && <AiSummarySkeleton className="mb-6" />}
+        <AiSummaryCard
+          datasetId={data.datasetId}
+          cachedContent={cachedSummary}
+          className="mb-6"
+        />
 
         <ChartErrorBoundary onRetry={() => mutate()}>
           {isLoading && !hasData ? (

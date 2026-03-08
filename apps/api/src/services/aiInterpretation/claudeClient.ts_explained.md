@@ -2,17 +2,17 @@
 
 ## 1. 30-Second Elevator Pitch
 
-This module wraps the Anthropic SDK to call Claude's API for generating business data interpretations. It does exactly one thing: take an assembled prompt, send it to Claude, and return the text response. No streaming, no caching, no retry logic beyond what the SDK provides natively. The simplicity is intentional -- this is the cache population path, not the user-facing delivery path.
+This module wraps the Anthropic SDK to call Claude's API for generating business data interpretations. It has two entry points: `generateInterpretation()` for cache population (non-streaming, full response at once) and `streamInterpretation()` for real-time delivery to users (chunk-by-chunk via a callback). Both share the same client, model config, and error handling patterns. The SDK handles retries and timeouts natively.
 
-**How to say it in an interview:** "We separated the LLM call into its own module with a single responsibility -- send a prompt, get text back. The SDK handles retries and timeouts natively. Streaming delivery to the user is a different layer entirely. This separation lets us test, monitor, and swap the LLM provider independently."
+**How to say it in an interview:** "We have two LLM call paths in one module -- a synchronous path for cache population and a streaming path for real-time user delivery. Both share the same client and error classification. The streaming function accepts an `onText` callback and an `AbortSignal` for cooperative cancellation. This separation lets us test, monitor, and swap the LLM provider independently."
 
 ## 2. Why This Approach
 
-### Decision 1: Non-streaming for cache population
+### Decision 1: Two call paths, one module
 
-This module uses `messages.create()` (synchronous), not `messages.stream()`. That's because it's called during cache population -- the full response gets stored in `ai_summaries` before any user sees it. Streaming is Story 3.3's concern, where the response flows to the user via SSE. Having two separate paths (populate cache vs. stream to user) keeps each path simple.
+`generateInterpretation()` uses `messages.create()` (non-streaming) for cache population -- the full response gets stored before any user sees it. `streamInterpretation()` uses `messages.stream()` for real-time delivery -- chunks flow to the user via SSE as they arrive. Both live in the same module because they share the client singleton, model config, and error classification logic. Splitting them into separate files would duplicate the client setup and error handling.
 
-**How to say it:** "We cache the full response first, then stream from cache. This means the LLM call happens once per dataset change, not once per page view."
+**How to say it:** "We have a synchronous path for background cache population and a streaming path for real-time delivery. They share the same client and error handling, but use different SDK methods."
 
 ### Decision 2: SDK-native retry instead of custom logic
 
@@ -43,6 +43,18 @@ The catch block wraps all errors in `ExternalServiceError`, which produces a 502
 
 The original error message is preserved in the `details` field for debugging, but never exposed to the end user (the error handler strips internals).
 
+### Block 4: streamInterpretation (added in Story 3.3)
+
+The streaming counterpart to `generateInterpretation`. Key differences:
+- Uses `client.messages.stream()` instead of `client.messages.create()`
+- Accepts an `onText` callback invoked for each text delta
+- Accepts an optional `AbortSignal` for cooperative cancellation
+- Returns a `StreamResult` with the full text and usage stats from `stream.finalMessage()`
+
+The abort wiring is worth noting: when the signal fires, we call `stream.abort()` to cancel the in-flight HTTP request to Claude. The `signal.addEventListener('abort', ...)` is registered with `{ once: true }` to avoid leaking listeners. We also clean up the listener when the stream ends naturally via `stream.on('end', ...)`.
+
+Same error classification as `generateInterpretation`, with one addition: if `signal.aborted` is true when the catch block fires, we log at info level (not error) and rethrow. Client-initiated cancellation isn't an error -- it's normal behavior when users navigate away.
+
 ## 4. Complexity and Trade-offs
 
 **Time complexity:** One API call per invocation. The SDK may make up to 3 total attempts (1 original + 2 retries) with exponential backoff.
@@ -61,8 +73,8 @@ The original error message is preserved in the `details` field for debugging, bu
 
 ## 6. Interview Questions
 
-**Q: Why not stream the response directly to the user?**
-A: We separate cache population from delivery. The LLM call happens once per data upload, and the result is cached in `ai_summaries`. User requests are served from cache (fast) or trigger a fresh generation (slower but still cached for next time). Streaming delivery from cache to the user via SSE is a different layer (Story 3.3). This architecture means 100 users viewing the same dataset don't trigger 100 LLM calls.
+**Q: Why have both streaming and non-streaming paths?**
+A: Different use cases. `generateInterpretation()` is for cache population (seed script, background jobs) -- we need the full text at once to store it. `streamInterpretation()` is for real-time delivery when a user requests a summary that isn't cached yet. The streaming path delivers text to the user as it's generated, then caches the full result for future requests. Most requests hit the cache and never stream.
 
 **Q: How do you handle API key rotation?**
 A: The client is constructed at startup from validated env vars. Key rotation means updating the env var and restarting the service. In a container environment (Docker/K8s), this happens naturally during deployments. For zero-downtime rotation, you'd need a key provider that fetches from a secrets manager -- but that's overengineering for this stage.
@@ -80,10 +92,8 @@ The module doesn't know about business concepts like insights or summaries -- it
 
 ## 8. Impress the Interviewer
 
-The key architectural insight here is that the LLM call is decoupled from the user request cycle. Most AI-powered features call the LLM when the user clicks a button and stream back the response. We took a different approach: the LLM call happens during cache population (either on data upload or seed generation), and user requests are served from cache. This means:
+This module demonstrates a clean separation of LLM interaction modes. The non-streaming path (`generateInterpretation`) handles cache population -- one call per data upload, full response stored for future requests. The streaming path (`streamInterpretation`) handles the real-time user experience -- when a cache miss occurs, the user sees text appearing as Claude generates it.
 
-1. **Consistent latency** -- users get cached content instantly instead of waiting 5-15 seconds for LLM generation
-2. **Cost control** -- one LLM call per data change, not per page view
-3. **Graceful degradation** -- if Claude is down, existing summaries still work
+The architectural insight: most requests never trigger an LLM call. The cache-first strategy means 100 users viewing the same dataset don't make 100 API calls. Only the first user (or after a data upload invalidates the cache) triggers the streaming path. Everyone else gets instant JSON.
 
-The trade-off is that summaries aren't "live" -- they reflect the data at the time of generation, not real-time. But since our data only changes on CSV upload, this is perfectly fine. The cache invalidation strategy (mark stale on upload) aligns with the data lifecycle.
+The abort signal propagation in `streamInterpretation` is worth highlighting. When a user navigates away, the cancellation flows: React unmount → `AbortController.abort()` → BFF request teardown → Express `req.close` → `signal.abort` event → `stream.abort()` → HTTP request to Claude cancelled. Four layers, one cancellation mechanism, zero leaked resources.

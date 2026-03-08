@@ -33,6 +33,7 @@
   --animate-fade-in: fade-in 150ms ease-out;
   --animate-badge-in: badge-in 100ms ease-out;
   --animate-banner-dissolve: banner-dissolve 300ms ease-out forwards;
+  --animate-blink: blink 1060ms step-end infinite;
 }
 
 @keyframes indeterminate {
@@ -63,6 +64,11 @@
 @keyframes banner-dissolve {
   from { opacity: 1; max-height: 200px; overflow: hidden; }
   to { opacity: 0; max-height: 0; overflow: hidden; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 @media (prefers-color-scheme: dark) {

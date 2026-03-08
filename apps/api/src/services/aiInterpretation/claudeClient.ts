@@ -39,3 +39,63 @@ export async function generateInterpretation(prompt: string): Promise<string> {
     });
   }
 }
+
+export interface StreamResult {
+  fullText: string;
+  usage: { inputTokens: number; outputTokens: number };
+}
+
+export async function streamInterpretation(
+  prompt: string,
+  onText: (delta: string) => void,
+  signal?: AbortSignal,
+): Promise<StreamResult> {
+  try {
+    const stream = client.messages.stream({
+      model: env.CLAUDE_MODEL,
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    if (signal) {
+      const onAbort = () => stream.abort();
+      signal.addEventListener('abort', onAbort, { once: true });
+      stream.on('end', () => signal.removeEventListener('abort', onAbort));
+    }
+
+    stream.on('text', (delta) => onText(delta));
+
+    const finalMessage = await stream.finalMessage();
+
+    logger.info(
+      { model: env.CLAUDE_MODEL, usage: finalMessage.usage },
+      'Claude API stream completed',
+    );
+
+    const block = finalMessage.content[0];
+    const fullText = block?.type === 'text' ? block.text : '';
+
+    return {
+      fullText,
+      usage: {
+        inputTokens: finalMessage.usage.input_tokens,
+        outputTokens: finalMessage.usage.output_tokens,
+      },
+    };
+  } catch (err) {
+    if (signal?.aborted) {
+      logger.info('Claude API stream aborted by client');
+      throw err;
+    }
+
+    if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.BadRequestError) {
+      logger.error({ err: (err as Error).message }, 'Claude API stream non-retryable error');
+    } else {
+      logger.warn({ err: (err as Error).message }, 'Claude API stream retryable error exhausted');
+    }
+
+    throw new ExternalServiceError('Claude API', {
+      originalError: (err as Error).message,
+    });
+  }
+}

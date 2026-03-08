@@ -56,9 +56,11 @@ vi.mock('./FilterBar', () => ({
   computeDateRange: () => null,
 }));
 
-vi.mock('./AiSummarySkeleton', () => ({
-  AiSummarySkeleton: ({ className }: { className?: string }) => (
-    <div data-testid="ai-summary-skeleton" className={className}>AI Skeleton</div>
+vi.mock('./AiSummaryCard', () => ({
+  AiSummaryCard: ({ datasetId, cachedContent, className }: { datasetId: number | null; cachedContent?: string; className?: string }) => (
+    <div data-testid="ai-summary-card" data-dataset-id={datasetId} className={className}>
+      {cachedContent ?? 'AI Summary'}
+    </div>
   ),
 }));
 
@@ -87,6 +89,7 @@ const fullData: ChartData = {
   availableCategories: ['Payroll', 'Rent'],
   dateRange: { min: '2025-01-01', max: '2025-12-31' },
   demoState: 'user_only',
+  datasetId: 42,
 };
 
 const emptyData: ChartData = {
@@ -97,6 +100,7 @@ const emptyData: ChartData = {
   availableCategories: [],
   dateRange: null,
   demoState: 'seed_only',
+  datasetId: null,
 };
 
 afterEach(() => {
@@ -176,18 +180,19 @@ describe('DashboardShell', () => {
     expect(screen.getByTestId('skeleton-bar')).toBeInTheDocument();
   });
 
-  it('shows AI summary skeleton during loading with no data', () => {
-    mockSwrReturn = { data: emptyData, isLoading: true, mutate: mockMutate };
-
-    render(<DashboardShell initialData={emptyData} />);
-
-    expect(screen.getByTestId('ai-summary-skeleton')).toBeInTheDocument();
-  });
-
-  it('hides AI summary skeleton when data is loaded', () => {
+  it('renders AiSummaryCard with datasetId', () => {
     render(<DashboardShell initialData={fullData} />);
 
-    expect(screen.queryByTestId('ai-summary-skeleton')).not.toBeInTheDocument();
+    const card = screen.getByTestId('ai-summary-card');
+    expect(card).toBeInTheDocument();
+    expect(card).toHaveAttribute('data-dataset-id', '42');
+  });
+
+  it('renders AiSummaryCard with null datasetId when no data', () => {
+    render(<DashboardShell initialData={emptyData} />);
+
+    const card = screen.getByTestId('ai-summary-card');
+    expect(card).toBeInTheDocument();
   });
 
   it('only renders revenue chart when expense data is empty', () => {

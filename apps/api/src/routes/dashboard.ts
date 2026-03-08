@@ -4,7 +4,7 @@ import { AUTH, ANALYTICS_EVENTS } from 'shared/constants';
 import { chartFiltersSchema } from 'shared/schemas';
 import type { DemoModeState } from 'shared/types';
 import { verifyAccessToken } from '../services/auth/tokenService.js';
-import { chartsQueries, datasetsQueries, orgsQueries } from '../db/queries/index.js';
+import { aiSummariesQueries, chartsQueries, datasetsQueries, orgsQueries } from '../db/queries/index.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
 import { logger } from '../lib/logger.js';
 
@@ -68,7 +68,11 @@ dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => 
   }
 
   const filters = parseFilterParams(req.query);
-  const chartData = await chartsQueries.getChartData(orgId, hasFilters(filters) ? filters : undefined);
+  const [chartData, datasets] = await Promise.all([
+    chartsQueries.getChartData(orgId, hasFilters(filters) ? filters : undefined),
+    datasetsQueries.getDatasetsByOrg(orgId),
+  ]);
+  const datasetId = datasets[0]?.id ?? null;
 
   if (authedUser) {
     trackEvent(authedUser.orgId, authedUser.userId, ANALYTICS_EVENTS.DASHBOARD_VIEWED, {
@@ -93,8 +97,28 @@ dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => 
       orgName,
       isDemo,
       demoState,
+      datasetId,
     },
   });
+});
+
+// public — returns cached AI summary for seed datasets (anonymous visitors)
+dashboardRouter.get('/ai-summaries/:datasetId/cached', async (req: Request, res: Response) => {
+  const rawId = Number(req.params.datasetId);
+  if (!Number.isInteger(rawId) || rawId <= 0) {
+    res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid datasetId' } });
+    return;
+  }
+
+  const seedOrgId = await orgsQueries.getSeedOrgId();
+  const cached = await aiSummariesQueries.getCachedSummary(seedOrgId, rawId);
+
+  if (!cached) {
+    res.status(404).json({ error: { code: 'NOT_FOUND', message: 'No cached summary' } });
+    return;
+  }
+
+  res.json({ data: { content: cached.content } });
 });
 
 export default dashboardRouter;
