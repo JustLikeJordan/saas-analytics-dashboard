@@ -2,9 +2,9 @@
 
 ## 1. Elevator Pitch
 
-The AI summary route handler implements a cache-first strategy for serving AI-generated business insights. On cache hit, it returns JSON instantly. On cache miss, it hands off to the SSE streaming handler for real-time generation. Rate limiting only kicks in on the streaming path — cached responses are free. It fires analytics events at both entry and completion.
+The AI summary route handler implements a cache-first strategy for serving AI-generated business insights. On cache hit, it returns JSON instantly. On cache miss, it hands off to the SSE streaming handler for real-time generation. Rate limiting only kicks in on the streaming path — cached responses are free. It fires `AI_SUMMARY_REQUESTED` at entry and only fires `AI_SUMMARY_COMPLETED` when `streamToSSE` returns `true` — meaning the stream finished successfully and was cached.
 
-**How to say it in an interview:** "I built the route handler with a cache-first pattern where cached summaries return JSON and fresh generation streams via SSE. Rate limiting is conditional — only applied on cache misses to avoid penalizing users for fast cache hits."
+**How to say it in an interview:** "I built the route handler with a cache-first pattern where cached summaries return JSON and fresh generation streams via SSE. Rate limiting is conditional — only applied on cache misses. The completion analytics event is gated on the stream handler's boolean return, so partial deliveries and errors don't inflate success metrics."
 
 ## 2. Why This Approach
 
@@ -27,8 +27,8 @@ The flow is linear and readable:
 4. Check cache — if hit, return JSON with `fromCache: true` flag
 5. If miss, wrap rate limiter in Promise, await it
 6. Guard against 429 already sent
-7. Stream the response via `streamToSSE`
-8. Fire `AI_SUMMARY_COMPLETED` after successful stream
+7. Stream the response via `streamToSSE`, capturing `const ok = await streamToSSE(...)`
+8. Fire `AI_SUMMARY_COMPLETED` only when `ok` is `true`
 
 Notice there's no try-catch. Express 5 forwards rejected promises to the error handler automatically. The `ValidationError` throw on invalid datasetId gets caught by the centralized `errorHandler` middleware, which returns a proper `{ error: { code, message } }` JSON response.
 
@@ -51,7 +51,7 @@ await new Promise<void>((resolve, reject) => {
 
 **`trackEvent` is fire-and-forget.** It's not awaited. If the analytics insert fails, the user still gets their summary. Analytics are observability, not business logic — they shouldn't affect the user-facing response.
 
-**Completion event fires after stream.** If the stream errors mid-way, `AI_SUMMARY_COMPLETED` doesn't fire. This is correct — you only want to count completions, not attempts. But it also means a timeout with partial delivery doesn't count as "completed," which might undercount in analytics.
+**Completion event gated on boolean return.** `streamToSSE` returns `Promise<boolean>` — `true` only when the full stream completes and gets cached. The route captures this as `const ok` and only fires `AI_SUMMARY_COMPLETED` when `ok` is `true`. Timeouts with partial delivery, client disconnects, and mid-stream errors all return `false`, so they don't inflate the completion count. This is more precise than the previous approach of always firing after `await streamToSSE()` — you get an accurate success rate in your analytics without any try-catch gymnastics.
 
 ## 5. Patterns Worth Knowing
 

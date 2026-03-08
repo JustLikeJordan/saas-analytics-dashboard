@@ -1,6 +1,6 @@
 # Story 3.3: SSE Streaming Delivery & AI Summary Card
 
-Status: review
+Status: done
 
 ## Story
 

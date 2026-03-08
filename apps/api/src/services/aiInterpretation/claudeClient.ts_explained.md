@@ -53,7 +53,7 @@ The streaming counterpart to `generateInterpretation`. Key differences:
 
 The abort wiring is worth noting: when the signal fires, we call `stream.abort()` to cancel the in-flight HTTP request to Claude. The `signal.addEventListener('abort', ...)` is registered with `{ once: true }` to avoid leaking listeners. We also clean up the listener when the stream ends naturally via `stream.on('end', ...)`.
 
-Same error classification as `generateInterpretation`, with one addition: if `signal.aborted` is true when the catch block fires, we log at info level (not error) and rethrow. Client-initiated cancellation isn't an error -- it's normal behavior when users navigate away.
+Same error classification as `generateInterpretation`, with one addition: if `signal.aborted` is true when the catch block fires, we log at info level (not error) and rethrow. The logging follows Pino convention — structured object first (`{ aborted: true }`), message string second (`'Claude API stream aborted by client'`). Client-initiated cancellation isn't an error -- it's normal behavior when users navigate away.
 
 ## 4. Complexity and Trade-offs
 
@@ -67,7 +67,7 @@ Same error classification as `generateInterpretation`, with one addition: if `si
 
 **Structured error hierarchy:** The `ExternalServiceError` class produces a 502 status code (Bad Gateway), which is semantically correct -- our server is healthy, but an upstream service failed. The centralized error handler in Express formats this into the standard `{ error: { code, message } }` response shape.
 
-**Log level as severity signal:** Using `error` vs `warn` isn't just cosmetic. In production monitoring (Datadog, PagerDuty, etc.), you'd typically alert on `error` level but not `warn`. A burst of 401s means your API key is invalid and needs immediate attention. A burst of 429s means you're hitting rate limits and should probably back off, but it's not an emergency.
+**Log level as severity signal:** Using `error` vs `warn` vs `info` isn't cosmetic. In production monitoring (Datadog, PagerDuty, etc.), you'd typically alert on `error` level but not `warn`. A burst of 401s means your API key is invalid and needs immediate attention. A burst of 429s means you're hitting rate limits and should probably back off, but it's not an emergency. Client-initiated aborts log at `info` — they're expected behavior, not a problem. All log calls follow Pino's structured convention: object first, message string second. So `logger.info({ aborted: true }, 'Claude API stream aborted by client')` rather than interpolating values into the message string.
 
 **Content block type guard:** Claude's response isn't always text. It can include tool_use blocks, thinking blocks, or other types. The `block?.type === 'text'` guard handles this gracefully. Most tutorials skip this check, which can cause runtime crashes on unexpected response shapes.
 

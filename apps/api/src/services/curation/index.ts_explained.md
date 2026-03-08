@@ -16,7 +16,7 @@ This file is the front door to the curation pipeline. It fetches raw data rows f
 
 **Only the orchestrator logs.** The inner layers (`computation.ts`, `scoring.ts`) are pure functions — same input, same output, no side effects. Logging is a side effect, so it lives here. This is a deliberate architectural choice: if you scatter `logger.info` calls throughout pure functions, you make them harder to test and harder to reason about.
 
-**Re-exports create a clean public API.** The last two lines (`export type` and `export`) mean downstream code can `import { ScoredInsight } from './curation'` without reaching into internal files. If you later reorganize the internals, consumers don't break.
+**Re-exports create a clean public API.** The barrel exports at the bottom mean downstream code can `import { ScoredInsight, assemblePrompt, transparencyMetadataSchema } from './curation'` without reaching into internal files like `types.js` or `assembly.js`. After the Story 3.3 code review, the barrel grew to include `ComputedStat`, `ScoredInsight`, `ScoringConfig`, `AssembledContext`, `TransparencyMetadata` types, the `StatType` enum, `transparencyMetadataSchema`, and `assemblePrompt`. The `streamHandler.ts` file used to import from individual curation files — now it pulls everything from this barrel. If you later reorganize the internals, consumers don't break.
 
 ## 3. Code Walkthrough
 
@@ -48,7 +48,7 @@ The file does five things in order:
 
 **Configuration threading.** The orchestrator acts as a mediator between modules that shouldn't depend on each other directly. The scoring config defines `trendMinDataPoints`, but the computation layer is the one that actually uses it. Rather than having `computation.ts` import from `scoring.ts` (which would create a circular or awkward dependency), the orchestrator reads the value from one module and passes it to the other as a plain parameter. This keeps both modules decoupled — `computeStats` accepts a number, not a config object, so it has no idea where the value came from.
 
-**Barrel exports.** The `export type { ... } from './types.js'` lines make this file a barrel — a single import point that re-exports from internal modules. It hides the internal file structure from consumers.
+**Barrel exports.** The `export type { ... } from './types.js'` and `export { ... } from './assembly.js'` lines make this file a barrel — a single import point that re-exports from internal modules. The barrel now surfaces five types (`ComputedStat`, `ScoredInsight`, `ScoringConfig`, `AssembledContext`, `TransparencyMetadata`), one enum (`StatType`), one schema (`transparencyMetadataSchema`), and one function (`assemblePrompt`). It hides the internal file structure from consumers. When `streamHandler.ts` was updated in Story 3.3, it switched from importing individual curation files to importing from this barrel — exactly the kind of refactor barrels make painless.
 
 **Pure functions with an impure shell.** The orchestrator is the impure shell (it does I/O: database reads, logging). The layers it calls are pure (deterministic, no side effects). This separation is borrowed from functional programming and makes testing dramatically easier.
 
