@@ -4,6 +4,7 @@ export interface SseTextEvent {
 
 export interface SseDoneEvent {
   usage: { inputTokens: number; outputTokens: number } | null;
+  reason?: string;
 }
 
 export interface SseErrorEvent {

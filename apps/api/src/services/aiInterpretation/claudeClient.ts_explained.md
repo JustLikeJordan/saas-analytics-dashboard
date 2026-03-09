@@ -2,9 +2,9 @@
 
 ## 1. 30-Second Elevator Pitch
 
-This module wraps the Anthropic SDK to call Claude's API for generating business data interpretations. It has two entry points: `generateInterpretation()` for cache population (non-streaming, full response at once) and `streamInterpretation()` for real-time delivery to users (chunk-by-chunk via a callback). Both share the same client, model config, and error handling patterns. The SDK handles retries and timeouts natively.
+This module wraps the Anthropic SDK to call Claude's API for generating business data interpretations. It has two entry points: `generateInterpretation()` for cache population (non-streaming, full response at once) and `streamInterpretation()` for real-time delivery to users (chunk-by-chunk via a callback). Both share the same client and model config, though their error handling diverges intentionally — the non-streaming path wraps errors for Express middleware, while the streaming path re-throws raw SDK errors so the SSE handler can discriminate by type. The SDK handles retries and timeouts natively.
 
-**How to say it in an interview:** "We have two LLM call paths in one module -- a synchronous path for cache population and a streaming path for real-time user delivery. Both share the same client and error classification. The streaming function accepts an `onText` callback and an `AbortSignal` for cooperative cancellation. This separation lets us test, monitor, and swap the LLM provider independently."
+**How to say it in an interview:** "We have two LLM call paths in one module — a synchronous path for cache population and a streaming path for real-time user delivery. They share the same client but handle errors differently: the non-streaming path wraps in ExternalServiceError for Express middleware, while the streaming path re-throws raw Anthropic errors so the SSE handler can do instanceof checks for precise error code mapping."
 
 ## 2. Why This Approach
 
@@ -18,9 +18,11 @@ This module wraps the Anthropic SDK to call Claude's API for generating business
 
 The Anthropic SDK has built-in retry with exponential backoff for 5xx errors, rate limits (429), and network failures. We configure `maxRetries: 2` and `timeout: 15_000` and let the SDK handle the rest. Writing custom retry logic would add complexity without adding value -- the SDK authors understand their API's failure modes better than we do.
 
-### Decision 3: Error classification by retryability
+### Decision 3: Divergent error strategies by call path
 
-Errors are split into two categories: non-retryable (401 auth, 400 bad request) logged at `error` level, and retryable (everything else) logged at `warn` level. The distinction matters for monitoring -- `error` level means "something is broken and needs human attention" (like a rotated API key), while `warn` means "transient failure that resolved or will resolve."
+`generateInterpretation` wraps all errors in `ExternalServiceError` (producing a 502 response) because it flows through Express's centralized error middleware. `streamInterpretation` re-throws raw SDK errors — `throw err` instead of `throw new ExternalServiceError(...)`. Why? Because once SSE headers are flushed, the streaming handler can't use HTTP status codes. It needs the original Anthropic error types (`RateLimitError`, `AuthenticationError`, `APIConnectionTimeoutError`, etc.) for `instanceof` checks that map to specific SSE error codes. Wrapping would erase that type information.
+
+Both paths still classify errors for logging: non-retryable (auth, bad request) at `error` level, retryable (everything else) at `warn` level.
 
 ## 3. Code Walkthrough
 
@@ -53,7 +55,7 @@ The streaming counterpart to `generateInterpretation`. Key differences:
 
 The abort wiring is worth noting: when the signal fires, we call `stream.abort()` to cancel the in-flight HTTP request to Claude. The `signal.addEventListener('abort', ...)` is registered with `{ once: true }` to avoid leaking listeners. We also clean up the listener when the stream ends naturally via `stream.on('end', ...)`.
 
-Same error classification as `generateInterpretation`, with one addition: if `signal.aborted` is true when the catch block fires, we log at info level (not error) and rethrow. The logging follows Pino convention — structured object first (`{ aborted: true }`), message string second (`'Claude API stream aborted by client'`). Client-initiated cancellation isn't an error -- it's normal behavior when users navigate away.
+Error handling diverges from `generateInterpretation` here (updated in Story 3.4): the catch block re-throws raw errors (`throw err`) instead of wrapping in `ExternalServiceError`. This preserves Anthropic SDK error types so `streamHandler.ts` can do `instanceof` discrimination — mapping `RateLimitError` to `RATE_LIMITED`, `AuthenticationError` to `AI_AUTH_ERROR`, etc. If `signal.aborted` is true when the catch block fires, we log at info level (not error) and rethrow. Client-initiated cancellation isn't an error — it's normal behavior when users navigate away.
 
 ## 4. Complexity and Trade-offs
 
@@ -65,13 +67,16 @@ Same error classification as `generateInterpretation`, with one addition: if `si
 
 ## 5. Patterns Worth Knowing
 
-**Structured error hierarchy:** The `ExternalServiceError` class produces a 502 status code (Bad Gateway), which is semantically correct -- our server is healthy, but an upstream service failed. The centralized error handler in Express formats this into the standard `{ error: { code, message } }` response shape.
+**Error strategy depends on the consumer.** `generateInterpretation` wraps errors in `ExternalServiceError` (502 Bad Gateway) because Express middleware formats it into the standard `{ error: { code, message } }` JSON response. `streamInterpretation` re-throws raw because its consumer — `streamHandler.ts` — has already flushed SSE headers and can't use HTTP status codes. The SSE handler needs `instanceof` checks against Anthropic SDK classes to map errors to specific codes like `RATE_LIMITED` or `AI_AUTH_ERROR`. Wrapping would erase those types. Same module, two different error contracts, because the transport layer dictates the strategy.
 
 **Log level as severity signal:** Using `error` vs `warn` vs `info` isn't cosmetic. In production monitoring (Datadog, PagerDuty, etc.), you'd typically alert on `error` level but not `warn`. A burst of 401s means your API key is invalid and needs immediate attention. A burst of 429s means you're hitting rate limits and should probably back off, but it's not an emergency. Client-initiated aborts log at `info` — they're expected behavior, not a problem. All log calls follow Pino's structured convention: object first, message string second. So `logger.info({ aborted: true }, 'Claude API stream aborted by client')` rather than interpolating values into the message string.
 
 **Content block type guard:** Claude's response isn't always text. It can include tool_use blocks, thinking blocks, or other types. The `block?.type === 'text'` guard handles this gracefully. Most tutorials skip this check, which can cause runtime crashes on unexpected response shapes.
 
 ## 6. Interview Questions
+
+**Q: Why does `streamInterpretation` re-throw raw errors while `generateInterpretation` wraps them?**
+A: The two functions have different consumers with different constraints. `generateInterpretation` flows through Express's error middleware, which expects `ExternalServiceError` to produce a 502 JSON response. `streamInterpretation` is called by the SSE handler, which has already flushed headers — it can't send HTTP status codes. The SSE handler needs the raw Anthropic SDK error types (`RateLimitError`, `AuthenticationError`, etc.) for `instanceof` checks that map to specific SSE error codes. Wrapping in `ExternalServiceError` would erase the type information.
 
 **Q: Why have both streaming and non-streaming paths?**
 A: Different use cases. `generateInterpretation()` is for cache population (seed script, background jobs) -- we need the full text at once to store it. `streamInterpretation()` is for real-time delivery when a user requests a summary that isn't cached yet. The streaming path delivers text to the user as it's generated, then caches the full result for future requests. Most requests hit the cache and never stream.
@@ -92,7 +97,7 @@ The module doesn't know about business concepts like insights or summaries -- it
 
 ## 8. Impress the Interviewer
 
-This module demonstrates a clean separation of LLM interaction modes. The non-streaming path (`generateInterpretation`) handles cache population -- one call per data upload, full response stored for future requests. The streaming path (`streamInterpretation`) handles the real-time user experience -- when a cache miss occurs, the user sees text appearing as Claude generates it.
+The most interesting thing about this module isn't the LLM calls — it's the error handling asymmetry. Both functions call the same API, but their error strategies diverge because they have different consumers. `generateInterpretation` wraps errors for Express middleware. `streamInterpretation` re-throws raw for SSE `instanceof` discrimination. This is the kind of decision that separates production code from tutorial code — the "right" error handling depends on where the error lands, not where it originates.
 
 The architectural insight: most requests never trigger an LLM call. The cache-first strategy means 100 users viewing the same dataset don't make 100 API calls. Only the first user (or after a data upload invalidates the cache) triggers the streaming path. Everyone else gets instant JSON.
 

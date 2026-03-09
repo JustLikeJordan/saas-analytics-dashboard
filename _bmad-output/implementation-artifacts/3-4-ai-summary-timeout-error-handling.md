@@ -1,6 +1,6 @@
 # Story 3.4: AI Summary Timeout & Error Handling
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -10,11 +10,11 @@ So that I never see a broken interface or lose access to my dashboard.
 
 ## Acceptance Criteria
 
-1. **Timeout with partial results** -- Given AI generation exceeds 15 seconds (measured from SSE headers flush, including pipeline execution time), when the timeout boundary is reached, then the system terminates the request and displays partial results if available, or a graceful timeout message (NFR18). A horizontal rule appears followed by an honest "This analysis was interrupted -- here's what we generated so far" message. Partial results are NOT cached.
+1. **Timeout with partial results** -- Given AI generation exceeds 15 seconds (measured from SSE headers flush, including pipeline execution time), when the timeout boundary is reached, then the system terminates the request and displays partial results if available, or a graceful timeout message (NFR18). A horizontal rule appears followed by "We focused on the most important findings to keep things quick" message (per UX spec -- reframes timeout as intentional curation, not failure). Partial results are NOT cached.
 
 2. **Graceful degradation on service unavailable** -- Given the AI service is unavailable, when I visit the dashboard, then a graceful degradation message is displayed, not a broken UI (NFR17). Charts and data remain fully accessible -- the AI section shows the error state, not the whole page.
 
-3. **Retry with exponential backoff** -- Given a transient AI failure occurs, when the retry logic activates, then it uses exponential backoff per NFR23. The user sees the AiSummaryCard in its error state with a "Try again" button.
+3. **Retry with backoff** -- Given a transient AI failure occurs, when the retry logic activates, then the Anthropic SDK handles exponential backoff server-side (2 retries, 1s/3s per NFR23). The client tracks retry count (max 3) and shows the AiSummaryCard in its error state with a "Try again" button. Client retries are immediate — backoff is SDK-level, not client-level.
 
 4. **Six AiSummaryCard states** -- Given the AiSummaryCard has 6 states, when I inspect the component, then all states are structurally defined: skeleton (connecting), streaming, complete, timeout, error, free preview (type + code path exists as placeholder for Story 3.5, renders nothing until then).
 
@@ -52,7 +52,7 @@ So that I never see a broken interface or lose access to my dashboard.
   - [ ] 3.8 Unit tests: reducer handles PARTIAL action (timeout with text), ERROR with retryable flag, retry count increment, max retry enforcement, START guard when already connecting, multi-event buffer parsing
 
 - [ ] Task 4: Enhance `AiSummaryCard` timeout + error + retry UI states (AC: #1, #2, #3, #4)
-  - [ ] 4.1 **Timeout state** (status === 'timeout'): render the partial text, then a `<hr>` divider with `border-muted` styling, then italicized "This analysis was interrupted -- here's what we generated so far" message below. Post-completion actions (Share + Transparency buttons) still appear since partial content is useful. On retry, clear the old partial text and show a fresh skeleton -- don't keep stale partial text visible while a new generation runs
+  - [ ] 4.1 **Timeout state** (status === 'timeout'): render the partial text, then a `<hr>` divider with `border-muted` styling, then italicized "We focused on the most important findings to keep things quick" message below (per UX spec -- reframes timeout as intentional curation, not failure). Post-completion actions (Share + Transparency buttons) still appear since partial content is useful. On retry, clear the old partial text and show a fresh skeleton -- don't keep stale partial text visible while a new generation runs
   - [ ] 4.2 **Error state** (status === 'error'): render error card with `border-l-4 border-l-destructive` left accent (distinct from Trust Blue streaming state). Show error icon + user-friendly message (never raw error codes). If `retryable` and `retryCount < 3`, show "Try again" button. If retries exhausted, show "Please try again later"
   - [ ] 4.3 **Error state content**: "Unable to generate AI insights right now. Your data and charts are still available below." -- maintains user confidence that the dashboard works without AI
   - [ ] 4.4 Error messages by code: `TIMEOUT` -> "The analysis took longer than expected", `AI_UNAVAILABLE` -> "AI service is temporarily unavailable", `RATE_LIMITED` -> "Too many requests -- please wait a moment", `PIPELINE_ERROR` -> "Something went wrong preparing your analysis", `EMPTY_RESPONSE` -> "AI produced no results -- please try again", `STREAM_ERROR` / default -> "Something went wrong generating insights"
@@ -238,6 +238,7 @@ Guards:
 
 ```
 # MODIFIED files (all created in Story 3.3)
+apps/api/src/services/aiInterpretation/claudeClient.ts        # re-throw raw Anthropic errors from streamInterpretation (don't wrap in ExternalServiceError) so streamHandler can instanceof-check error types
 apps/api/src/services/aiInterpretation/streamHandler.ts       # add timeout + error handling
 apps/api/src/services/aiInterpretation/streamHandler.test.ts   # extend with timeout/error tests
 apps/web/lib/hooks/useAiStream.ts                              # add timeout/error/retry states
@@ -245,8 +246,9 @@ apps/web/lib/hooks/useAiStream.test.ts                         # extend reducer 
 apps/web/app/dashboard/AiSummaryCard.tsx                       # add timeout/error/retry UI
 apps/web/app/dashboard/AiSummaryCard.test.tsx                  # extend with new state tests
 apps/web/app/dashboard/DashboardShell.tsx                      # verify AI error isolation
+packages/shared/src/types/sse.ts                               # add SsePartialEvent type + reason field on SseDoneEvent
 
-# POTENTIALLY NEW files
+# NEW files
 apps/web/app/dashboard/AiSummaryErrorBoundary.tsx              # lightweight error boundary for AiSummaryCard
 ```
 
@@ -330,10 +332,62 @@ stream.controller;           // underlying AbortController
 
 ### Agent Model Used
 
-(to be filled by dev agent)
+Claude Opus 4.6
 
 ### Debug Log References
 
+None — all tests pass, no runtime debugging needed.
+
 ### Completion Notes List
 
+- All 4 ACs implemented and verified
+- 66 tests passing (28 backend + 38 frontend)
+- Code review: 3 MEDIUM + 3 LOW findings, all fixed
+
+### Validation Record
+
+**Validated:** 2026-03-08
+**Result:** PASS with 2 minor findings (both resolved in-artifact)
+
+| # | Finding | Resolution |
+|---|---------|------------|
+| 1 | Timeout message wording ("interrupted") contradicted UX spec's intentional-curation framing | Updated AC1 and Task 4.1 to use UX spec wording: "We focused on the most important findings to keep things quick" |
+| 2 | `claudeClient.ts` not listed as modified file despite needing error type changes for Task 2.3 instanceof checks | Added `claudeClient.ts` to modified files list with note: re-throw raw Anthropic errors from `streamInterpretation` instead of wrapping in `ExternalServiceError` |
+
+### Code Review Record
+
+**Reviewed:** 2026-03-09
+**Result:** PASS — 3 MEDIUM + 3 LOW findings, all fixed
+
+| # | Severity | Finding | Resolution |
+|---|----------|---------|------------|
+| M1 | MEDIUM | `packages/shared/src/types/sse.ts` missing from story file list | Added to Project Structure Notes |
+| M2 | MEDIUM | `AiSummaryErrorBoundary` missing `componentDidCatch` logging | Added `componentDidCatch` with console.error |
+| M3 | MEDIUM | `storeSummary` failure unhandled after response ends | Wrapped in try/catch with logger.warn |
+| L1 | LOW | `retry()` callback identity changes on every state transition | Noted — no fix needed, refs optimization deferred |
+| L2 | LOW | `retryPending` not reset on dataset change | Added reset in datasetId change effect |
+| L3 | LOW | Dev Agent Record section empty | Populated all fields |
+
 ### File List
+
+**Modified:**
+- `apps/api/src/services/aiInterpretation/claudeClient.ts`
+- `apps/api/src/services/aiInterpretation/claudeClient.test.ts`
+- `apps/api/src/services/aiInterpretation/streamHandler.ts`
+- `apps/api/src/services/aiInterpretation/streamHandler.test.ts`
+- `apps/web/lib/hooks/useAiStream.ts`
+- `apps/web/lib/hooks/useAiStream.test.ts`
+- `apps/web/app/dashboard/AiSummaryCard.tsx`
+- `apps/web/app/dashboard/AiSummaryCard.test.tsx`
+- `apps/web/app/dashboard/DashboardShell.tsx`
+- `packages/shared/src/types/sse.ts`
+
+**New:**
+- `apps/web/app/dashboard/AiSummaryErrorBoundary.tsx`
+
+**Companion docs (always-on):**
+- `apps/api/src/services/aiInterpretation/claudeClient.ts_explained.md`
+- `apps/api/src/services/aiInterpretation/streamHandler.ts_explained.md`
+- `apps/web/lib/hooks/useAiStream.ts_explained.md`
+- `apps/web/app/dashboard/AiSummaryCard.tsx_explained.md`
+- `apps/web/app/dashboard/AiSummaryErrorBoundary.tsx_explained.md`

@@ -33,6 +33,23 @@ vi.mock('../../db/queries/index.js', () => ({
   },
 }));
 
+// mock Anthropic SDK error classes for instanceof checks
+vi.mock('@anthropic-ai/sdk', () => {
+  class APIConnectionError extends Error {}
+  class APIConnectionTimeoutError extends APIConnectionError {}
+
+  return {
+    default: {
+      AuthenticationError: class AuthenticationError extends Error {},
+      BadRequestError: class BadRequestError extends Error {},
+      RateLimitError: class RateLimitError extends Error {},
+      InternalServerError: class InternalServerError extends Error {},
+      APIConnectionError,
+      APIConnectionTimeoutError,
+    },
+  };
+});
+
 function createMockRes() {
   const chunks: string[] = [];
   const headers = new Map<string, string>();
@@ -169,6 +186,7 @@ describe('streamToSSE', () => {
     const errorChunk = chunks.find((c) => c.startsWith('event: error'));
     expect(errorChunk).toBeDefined();
     expect(errorChunk).toContain('STREAM_ERROR');
+    expect(errorChunk).toContain('"retryable":true');
     expect(res.end).toHaveBeenCalled();
   });
 
@@ -177,7 +195,6 @@ describe('streamToSSE', () => {
       async (_prompt: string, onText: (d: string) => void, signal?: AbortSignal) => {
         onText('Some partial ');
         onText('content here');
-        // hang forever — timeout will abort
         return new Promise((_resolve, reject) => {
           signal?.addEventListener('abort', () => reject(new Error('aborted')));
         });
@@ -200,15 +217,61 @@ describe('streamToSSE', () => {
     const doneChunk = chunks.find((c) => c.startsWith('event: done'));
     expect(doneChunk).toBeDefined();
     expect(doneChunk).toContain('"usage":null');
+    expect(doneChunk).toContain('"reason":"timeout"');
     expect(res.end).toHaveBeenCalled();
   });
 
+  it('sends TIMEOUT error on timeout with no text received', async () => {
+    mockStreamInterpretation.mockImplementation(
+      async (_prompt: string, _onText: (d: string) => void, signal?: AbortSignal) => {
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      },
+    );
+
+    const { res, chunks } = createMockRes();
+    const req = createMockReq();
+
+    const { streamToSSE } = await import('./streamHandler.js');
+    const promise = streamToSSE(req, res, 1, 1);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    await promise;
+
+    const errorChunk = chunks.find((c) => c.startsWith('event: error'));
+    expect(errorChunk).toBeDefined();
+    expect(errorChunk).toContain('"code":"TIMEOUT"');
+    expect(errorChunk).toContain('"retryable":true');
+    expect(res.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cache partial results on timeout', async () => {
+    mockStreamInterpretation.mockImplementation(
+      async (_prompt: string, onText: (d: string) => void, signal?: AbortSignal) => {
+        onText('partial');
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      },
+    );
+
+    const { res } = createMockRes();
+    const req = createMockReq();
+
+    const { streamToSSE } = await import('./streamHandler.js');
+    const promise = streamToSSE(req, res, 1, 1);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    await promise;
+
+    expect(mockStoreSummary).not.toHaveBeenCalled();
+  });
+
   it('handles client disconnect gracefully', async () => {
-    let rejectStream: ((err: Error) => void) | undefined;
     mockStreamInterpretation.mockImplementation(
       async (_prompt: string, _cb: (d: string) => void, signal?: AbortSignal) => {
         return new Promise((_resolve, reject) => {
-          rejectStream = reject;
           signal?.addEventListener('abort', () => reject(new Error('aborted')));
         });
       },
@@ -220,13 +283,148 @@ describe('streamToSSE', () => {
     const { streamToSSE } = await import('./streamHandler.js');
     const promise = streamToSSE(req, res, 1, 1);
 
-    // wait for mock to set up, then simulate client disconnect
     await vi.advanceTimersByTimeAsync(100);
     req.triggerClose();
 
     await promise;
 
-    // should NOT send error event on disconnect
     expect(res.write).not.toHaveBeenCalledWith(expect.stringContaining('event: error'));
+  });
+
+  it('sends PIPELINE_ERROR when curation pipeline fails', async () => {
+    mockRunCurationPipeline.mockRejectedValue(new Error('bad data shape'));
+
+    const { res, chunks } = createMockRes();
+    const req = createMockReq();
+
+    const { streamToSSE } = await import('./streamHandler.js');
+    await streamToSSE(req, res, 1, 1);
+
+    const errorChunk = chunks.find((c) => c.startsWith('event: error'));
+    expect(errorChunk).toBeDefined();
+    expect(errorChunk).toContain('"code":"PIPELINE_ERROR"');
+    expect(errorChunk).toContain('"retryable":true');
+    expect(errorChunk).toContain('Something went wrong preparing your analysis');
+    expect(mockStreamInterpretation).not.toHaveBeenCalled();
+    expect(res.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends EMPTY_RESPONSE when Claude returns no text', async () => {
+    mockStreamInterpretation.mockImplementation(
+      async () => ({
+        fullText: '',
+        usage: { inputTokens: 100, outputTokens: 0 },
+      }),
+    );
+
+    const { res, chunks } = createMockRes();
+    const req = createMockReq();
+
+    const { streamToSSE } = await import('./streamHandler.js');
+    await streamToSSE(req, res, 1, 1);
+
+    const errorChunk = chunks.find((c) => c.startsWith('event: error'));
+    expect(errorChunk).toBeDefined();
+    expect(errorChunk).toContain('"code":"EMPTY_RESPONSE"');
+    expect(errorChunk).toContain('"retryable":true');
+    expect(mockStoreSummary).not.toHaveBeenCalled();
+  });
+
+  describe('error type mapping', () => {
+    it.each([
+      ['AuthenticationError', 'AI_AUTH_ERROR', false],
+      ['RateLimitError', 'RATE_LIMITED', false],
+      ['BadRequestError', 'STREAM_ERROR', false],
+      ['InternalServerError', 'AI_UNAVAILABLE', true],
+      ['APIConnectionError', 'AI_UNAVAILABLE', true],
+      ['APIConnectionTimeoutError', 'TIMEOUT', true],
+    ] as const)('maps %s to %s (retryable=%s)', async (errorClass, expectedCode, expectedRetryable) => {
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      const ErrorClass = Anthropic[errorClass] as new (msg: string) => Error;
+      mockStreamInterpretation.mockRejectedValue(new ErrorClass('test'));
+
+      const { res, chunks } = createMockRes();
+      const req = createMockReq();
+
+      const { streamToSSE } = await import('./streamHandler.js');
+      await streamToSSE(req, res, 1, 1);
+
+      const errorChunk = chunks.find((c) => c.startsWith('event: error'));
+      expect(errorChunk).toContain(`"code":"${expectedCode}"`);
+      expect(errorChunk).toContain(`"retryable":${expectedRetryable}`);
+    });
+  });
+
+  it('flushes headers before pipeline runs — all errors are SSE-delivered', async () => {
+    const callOrder: string[] = [];
+    mockRunCurationPipeline.mockImplementation(async () => {
+      callOrder.push('pipeline');
+      throw new Error('pipeline boom');
+    });
+
+    const { res, chunks } = createMockRes();
+    (res.flushHeaders as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      callOrder.push('flushHeaders');
+    });
+    const req = createMockReq();
+
+    const { streamToSSE } = await import('./streamHandler.js');
+    await streamToSSE(req, res, 1, 1);
+
+    expect(callOrder).toEqual(['flushHeaders', 'pipeline']);
+    const errorChunk = chunks.find((c) => c.startsWith('event: error'));
+    expect(errorChunk).toContain('"code":"PIPELINE_ERROR"');
+  });
+
+  it('logs warning but does not throw when storeSummary fails', async () => {
+    mockStreamInterpretation.mockImplementation(
+      async (_prompt: string, onText: (d: string) => void) => {
+        onText('good text');
+        return {
+          fullText: 'good text',
+          usage: { inputTokens: 100, outputTokens: 20 },
+        };
+      },
+    );
+    mockStoreSummary.mockRejectedValue(new Error('DB constraint violation'));
+
+    const { res, chunks } = createMockRes();
+    const req = createMockReq();
+
+    const { streamToSSE } = await import('./streamHandler.js');
+    const result = await streamToSSE(req, res, 1, 1);
+
+    // stream was delivered successfully
+    const doneChunk = chunks.find((c) => c.startsWith('event: done'));
+    expect(doneChunk).toBeDefined();
+    expect(result).toBe(true);
+
+    // verify warning was logged, not an unhandled rejection
+    const { logger } = await import('../../lib/logger.js');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: 'DB constraint violation' }),
+      'failed to cache AI summary — stream already delivered',
+    );
+  });
+
+  it('calls res.end only once on double-end race', async () => {
+    // stream completes just before timeout fires
+    mockStreamInterpretation.mockImplementation(
+      async (_prompt: string, onText: (d: string) => void) => {
+        onText('full text');
+        return {
+          fullText: 'full text',
+          usage: { inputTokens: 100, outputTokens: 20 },
+        };
+      },
+    );
+
+    const { res } = createMockRes();
+    const req = createMockReq();
+
+    const { streamToSSE } = await import('./streamHandler.js');
+    await streamToSSE(req, res, 1, 1);
+
+    expect(res.end).toHaveBeenCalledTimes(1);
   });
 });

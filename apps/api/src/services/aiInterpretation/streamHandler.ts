@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import Anthropic from '@anthropic-ai/sdk';
 import type { SseTextEvent, SseDoneEvent, SseErrorEvent, SsePartialEvent } from 'shared/types';
 
 import { AI_TIMEOUT_MS } from 'shared/constants';
@@ -11,10 +12,27 @@ function writeSseEvent(res: Response, event: string, data: unknown) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-function isRetryable(err: unknown): boolean {
-  if (!(err instanceof Error)) return true;
-  const msg = err.message.toLowerCase();
-  return !msg.includes('authentication') && !msg.includes('bad request') && !msg.includes('validation');
+function mapStreamError(err: unknown): SseErrorEvent {
+  // order matters — APIConnectionTimeoutError extends APIConnectionError
+  if (err instanceof Anthropic.APIConnectionTimeoutError) {
+    return { code: 'TIMEOUT', message: 'The analysis took longer than expected', retryable: true };
+  }
+  if (err instanceof Anthropic.APIConnectionError) {
+    return { code: 'AI_UNAVAILABLE', message: 'AI service is temporarily unavailable', retryable: true };
+  }
+  if (err instanceof Anthropic.InternalServerError) {
+    return { code: 'AI_UNAVAILABLE', message: 'AI service is temporarily unavailable', retryable: true };
+  }
+  if (err instanceof Anthropic.RateLimitError) {
+    return { code: 'RATE_LIMITED', message: 'Too many requests', retryable: false };
+  }
+  if (err instanceof Anthropic.AuthenticationError) {
+    return { code: 'AI_AUTH_ERROR', message: 'AI service configuration error', retryable: false };
+  }
+  if (err instanceof Anthropic.BadRequestError) {
+    return { code: 'STREAM_ERROR', message: 'Something went wrong generating insights', retryable: false };
+  }
+  return { code: 'STREAM_ERROR', message: 'Something went wrong generating insights', retryable: true };
 }
 
 export async function streamToSSE(
@@ -33,6 +51,13 @@ export async function streamToSSE(
   let accumulatedText = '';
   let timedOut = false;
   let clientDisconnected = false;
+  let ended = false;
+
+  function safeEnd() {
+    if (ended) return;
+    ended = true;
+    res.end();
+  }
 
   const timeout = setTimeout(() => {
     timedOut = true;
@@ -45,20 +70,41 @@ export async function streamToSSE(
     clearTimeout(timeout);
   });
 
+  // -- pipeline phase (separate catch for PIPELINE_ERROR) --
+  let prompt: string;
+  let validatedMetadata: ReturnType<typeof transparencyMetadataSchema.parse>;
+  let promptVersion: string;
+
   try {
     const insights = await runCurationPipeline(orgId, datasetId);
-    const { prompt, metadata } = assemblePrompt(insights);
-    const validatedMetadata = transparencyMetadataSchema.parse(metadata);
-
-    logger.info(
-      { orgId, datasetId, promptVersion: metadata.promptVersion },
-      'starting AI summary stream',
+    const { prompt: p, metadata } = assemblePrompt(insights);
+    prompt = p;
+    validatedMetadata = transparencyMetadataSchema.parse(metadata);
+    promptVersion = metadata.promptVersion;
+  } catch (err) {
+    clearTimeout(timeout);
+    if (clientDisconnected) return false;
+    logger.error(
+      { orgId, datasetId, err: (err as Error).message },
+      'curation pipeline failed',
     );
+    writeSseEvent(res, 'error', {
+      code: 'PIPELINE_ERROR',
+      message: 'Something went wrong preparing your analysis',
+      retryable: true,
+    } satisfies SseErrorEvent);
+    safeEnd();
+    return false;
+  }
+
+  // -- stream phase --
+  try {
+    logger.info({ orgId, datasetId, promptVersion }, 'starting AI summary stream');
 
     const result = await streamInterpretation(
       prompt,
       (delta) => {
-        if (clientDisconnected) return false;
+        if (clientDisconnected || ended) return;
         accumulatedText += delta;
         writeSseEvent(res, 'text', { text: delta } satisfies SseTextEvent);
       },
@@ -66,21 +112,38 @@ export async function streamToSSE(
     );
 
     clearTimeout(timeout);
-
     if (clientDisconnected) return false;
 
+    if (!result.fullText) {
+      logger.warn({ orgId, datasetId }, 'Claude returned empty response');
+      writeSseEvent(res, 'error', {
+        code: 'EMPTY_RESPONSE',
+        message: 'AI produced no results',
+        retryable: true,
+      } satisfies SseErrorEvent);
+      safeEnd();
+      return false;
+    }
+
     writeSseEvent(res, 'done', { usage: result.usage } satisfies SseDoneEvent);
-    res.end();
+    safeEnd();
 
-    await aiSummariesQueries.storeSummary(
-      orgId,
-      datasetId,
-      result.fullText,
-      validatedMetadata,
-      metadata.promptVersion,
-    );
+    try {
+      await aiSummariesQueries.storeSummary(
+        orgId,
+        datasetId,
+        result.fullText,
+        validatedMetadata,
+        promptVersion,
+      );
+      logger.info({ orgId, datasetId }, 'AI summary streamed and cached');
+    } catch (cacheErr) {
+      logger.warn(
+        { orgId, datasetId, err: (cacheErr as Error).message },
+        'failed to cache AI summary — stream already delivered',
+      );
+    }
 
-    logger.info({ orgId, datasetId }, 'AI summary streamed and cached');
     return true;
   } catch (err) {
     clearTimeout(timeout);
@@ -90,21 +153,38 @@ export async function streamToSSE(
       return false;
     }
 
-    if (timedOut && accumulatedText) {
-      logger.warn({ orgId, datasetId, partialLength: accumulatedText.length }, 'AI stream timed out — sending partial');
-      writeSseEvent(res, 'partial', { text: accumulatedText } satisfies SsePartialEvent);
-      writeSseEvent(res, 'done', { usage: null } satisfies SseDoneEvent);
-      res.end();
+    if (timedOut) {
+      if (ended) return false;
+
+      if (accumulatedText) {
+        logger.warn(
+          { orgId, datasetId, partialLength: accumulatedText.length },
+          'AI stream timed out — sending partial',
+        );
+        writeSseEvent(res, 'partial', { text: accumulatedText } satisfies SsePartialEvent);
+        writeSseEvent(res, 'done', { usage: null, reason: 'timeout' } satisfies SseDoneEvent);
+      } else {
+        logger.warn({ orgId, datasetId }, 'AI stream timed out — no text received');
+        writeSseEvent(res, 'error', {
+          code: 'TIMEOUT',
+          message: 'AI generation timed out',
+          retryable: true,
+        } satisfies SseErrorEvent);
+      }
+
+      safeEnd();
       return false;
     }
 
-    logger.error({ orgId, datasetId, err: (err as Error).message }, 'AI stream error');
-    writeSseEvent(res, 'error', {
-      code: 'STREAM_ERROR',
-      message: 'AI generation failed',
-      retryable: isRetryable(err),
-    } satisfies SseErrorEvent);
-    res.end();
+    if (ended) return false;
+
+    const mapped = mapStreamError(err);
+    logger.error(
+      { orgId, datasetId, errorCode: mapped.code, err: (err as Error).message },
+      'AI stream error',
+    );
+    writeSseEvent(res, 'error', mapped);
+    safeEnd();
     return false;
   }
 }

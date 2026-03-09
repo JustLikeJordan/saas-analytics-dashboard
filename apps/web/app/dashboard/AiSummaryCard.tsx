@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useAiStream } from '@/lib/hooks/useAiStream';
 import { AiSummarySkeleton } from './AiSummarySkeleton';
@@ -9,6 +9,34 @@ interface AiSummaryCardProps {
   datasetId: number | null;
   cachedContent?: string;
   className?: string;
+}
+
+const ERROR_MESSAGES: Record<string, string> = {
+  TIMEOUT: 'The analysis took longer than expected.',
+  AI_UNAVAILABLE: 'AI service is temporarily unavailable.',
+  RATE_LIMITED: 'Too many requests — please wait a moment.',
+  PIPELINE_ERROR: 'Something went wrong preparing your analysis.',
+  EMPTY_RESPONSE: 'AI produced no results — please try again.',
+  STREAM_ERROR: 'Something went wrong generating insights.',
+};
+
+function userMessage(code: string | null, fallback: string | null): string {
+  if (code && ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
+  return fallback ?? 'Something went wrong generating insights.';
+}
+
+function RetrySpinner() {
+  return (
+    <svg
+      className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
 }
 
 function StreamingCursor() {
@@ -61,23 +89,27 @@ function PostCompletionFooter() {
 
 export function AiSummaryCard({ datasetId, cachedContent, className }: AiSummaryCardProps) {
   const hasCached = !!cachedContent && !datasetId;
-  const { status, text, error, start } = useAiStream(hasCached ? null : datasetId);
+  const { status, text, error, code, retryable, maxRetriesReached, retry } =
+    useAiStream(hasCached ? null : datasetId);
   const completedRef = useRef(false);
+  const [retryPending, setRetryPending] = useState(false);
 
-  // backend fires AI_SUMMARY_COMPLETED — client-side trackEvent
-  // will be added when web analytics infra lands (Epic 7)
   useEffect(() => {
     if (status === 'done' && !completedRef.current) {
       completedRef.current = true;
     }
   }, [status]);
 
-  // reset analytics flag when datasetId changes
   useEffect(() => {
     completedRef.current = false;
+    setRetryPending(false);
   }, [datasetId]);
 
-  // cached content from RSC — no streaming needed
+  useEffect(() => {
+    if (status !== 'error') setRetryPending(false);
+  }, [status]);
+
+  // cached content from RSC
   if (hasCached) {
     return (
       <div
@@ -94,7 +126,7 @@ export function AiSummaryCard({ datasetId, cachedContent, className }: AiSummary
     );
   }
 
-  if (status === 'idle') return null;
+  if (status === 'idle' || status === 'free_preview') return null;
 
   if (status === 'connecting') {
     return (
@@ -103,6 +135,28 @@ export function AiSummaryCard({ datasetId, cachedContent, className }: AiSummary
         <p className="mt-2 text-sm text-muted-foreground animate-fade-in">
           Analyzing your data...
         </p>
+      </div>
+    );
+  }
+
+  if (status === 'timeout') {
+    return (
+      <div
+        className={cn(
+          'rounded-lg border border-border border-l-4 border-l-primary bg-card p-4 shadow-md md:p-6',
+          className,
+        )}
+        role="region"
+        aria-label="AI business summary"
+      >
+        <div aria-live="polite">
+          <SummaryText text={text} />
+        </div>
+        <hr className="my-4 border-muted" />
+        <p className="text-sm italic text-muted-foreground">
+          We focused on the most important findings to keep things quick.
+        </p>
+        <PostCompletionFooter />
       </div>
     );
   }
@@ -117,14 +171,33 @@ export function AiSummaryCard({ datasetId, cachedContent, className }: AiSummary
         role="region"
         aria-label="AI business summary"
       >
-        <p className="text-sm text-destructive">{error ?? 'Something went wrong'}</p>
-        <button
-          type="button"
-          onClick={() => start()}
-          className="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          Retry
-        </button>
+        <div aria-live="assertive">
+          <p className="text-sm font-medium text-destructive">
+            {userMessage(code, error)}
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your data and charts are still available below.
+          </p>
+        </div>
+        {retryable && !maxRetriesReached && (
+          <button
+            type="button"
+            disabled={retryPending}
+            onClick={() => {
+              setRetryPending(true);
+              retry();
+            }}
+            className="mt-3 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          >
+            {retryPending && <RetrySpinner />}
+            {retryPending ? 'Retrying...' : 'Try again'}
+          </button>
+        )}
+        {retryable && maxRetriesReached && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Please try again later.
+          </p>
+        )}
       </div>
     );
   }

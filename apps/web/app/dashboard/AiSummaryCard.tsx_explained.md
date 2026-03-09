@@ -2,113 +2,127 @@
 
 ## 1. Elevator Pitch
 
-The AiSummaryCard is a React client component that renders AI-generated business summaries with 6 distinct visual states: idle (invisible), connecting (skeleton loader), streaming (progressive text with blinking cursor), done (full text with action buttons), error (with retry), and cached (instant display for anonymous visitors). It handles accessibility, reduced motion preferences, and responsive typography.
+The AiSummaryCard is a React client component that renders AI-generated business summaries with 8 distinct visual states: idle (invisible), connecting (skeleton loader), streaming (progressive text with blinking cursor), done (full text with footer), timeout (partial text with "we focused on the key findings" message), error (classified message with conditional retry), free_preview (placeholder for paywall), and cached (instant display for anonymous visitors). It maps error codes to user-friendly messages, caps retries at 3, and uses different `aria-live` politeness levels for different failure severity.
 
-**How to say it in an interview:** "I built the AI summary card that handles real-time streaming display with a state-driven architecture. It renders differently based on the hook's state — progressive text with a cursor during streaming, a skeleton while connecting, error recovery with retry, and instant display for cached content. It's accessible with ARIA live regions and respects `prefers-reduced-motion`."
+**How to say it in an interview:** "I built the AI summary card with a state-driven architecture that handles 8 rendering states, including graceful timeout with partial content delivery and classified error handling. Error codes from the SSE stream get mapped to user-friendly messages, retry is capped at 3 attempts, and accessibility is handled with different aria-live politeness levels — polite for normal updates, assertive for errors."
 
 ## 2. Why This Approach
 
-**State-driven rendering over imperative DOM manipulation.** Instead of show/hide logic or CSS transitions between states, the component branches on `status`. Each state returns a completely self-contained JSX tree. No `display: none`, no conditional classes — just "if connecting, render skeleton; if streaming, render text + cursor." This makes it impossible to accidentally show a cursor in the done state or show error text during streaming.
+**State-driven rendering over imperative DOM manipulation.** Instead of show/hide logic or CSS transitions between states, the component branches on `status`. Each state returns a completely self-contained JSX tree. No `display: none`, no conditional classes — just "if timeout, render partial text + message; if error, render error card."
 
-**Cached content as a separate code path.** Anonymous visitors see seed data summaries from the server (passed as `cachedContent` prop). Rather than faking a "completed stream" by dispatching actions, the component short-circuits entirely — `hasCached` skips the hook and renders static text. This avoids unnecessary fetch calls for users who can't stream anyway (no JWT).
+**ERROR_MESSAGES record for code-based message mapping.** The server sends structured error codes (`RATE_LIMITED`, `AI_UNAVAILABLE`, `PIPELINE_ERROR`, etc.), but users shouldn't see those. The `ERROR_MESSAGES` record maps each code to a sentence a non-technical person can understand. The `userMessage()` helper falls back to the raw error string if the code isn't recognized — defensive but practical.
 
-**`useRef` for analytics deduplication.** The completion analytics event should fire exactly once per stream. Without the ref, changing `status` to `done` could fire the effect multiple times (React 18 strict mode double-invokes effects). The `completedRef` boolean gates the side effect. It resets when `datasetId` changes — a new dataset means a new stream, a new completion event.
+**How to say it in an interview:** "Error codes from the API get mapped to user-friendly messages via a lookup record. The fallback is the raw error string, so new error codes degrade gracefully without a code change."
 
-**Composition over configuration.** `StreamingCursor`, `SummaryText`, and `PostCompletionFooter` are small, focused components rather than configuration props on a monolithic card. Each owns its own styling and behavior. Adding the transparency panel (Story 3.6) means adding a new component in the footer, not threading props through the card.
+**Timeout framed as intentional curation.** The UX spec explicitly says timeout should feel like "we focused on what matters" rather than "something broke." The italic message — "We focused on the most important findings to keep things quick" — reframes a 15-second timeout as a deliberate editorial choice. The partial text still gets the full card treatment (border, footer, "Powered by AI").
+
+**How to say it in an interview:** "We frame timeout as intentional curation rather than failure. The user sees their partial summary with a message that positions the truncation positively. It's a UX decision — the same technical event (timeout) gets very different emotional treatment depending on how you present it."
+
+**Conditional retry with max cap.** The retry button only shows when `retryable && !maxRetriesReached`. After 3 retries, it's replaced by "Please try again later." — the user knows the system tried but needs time. This prevents infinite retry loops while keeping the UI honest about what's happening.
+
+**Cached content as a separate code path.** Anonymous visitors see seed data summaries from the server (passed as `cachedContent` prop). Rather than faking a "completed stream" by dispatching actions, the component short-circuits — `hasCached` causes the hook to receive `null`, keeping it idle. No fetch, no AbortController, no cleanup.
+
+**Composition over configuration.** `StreamingCursor`, `SummaryText`, and `PostCompletionFooter` are small, focused components rather than configuration props on a monolithic card. Each owns its own styling. Adding the transparency panel (Story 3.6) means adding a new component in the footer, not threading props through the card.
 
 ## 3. Code Walkthrough
 
-### StreamingCursor (lines 14-23)
+### ERROR_MESSAGES and userMessage (lines 14-26)
 
-```typescript
-function StreamingCursor() {
-  return (
-    <span className="animate-blink motion-reduce:animate-none" aria-hidden="true">
-      ▋
-    </span>
-  );
-}
-```
+A `Record<string, string>` mapping error codes to human-readable messages. Six entries covering every code the server can send. `userMessage()` checks the record first, falls back to the raw error string, and has a final fallback for null errors. Three levels of defense against showing technical garbage to users.
 
-The `▋` character (lower half block) is a common terminal cursor representation. `animate-blink` is a custom CSS animation defined in `globals.css` — 530ms on/off cycle using `step-end` timing. `motion-reduce:animate-none` respects the `prefers-reduced-motion` media query. `aria-hidden="true"` keeps the cursor character out of screen reader announcements.
+### StreamingCursor (lines 28-37)
 
-### SummaryText (lines 25-35)
+The `▋` character (lower half block) with `animate-blink` (530ms on/off, `step-end` timing). `motion-reduce:animate-none` respects `prefers-reduced-motion`. `aria-hidden="true"` hides it from screen readers.
 
-Splits the AI response on double newlines (`\n\n`) to create paragraphs. The `filter(Boolean)` removes empty strings from consecutive newlines. Typography classes set `max-w-prose` (65ch width), responsive font sizes (16px mobile, 17px desktop), and paragraph spacing via `[&>p+p]:mt-[1.5em]` — the adjacent-sibling selector scoped to the component.
+### SummaryText (lines 39-49)
 
-### PostCompletionFooter (lines 37-60)
+Splits on double newlines to create paragraphs. `filter(Boolean)` removes empties. `max-w-prose` (65ch), responsive sizes (16px→17px), paragraph spacing via `[&>p+p]:mt-[1.5em]`.
 
-Fades in after streaming completes via `animate-fade-in`. Contains three elements: "Powered by AI" label, "How I reached this conclusion" button (placeholder for Story 3.6 transparency panel), and a "Share" button (placeholder for Story 4.1). Both buttons are `disabled` — they're UI scaffolding that will be wired up in later stories.
+### PostCompletionFooter (lines 51-74)
 
-### AiSummaryCard (lines 62-153)
+"Powered by AI" label, "How I reached this conclusion" button (placeholder for Story 3.6), "Share" button (placeholder for Story 4.1). Both buttons `disabled`. Fades in via `animate-fade-in`.
 
-The main component. The rendering logic:
+### AiSummaryCard — main component (lines 76-202)
 
-**Cached path (79-94).** If `cachedContent` exists and there's no `datasetId` to stream from, render the text immediately with the full card chrome (border, shadow, footer). No hook involvement at all.
+**Cached path (93-107).** If `cachedContent` exists and no `datasetId`, render static text with full card chrome. Hook receives `null` → stays idle.
 
-**Idle (96).** Return `null`. The card is invisible until streaming starts or cached content is available.
+**Idle and free_preview (109).** Return `null`. `free_preview` is a placeholder for Story 3.5's paywall gate — the hook will signal this status when a free-tier user's subscription doesn't cover AI summaries.
 
-**Connecting (98-107).** Render `AiSummarySkeleton` (reused from an earlier story) with an "Analyzing your data..." label. The label fades in with `animate-fade-in`.
+**Connecting (111-120).** Skeleton + "Analyzing your data..." label.
 
-**Error (109-129).** Red left border (`border-l-destructive`), error message, and a retry button that calls `start()` from the hook. The retry re-triggers the full fetch cycle.
+**Timeout (122-142).** Partial text in the normal card chrome (primary left accent), then an `<hr>` divider, then an italic message about focusing on key findings. Gets `PostCompletionFooter` — the partial content is complete enough to attribute. `aria-live="polite"` because this is informational, not urgent.
 
-**Streaming and Done (131-152).** Same container, different details. Both render `SummaryText`. During streaming, `aria-busy={true}` and the cursor is visible. On done, `aria-busy={false}`, cursor gone, `PostCompletionFooter` fades in.
+**Error (144-178).** Destructive left accent (`border-l-destructive`). Message comes from `userMessage(code, error)`. Reassurance: "Your data and charts are still available below." — tells the user the AI failure doesn't affect their data. Retry button conditional on `retryable && !maxRetriesReached`. After max retries: "Please try again later." `aria-live="assertive"` — errors should interrupt the screen reader immediately.
 
-The `transition-opacity duration-150` on the container provides a subtle crossfade when the status changes, avoiding jarring visual jumps.
+**Streaming and Done (180-201).** Same container, different details. Streaming gets cursor + `aria-busy={true}`. Done gets `PostCompletionFooter` + `aria-busy={false}`. The `transition-opacity duration-150` smooths the transition.
 
-### Analytics effects (67-77)
+### Analytics effects (82-91)
 
-Two `useEffect` hooks:
-1. When `status` transitions to `done` and the ref hasn't fired yet, mark as completed. This is where you'd call `trackEvent()` — currently just sets the flag (the actual analytics call is wired in the backend's `AI_SUMMARY_COMPLETED` event).
-2. When `datasetId` changes, reset the ref. New dataset = new stream = new completion event.
+Two `useEffect` hooks: one marks completion (gates future analytics), the other resets the flag when `datasetId` changes.
 
 ## 4. Complexity and Trade-offs
 
-**Component size.** At ~150 lines, this component is bigger than most in the codebase. It could be split into `AiSummaryCardStreaming`, `AiSummaryCardCached`, etc. — but the branching logic is the interesting part, and splitting it would scatter the state machine across files. The current structure makes it easy to see all states in one place.
+**Component size.** At ~200 lines with 8 states, this is one of the larger components. Each state is a self-contained JSX block — splitting into separate components (AiSummaryTimeout, AiSummaryError, etc.) would scatter the state machine across files. Keeping it together makes the rendering logic easy to audit.
 
-**No error retry limit.** The retry button calls `start()` with no counter. A user could hammer retry indefinitely. Story 3.4 adds proper retry logic with exponential backoff and a max-attempts cap. For now, the hook already has `cancel()` to prevent concurrent streams.
+**Key on `i` for paragraphs.** `SummaryText` uses array index as the React key. Normally a red flag, but these paragraphs are static after rendering — no reordering, inserting, or deleting. Index keys are fine for static lists.
 
-**Key on `i` for paragraphs.** The `SummaryText` component uses array index as the React key for paragraphs. Normally this is a red flag, but these paragraphs are static after rendering — they never reorder, insert, or delete. Index keys are fine for static lists.
+**`userMessage` could miss new codes.** If the server adds a new error code, `userMessage` falls back to the raw error string. It won't crash, but the message might be technical. The tradeoff: updating `ERROR_MESSAGES` requires a frontend deploy, but it's a one-line addition.
+
+**How to say it in an interview:** "Each error state has a specific message, retry behavior, and accessibility treatment. The timeout state intentionally looks like success — partial text with a positive reframing — while the error state uses a destructive visual style with assertive aria-live. Same component, different emotional design based on what the user can do about it."
 
 ## 5. Patterns Worth Knowing
 
-**`role="region"` + `aria-label`.** This creates a landmark region that screen readers can navigate to directly. "AI business summary" tells the user what's in this region without having to read through it. Combined with `aria-live="polite"`, new text content is announced after the screen reader finishes its current speech — not interrupting, just queuing.
+**`role="region"` + `aria-label`.** Creates a landmark region screen readers can jump to. "AI business summary" identifies the content without reading through it. Combined with `aria-live`, updates get announced automatically.
 
-**`aria-busy` during streaming.** When `aria-busy={true}`, screen readers know the region is changing and may wait to announce content until it stabilizes. When streaming finishes and `aria-busy` flips to `false`, the full content is announced. Without this, a screen reader would try to announce every text chunk — overwhelming for the user.
+**How to say it in an interview:** "The AI card is an ARIA landmark region with appropriate live-region semantics. Screen readers can navigate directly to it, and content updates are announced automatically based on severity — polite for streaming, assertive for errors."
 
-**`motion-reduce:` Tailwind prefix.** Maps to `@media (prefers-reduced-motion: reduce)`. People with vestibular disorders or seizure conditions use this OS setting. The cursor still renders (it's informational), but the animation stops. This is one line of CSS with a big accessibility impact.
+**`aria-live` politeness levels.** `polite` waits for a pause in speech before announcing. `assertive` interrupts immediately. The component uses `polite` for streaming/timeout (informational) and `assertive` for errors (urgent). This is a deliberate UX decision — not all updates are equally important.
 
-**`satisfies` for prop destructuring.** Not used here but relevant — the component uses TypeScript interface for props, which gives better error messages than inline types. The interface is short enough to live in the same file.
+**`aria-busy` during streaming.** Tells screen readers the region is updating — they may wait to announce content until `aria-busy` flips to `false`. Prevents a torrent of announcements during streaming.
+
+**`motion-reduce:` Tailwind prefix.** Maps to `@media (prefers-reduced-motion: reduce)`. The cursor still renders but the animation stops. One line of CSS, big accessibility impact.
+
+**Error code lookup table.** The `ERROR_MESSAGES` record is a simple pattern for decoupling error codes from display text. The server sends machine-readable codes, the client translates. If you need localization later, you swap the record with an i18n lookup.
 
 ## 6. Interview Questions
 
-**Q: How does the component handle the transition from streaming to done without a visual flicker?**
-A: The same container is rendered for both states — only the inner content changes (cursor disappears, footer fades in). The `transition-opacity duration-150` on the container smooths any re-render artifacts. React reconciles the same JSX structure, so the DOM node persists — no unmount/remount.
-Red flag: "I'd add a loading spinner between states."
+**Q: Why use `aria-live="assertive"` for errors but `"polite"` for streaming?**
+A: Streaming text is informational — interrupting the screen reader for every chunk would be overwhelming. Errors are urgent — the user needs to know immediately that something failed and whether they can retry. The politeness level maps to urgency, not technical severity.
+*Red flag:* "Just use assertive for everything." That makes every text chunk interrupt the user.
 
-**Q: Why is `cachedContent` a separate code path instead of initializing the hook's state?**
-A: Two reasons. First, the cached path doesn't need the hook at all — no `fetch`, no `AbortController`, no cleanup. Initializing the hook with cached content would still create an effect and a ref for nothing. Second, the cached path is for anonymous visitors who don't have a JWT. The hook would try to fetch and get a 401. Short-circuiting avoids that entirely.
-Red flag: "I'd dispatch a CACHE_HIT action in a useEffect."
+**Q: Why frame timeout differently from error?**
+A: Timeout with partial text isn't a failure from the user's perspective — they have useful content. Showing a red error card would alarm them unnecessarily. The timeout state uses the same card styling as success (primary border, footer) with an explanatory message. Error states use destructive styling because the user got nothing useful.
+*Red flag:* "Timeout is just another error." It's not — the user has partial content they can act on.
 
-**Q: What accessibility issues would this component have without the ARIA attributes?**
-A: Screen readers wouldn't know this is a distinct region (no landmark navigation). During streaming, every text chunk would be announced immediately, creating a torrent of speech. The cursor character would be read as "lower half block" on every render. And without `aria-busy`, there's no signal to wait for content to stabilize.
+**Q: How would you add localization to the error messages?**
+A: Replace the `ERROR_MESSAGES` record with an i18n key lookup. The server already sends machine-readable codes (`RATE_LIMITED`, `AI_UNAVAILABLE`), so the translation layer maps `error.RATE_LIMITED` → localized string. No server changes needed.
 
-**Q: Why use `useRef` instead of `useState` for the analytics completion flag?**
-A: The flag doesn't affect rendering — it's purely a side-effect guard. Using `useState` would trigger a re-render when the flag changes, which triggers the effect again, creating unnecessary work. Refs are the right tool for values that change but don't need to re-render.
+**Q: Why does `cachedContent` bypass the hook instead of dispatching CACHE_HIT?**
+A: Two reasons. First, the cached path doesn't need fetch, AbortController, or cleanup. Second, cached content is for anonymous visitors without a JWT — the hook would try to fetch and get a 401. Short-circuiting avoids that entirely.
+*Red flag:* "I'd dispatch CACHE_HIT in a useEffect."
 
-**Q: How would you test the reduced-motion behavior?**
-A: In the unit test, we query for the cursor element and check its class includes `motion-reduce:animate-none`. We don't need to mock the media query — we're verifying the class is present, and Tailwind's responsive prefixes are applied via CSS (not JS). The actual animation behavior is a browser concern, not a React concern.
+**Q: What happens when maxRetriesReached is true but retryable is also true?**
+A: The retry button disappears and "Please try again later." shows instead. The error message still displays. The user knows the system tried (3 times) but needs time to recover. They can always refresh the page for a fresh start (which resets retryCount via a new hook instance).
+
+**Q: How do you test the reduced-motion behavior?**
+A: Query for the cursor element and check its class includes `motion-reduce:animate-none`. We verify the class is present — the actual animation is a browser concern, not testable in jsdom.
 
 ## 7. Data Structures
 
-**Props interface:** `{ datasetId: number | null, cachedContent?: string, className?: string }`. The `datasetId` drives the hook — `null` means "don't stream." `cachedContent` is the server-fetched summary for anonymous visitors. `className` allows the parent to add margin/spacing.
+**Props interface:** `{ datasetId: number | null, cachedContent?: string, className?: string }`. `datasetId` drives the hook — `null` means "don't stream." `cachedContent` is the server-fetched summary for anonymous visitors.
 
-**Hook return:** `{ status, text, error, start, cancel }`. The component reads `status` to branch rendering, `text` for the summary content, `error` for the error message, and `start` for the retry button. `cancel` isn't used directly but runs on unmount via the hook's effect cleanup.
+**Hook return (destructured):** `{ status, text, error, code, retryable, maxRetriesReached, retry }`. The component reads `status` for branching, `text` for content, `error`/`code` for messages, `retryable`/`maxRetriesReached` for button visibility, and `retry` for the button handler.
+
+**ERROR_MESSAGES:** A `Record<string, string>` — O(1) lookup by error code. Six entries. Falls back gracefully for unknown codes.
 
 ## 8. Impress the Interviewer
 
-**The dual rendering path.** Point out that the component handles two fundamentally different flows — server-cached content for anonymous visitors and client-streamed content for authenticated users — without conditional hook calls (which would violate Rules of Hooks). The `hasCached` check happens before the JSX branches, and `useAiStream` is always called but receives `null` when cached content is present, causing it to stay idle.
+**The emotional design of failure states.** Timeout and error look completely different to the user despite being similar technically. Timeout uses the success card (primary accent, footer, reassuring message). Error uses destructive styling with assertive aria-live. This shows you think about how technical states map to user emotions — a timeout with content feels like a win, an error feels like a problem.
 
-**Progressive enhancement mindset.** Anonymous visitors get instant cached content. Authenticated users get real-time streaming. Users with slow connections see a skeleton. Users who lose connection see an error with retry. Users with vestibular disorders see a static cursor. Each layer degrades gracefully. Mention this as a design philosophy, not a checklist.
+**How to bring it up:** "I designed timeout and error states with different emotional treatments. Timeout shows partial content positively — 'we focused on what matters.' Errors are visually distinct with a destructive accent and assertive screen reader announcement. The technical distinction drives different user experiences."
 
-**Component composition for future extensibility.** The footer has placeholder buttons for sharing (Story 4.1) and transparency (Story 3.6). Rather than adding props like `showShareButton` or `onTransparencyClick`, each feature gets its own component slotted into the footer. This keeps the card's interface stable as features are added — new stories don't change `AiSummaryCard`'s props.
+**The dual rendering path.** The component handles server-cached content and client-streamed content without conditional hook calls (which would violate Rules of Hooks). `useAiStream` always runs but receives `null` when cached, causing it to idle. Mention this as a subtlety — many developers would try to conditionally call the hook.
+
+**Progressive degradation ladder.** Anonymous → cached instant display. Authenticated → streaming. Slow API → partial + positive reframe. Transient error → retry button. Persistent error → "try again later." Render crash → error boundary. Reduced motion → static cursor. Each layer degrades gracefully without the user feeling abandoned.
+
+**How to bring it up:** "The card has 6 levels of degradation, from instant cached display down to error boundary fallback. Each level gives the user something appropriate — partial content, a retry option, or at minimum a reassurance that their data is still available."

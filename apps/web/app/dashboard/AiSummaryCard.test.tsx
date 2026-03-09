@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { AiSummaryCard } from './AiSummaryCard';
+import { AiSummaryErrorBoundary } from './AiSummaryErrorBoundary';
 
 const mockUseAiStream = vi.fn();
 
@@ -10,102 +11,216 @@ vi.mock('@/lib/hooks/useAiStream', () => ({
 
 afterEach(cleanup);
 
+function defaultHookReturn(overrides = {}) {
+  return {
+    status: 'idle',
+    text: '',
+    error: null,
+    code: null,
+    retryable: false,
+    retryCount: 0,
+    maxRetriesReached: false,
+    start: vi.fn(),
+    cancel: vi.fn(),
+    retry: vi.fn(),
+    ...overrides,
+  };
+}
+
 describe('AiSummaryCard', () => {
   it('renders nothing when idle and no cached content', () => {
-    mockUseAiStream.mockReturnValue({
-      status: 'idle',
-      text: '',
-      error: null,
-      start: vi.fn(),
-      cancel: vi.fn(),
-    });
+    mockUseAiStream.mockReturnValue(defaultHookReturn());
 
     const { container } = render(<AiSummaryCard datasetId={null} />);
     expect(container.firstChild).toBeNull();
   });
 
   it('renders cached content immediately without streaming', () => {
-    mockUseAiStream.mockReturnValue({
-      status: 'idle',
-      text: '',
-      error: null,
-      start: vi.fn(),
-      cancel: vi.fn(),
-    });
+    mockUseAiStream.mockReturnValue(defaultHookReturn());
 
     render(<AiSummaryCard datasetId={null} cachedContent="Pre-generated summary" />);
     expect(screen.getByText('Pre-generated summary')).toBeTruthy();
-    // should call useAiStream with null to prevent streaming
     expect(mockUseAiStream).toHaveBeenCalledWith(null);
   });
 
   it('shows skeleton with analyzing label when connecting', () => {
-    mockUseAiStream.mockReturnValue({
-      status: 'connecting',
-      text: '',
-      error: null,
-      start: vi.fn(),
-      cancel: vi.fn(),
-    });
+    mockUseAiStream.mockReturnValue(defaultHookReturn({ status: 'connecting' }));
 
     render(<AiSummaryCard datasetId={42} />);
     expect(screen.getByText('Analyzing your data...')).toBeTruthy();
   });
 
   it('shows streaming text with cursor', () => {
-    mockUseAiStream.mockReturnValue({
-      status: 'streaming',
-      text: 'Revenue is growing',
-      error: null,
-      start: vi.fn(),
-      cancel: vi.fn(),
-    });
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'streaming', text: 'Revenue is growing' }),
+    );
 
     render(<AiSummaryCard datasetId={42} />);
     expect(screen.getByText('Revenue is growing')).toBeTruthy();
-    // cursor character
     expect(screen.getByText('▋')).toBeTruthy();
   });
 
   it('shows completed text with post-completion footer', () => {
-    mockUseAiStream.mockReturnValue({
-      status: 'done',
-      text: 'Full analysis complete.',
-      error: null,
-      start: vi.fn(),
-      cancel: vi.fn(),
-    });
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'done', text: 'Full analysis complete.' }),
+    );
 
     render(<AiSummaryCard datasetId={42} />);
     expect(screen.getByText('Full analysis complete.')).toBeTruthy();
     expect(screen.getByText('Powered by AI')).toBeTruthy();
-    // cursor should NOT be present
     expect(screen.queryByText('▋')).toBeNull();
   });
 
-  it('shows error state with retry button', () => {
-    const mockStart = vi.fn();
-    mockUseAiStream.mockReturnValue({
-      status: 'error',
-      text: '',
-      error: 'AI generation failed',
-      start: mockStart,
-      cancel: vi.fn(),
-    });
+  // -- timeout state --
+
+  it('renders partial text with timeout message', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'timeout', text: 'Partial analysis here' }),
+    );
 
     render(<AiSummaryCard datasetId={42} />);
-    expect(screen.getByText('AI generation failed')).toBeTruthy();
-    expect(screen.getByText('Retry')).toBeTruthy();
+    expect(screen.getByText('Partial analysis here')).toBeTruthy();
+    expect(
+      screen.getByText('We focused on the most important findings to keep things quick.'),
+    ).toBeTruthy();
   });
 
-  it('has correct accessibility attributes during streaming', () => {
-    mockUseAiStream.mockReturnValue({
-      status: 'streaming',
-      text: 'Partial text',
-      error: null,
-      start: vi.fn(),
-      cancel: vi.fn(),
+  it('renders post-completion footer in timeout state', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'timeout', text: 'partial' }),
+    );
+
+    render(<AiSummaryCard datasetId={42} />);
+    expect(screen.getByText('Powered by AI')).toBeTruthy();
+  });
+
+  it('renders hr divider in timeout state', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'timeout', text: 'partial' }),
+    );
+
+    const { container } = render(<AiSummaryCard datasetId={42} />);
+    expect(container.querySelector('hr')).toBeTruthy();
+  });
+
+  // -- error state --
+
+  it('shows error state with Try again button when retryable', () => {
+    const mockRetry = vi.fn();
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({
+        status: 'error',
+        error: 'AI service is temporarily unavailable.',
+        code: 'AI_UNAVAILABLE',
+        retryable: true,
+        retry: mockRetry,
+      }),
+    );
+
+    render(<AiSummaryCard datasetId={42} />);
+    expect(screen.getByText('AI service is temporarily unavailable.')).toBeTruthy();
+    expect(screen.getByText('Try again')).toBeTruthy();
+  });
+
+  it('shows user-friendly message based on error code', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({
+        status: 'error',
+        error: 'raw error',
+        code: 'RATE_LIMITED',
+        retryable: false,
+      }),
+    );
+
+    render(<AiSummaryCard datasetId={42} />);
+    expect(screen.getByText(/Too many requests/)).toBeTruthy();
+  });
+
+  it('hides retry button when not retryable', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({
+        status: 'error',
+        error: 'auth fail',
+        code: 'AI_AUTH_ERROR',
+        retryable: false,
+      }),
+    );
+
+    render(<AiSummaryCard datasetId={42} />);
+    expect(screen.queryByText('Try again')).toBeNull();
+  });
+
+  it('shows "Please try again later" when max retries reached', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({
+        status: 'error',
+        error: 'fail',
+        code: 'AI_UNAVAILABLE',
+        retryable: true,
+        retryCount: 3,
+        maxRetriesReached: true,
+      }),
+    );
+
+    render(<AiSummaryCard datasetId={42} />);
+    expect(screen.queryByText('Try again')).toBeNull();
+    expect(screen.getByText('Please try again later.')).toBeTruthy();
+  });
+
+  it('shows spinner and disables button when retry is pending', () => {
+    const mockRetry = vi.fn();
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({
+        status: 'error',
+        error: 'fail',
+        code: 'AI_UNAVAILABLE',
+        retryable: true,
+        retry: mockRetry,
+      }),
+    );
+
+    const { container } = render(<AiSummaryCard datasetId={42} />);
+    const button = screen.getByRole('button', { name: 'Try again' });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+
+    act(() => {
+      fireEvent.click(button);
     });
+
+    expect(mockRetry).toHaveBeenCalled();
+    expect(screen.getByText('Retrying...')).toBeTruthy();
+    expect(container.querySelector('svg.animate-spin')).toBeTruthy();
+    expect((screen.getByRole('button', { name: /Retrying/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows reassurance message in error state', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({
+        status: 'error',
+        error: 'fail',
+        retryable: true,
+      }),
+    );
+
+    render(<AiSummaryCard datasetId={42} />);
+    expect(screen.getByText('Your data and charts are still available below.')).toBeTruthy();
+  });
+
+  // -- free_preview --
+
+  it('renders nothing for free_preview status', () => {
+    mockUseAiStream.mockReturnValue(defaultHookReturn({ status: 'free_preview' }));
+
+    const { container } = render(<AiSummaryCard datasetId={42} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  // -- accessibility --
+
+  it('has correct accessibility attributes during streaming', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'streaming', text: 'Partial text' }),
+    );
 
     render(<AiSummaryCard datasetId={42} />);
 
@@ -118,13 +233,9 @@ describe('AiSummaryCard', () => {
   });
 
   it('sets aria-busy false when done', () => {
-    mockUseAiStream.mockReturnValue({
-      status: 'done',
-      text: 'Done text',
-      error: null,
-      start: vi.fn(),
-      cancel: vi.fn(),
-    });
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'done', text: 'Done text' }),
+    );
 
     render(<AiSummaryCard datasetId={42} />);
 
@@ -133,14 +244,79 @@ describe('AiSummaryCard', () => {
     expect(liveRegion!.getAttribute('aria-busy')).toBe('false');
   });
 
-  it('renders streaming cursor with reduced-motion class', () => {
-    mockUseAiStream.mockReturnValue({
-      status: 'streaming',
-      text: 'text',
-      error: null,
-      start: vi.fn(),
-      cancel: vi.fn(),
+  it('uses aria-live assertive on error state', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({
+        status: 'error',
+        error: 'fail',
+        retryable: true,
+      }),
+    );
+
+    render(<AiSummaryCard datasetId={42} />);
+
+    const region = screen.getByRole('region', { name: 'AI business summary' });
+    const assertiveRegion = region.querySelector('[aria-live="assertive"]');
+    expect(assertiveRegion).toBeTruthy();
+  });
+
+  // -- error boundary --
+
+  it('error boundary catches render errors and shows fallback', () => {
+    function Thrower(): JSX.Element {
+      throw new Error('render crash');
+    }
+
+    // suppress React error boundary console noise
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(
+      <AiSummaryErrorBoundary className="mb-6">
+        <Thrower />
+      </AiSummaryErrorBoundary>,
+    );
+
+    expect(screen.getByText('Something went wrong generating insights.')).toBeTruthy();
+    expect(screen.getByText('Your data and charts are still available below.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+
+    spy.mockRestore();
+  });
+
+  it('error boundary resets and re-renders children on Try again', () => {
+    let shouldThrow = true;
+    function MaybeThrower() {
+      if (shouldThrow) throw new Error('boom');
+      return <p>recovered</p>;
+    }
+
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(
+      <AiSummaryErrorBoundary>
+        <MaybeThrower />
+      </AiSummaryErrorBoundary>,
+    );
+
+    expect(screen.getByText('Something went wrong generating insights.')).toBeTruthy();
+
+    shouldThrow = false;
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     });
+
+    expect(screen.getByText('recovered')).toBeTruthy();
+    expect(screen.queryByText('Something went wrong generating insights.')).toBeNull();
+
+    spy.mockRestore();
+  });
+
+  // -- reduced motion --
+
+  it('renders streaming cursor with reduced-motion class', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'streaming', text: 'text' }),
+    );
 
     const { container } = render(<AiSummaryCard datasetId={42} />);
     const cursor = container.querySelector('[aria-hidden="true"]');

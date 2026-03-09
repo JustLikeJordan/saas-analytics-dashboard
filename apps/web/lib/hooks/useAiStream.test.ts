@@ -1,55 +1,152 @@
 import { describe, it, expect } from 'vitest';
-import { streamReducer, type StreamState, type StreamAction } from './useAiStream';
+import { streamReducer, type StreamState } from './useAiStream';
 
-const idle: StreamState = { status: 'idle', text: '', error: null };
+const idle: StreamState = {
+  status: 'idle',
+  text: '',
+  error: null,
+  code: null,
+  retryable: false,
+  retryCount: 0,
+};
 
 describe('streamReducer', () => {
   it('START transitions from idle to connecting', () => {
     const next = streamReducer(idle, { type: 'START' });
-    expect(next).toEqual({ status: 'connecting', text: '', error: null });
+    expect(next.status).toBe('connecting');
+    expect(next.text).toBe('');
+    expect(next.error).toBeNull();
+    expect(next.retryCount).toBe(0);
+  });
+
+  it('START with isRetry increments retryCount', () => {
+    const error: StreamState = { ...idle, status: 'error', retryCount: 1 };
+    const next = streamReducer(error, { type: 'START', isRetry: true });
+    expect(next.status).toBe('connecting');
+    expect(next.retryCount).toBe(2);
+  });
+
+  it('START without isRetry resets retryCount to 0', () => {
+    const error: StreamState = { ...idle, status: 'error', retryCount: 2 };
+    const next = streamReducer(error, { type: 'START' });
+    expect(next.retryCount).toBe(0);
+  });
+
+  it('START clears previous text and error', () => {
+    const timeout: StreamState = {
+      ...idle,
+      status: 'timeout',
+      text: 'old partial',
+      retryCount: 1,
+    };
+    const next = streamReducer(timeout, { type: 'START', isRetry: true });
+    expect(next.text).toBe('');
+    expect(next.error).toBeNull();
+    expect(next.code).toBeNull();
   });
 
   it('TEXT transitions from connecting to streaming and appends delta', () => {
-    const connecting: StreamState = { status: 'connecting', text: '', error: null };
+    const connecting: StreamState = { ...idle, status: 'connecting' };
     const next = streamReducer(connecting, { type: 'TEXT', delta: 'Hello ' });
     expect(next.status).toBe('streaming');
     expect(next.text).toBe('Hello ');
   });
 
   it('TEXT appends to existing text in streaming state', () => {
-    const streaming: StreamState = { status: 'streaming', text: 'Hello ', error: null };
+    const streaming: StreamState = { ...idle, status: 'streaming', text: 'Hello ' };
     const next = streamReducer(streaming, { type: 'TEXT', delta: 'world' });
     expect(next.text).toBe('Hello world');
   });
 
   it('DONE transitions to done preserving text', () => {
-    const streaming: StreamState = { status: 'streaming', text: 'Full response', error: null };
+    const streaming: StreamState = { ...idle, status: 'streaming', text: 'Full response' };
     const next = streamReducer(streaming, { type: 'DONE' });
     expect(next.status).toBe('done');
     expect(next.text).toBe('Full response');
   });
 
+  it('DONE is a no-op when status is timeout', () => {
+    const timeout: StreamState = { ...idle, status: 'timeout', text: 'partial text' };
+    const next = streamReducer(timeout, { type: 'DONE' });
+    expect(next.status).toBe('timeout');
+    expect(next.text).toBe('partial text');
+    expect(next).toBe(timeout);
+  });
+
   it('ERROR transitions to error with message', () => {
-    const connecting: StreamState = { status: 'connecting', text: '', error: null };
+    const connecting: StreamState = { ...idle, status: 'connecting' };
     const next = streamReducer(connecting, { type: 'ERROR', message: 'Network error' });
-    expect(next).toEqual({ status: 'error', text: '', error: 'Network error' });
+    expect(next.status).toBe('error');
+    expect(next.error).toBe('Network error');
+  });
+
+  it('ERROR stores code and retryable flag', () => {
+    const connecting: StreamState = { ...idle, status: 'connecting' };
+    const next = streamReducer(connecting, {
+      type: 'ERROR',
+      message: 'Too many requests',
+      code: 'RATE_LIMITED',
+      retryable: false,
+    });
+    expect(next.code).toBe('RATE_LIMITED');
+    expect(next.retryable).toBe(false);
+  });
+
+  it('ERROR defaults retryable to false and code to null', () => {
+    const connecting: StreamState = { ...idle, status: 'connecting' };
+    const next = streamReducer(connecting, { type: 'ERROR', message: 'fail' });
+    expect(next.code).toBeNull();
+    expect(next.retryable).toBe(false);
+  });
+
+  it('ERROR from streaming preserves accumulated text', () => {
+    const streaming: StreamState = { ...idle, status: 'streaming', text: 'Partial' };
+    const next = streamReducer(streaming, {
+      type: 'ERROR',
+      message: 'mid-stream failure',
+      retryable: true,
+    });
+    expect(next.text).toBe('Partial');
+    expect(next.error).toBe('mid-stream failure');
+    expect(next.retryable).toBe(true);
+  });
+
+  it('PARTIAL transitions to timeout with accumulated text', () => {
+    const streaming: StreamState = { ...idle, status: 'streaming', text: 'streamed so far' };
+    const next = streamReducer(streaming, { type: 'PARTIAL', text: 'full accumulated text' });
+    expect(next.status).toBe('timeout');
+    expect(next.text).toBe('full accumulated text');
+  });
+
+  it('PARTIAL sets authoritative text (replaces, not appends)', () => {
+    const streaming: StreamState = { ...idle, status: 'streaming', text: 'chunk1 chunk2' };
+    const next = streamReducer(streaming, { type: 'PARTIAL', text: 'chunk1 chunk2' });
+    expect(next.text).toBe('chunk1 chunk2');
+    expect(next.status).toBe('timeout');
   });
 
   it('CACHE_HIT transitions directly to done with content', () => {
     const next = streamReducer(idle, { type: 'CACHE_HIT', content: 'Cached text' });
-    expect(next).toEqual({ status: 'done', text: 'Cached text', error: null });
+    expect(next.status).toBe('done');
+    expect(next.text).toBe('Cached text');
+    expect(next.retryCount).toBe(0);
   });
 
   it('RESET returns to idle', () => {
-    const done: StreamState = { status: 'done', text: 'Some text', error: null };
+    const done: StreamState = { ...idle, status: 'done', text: 'text', retryCount: 2 };
     const next = streamReducer(done, { type: 'RESET' });
     expect(next).toEqual(idle);
   });
 
-  it('ERROR from streaming preserves accumulated text', () => {
-    const streaming: StreamState = { status: 'streaming', text: 'Partial', error: null };
-    const next = streamReducer(streaming, { type: 'ERROR', message: 'Timeout' });
-    expect(next.text).toBe('Partial');
-    expect(next.error).toBe('Timeout');
+  it('retry count survives through START isRetry chain', () => {
+    let state = idle;
+    state = streamReducer(state, { type: 'START' }); // retryCount = 0
+    state = streamReducer(state, { type: 'ERROR', message: 'fail', retryable: true });
+    state = streamReducer(state, { type: 'START', isRetry: true }); // retryCount = 1
+    state = streamReducer(state, { type: 'ERROR', message: 'fail', retryable: true });
+    state = streamReducer(state, { type: 'START', isRetry: true }); // retryCount = 2
+    state = streamReducer(state, { type: 'ERROR', message: 'fail', retryable: true });
+    state = streamReducer(state, { type: 'START', isRetry: true }); // retryCount = 3
+    expect(state.retryCount).toBe(3);
   });
 });

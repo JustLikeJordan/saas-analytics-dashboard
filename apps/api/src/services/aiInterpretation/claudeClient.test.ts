@@ -215,7 +215,7 @@ describe('streamInterpretation', () => {
     // the 'end' event already fired, so the listener was removed
   });
 
-  it('wraps stream errors in ExternalServiceError', async () => {
+  it('re-throws raw errors for upstream instanceof checks', async () => {
     mockStream.mockReturnValue({
       on: () => ({}),
       abort: vi.fn(),
@@ -224,8 +224,6 @@ describe('streamInterpretation', () => {
 
     const { streamInterpretation } = await import('./claudeClient.js');
 
-    await expect(streamInterpretation('test', () => {})).rejects.toThrow(
-      'External service error: Claude API',
-    );
+    await expect(streamInterpretation('test', () => {})).rejects.toThrow('stream failed');
   });
 });

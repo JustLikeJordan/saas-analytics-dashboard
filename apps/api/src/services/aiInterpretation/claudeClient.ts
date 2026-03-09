@@ -94,8 +94,6 @@ export async function streamInterpretation(
       logger.warn({ err: (err as Error).message }, 'Claude API stream retryable error exhausted');
     }
 
-    throw new ExternalServiceError('Claude API', {
-      originalError: (err as Error).message,
-    });
+    throw err;
   }
 }

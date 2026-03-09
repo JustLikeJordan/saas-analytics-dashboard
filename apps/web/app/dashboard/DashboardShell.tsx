@@ -14,6 +14,7 @@ import { ChartSkeleton } from './charts/ChartSkeleton';
 import { LazyChart } from './charts/LazyChart';
 import { FilterBar, computeDateRange, type FilterState } from './FilterBar';
 import { AiSummaryCard } from './AiSummaryCard';
+import { AiSummaryErrorBoundary } from './AiSummaryErrorBoundary';
 import { DemoModeBanner } from '@/components/common/DemoModeBanner';
 
 interface DashboardShellProps {
@@ -174,11 +175,13 @@ export function DashboardShell({ initialData, cachedSummary }: DashboardShellPro
           <h1 id="dashboard-heading" className="text-2xl font-semibold text-foreground">{data.orgName}</h1>
         </div>
 
-        <AiSummaryCard
-          datasetId={data.datasetId}
-          cachedContent={cachedSummary}
-          className="mb-6"
-        />
+        <AiSummaryErrorBoundary className="mb-6">
+          <AiSummaryCard
+            datasetId={data.datasetId}
+            cachedContent={cachedSummary}
+            className="mb-6"
+          />
+        </AiSummaryErrorBoundary>
 
         <ChartErrorBoundary onRetry={() => mutate()}>
           {isLoading && !hasData ? (

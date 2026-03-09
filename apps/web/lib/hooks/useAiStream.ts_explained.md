@@ -2,13 +2,13 @@
 
 ## 1. Elevator Pitch
 
-A React hook that consumes Server-Sent Events for real-time AI summary streaming. It manages 5 connection states through a reducer, parses the SSE protocol with a line buffer, handles both JSON cache hits and SSE streams from the same endpoint, and cleans up gracefully on unmount or cancellation.
+A React hook that consumes Server-Sent Events for real-time AI summary streaming. It manages 7 connection states through a reducer, parses the SSE protocol with a line buffer, handles both JSON cache hits and SSE streams from the same endpoint, supports client-side retry with a 3-attempt cap, degrades gracefully on timeout (delivering partial text), and cleans up on unmount or cancellation.
 
-**How to say it in an interview:** "I built a custom React hook that uses `fetch` with `ReadableStream` to consume SSE streams. It manages connection state through a `useReducer` with discriminated union actions, handles two response formats from one endpoint, and the reducer is exported as a pure function for isolated testing."
+**How to say it in an interview:** "I built a custom React hook that uses `fetch` with `ReadableStream` to consume SSE streams. It manages connection state through a `useReducer` with discriminated union actions — including timeout, retry tracking, and error code propagation. The reducer is exported as a pure function so every state transition can be tested without React."
 
 ## 2. Why This Approach
 
-**`useReducer` over `useState`.** Three pieces of state (`status`, `text`, `error`) change together and have constraints (you can't be `streaming` with a non-null `error`). A reducer enforces these transitions in one place. With three separate `useState` calls, you'd need to coordinate updates and could end up with impossible state combinations.
+**`useReducer` over `useState`.** Six pieces of state (`status`, `text`, `error`, `code`, `retryable`, `retryCount`) change together and have constraints — you can't be `streaming` with a non-null `error`, and `retryCount` should only increment on retry starts, not fresh starts. A reducer enforces these transitions in one place. With six separate `useState` calls, you'd need to coordinate updates and could end up with impossible state combinations.
 
 **`fetch` over `EventSource`.** `EventSource` is the browser's built-in SSE client, but it has three dealbreakers for this use case:
 1. No custom headers — can't pass cookies for auth (credentials mode is limited)
@@ -19,122 +19,145 @@ A React hook that consumes Server-Sent Events for real-time AI summary streaming
 
 **Exported reducer.** The `streamReducer` function is pure — no side effects, no hooks, just `(state, action) => state`. Exporting it means unit tests can verify every state transition without rendering components or mocking `fetch`. This is a testing pattern worth knowing: separate pure logic from effectful hooks.
 
+**`statusRef` for stale closure prevention.** The `start()` and `retry()` callbacks need to read the current status to guard against concurrent calls (`if connecting or streaming, bail out`). But `useCallback` captures state at creation time — if status changes, the callback still sees the old value. `statusRef.current = state.status` on every render keeps a mutable reference that callbacks can read live. The ref doesn't trigger re-renders, but it always reflects the latest status.
+
+**How to say it in an interview:** "I use a ref to mirror the reducer's status so that memoized callbacks can read it without going stale. It's a common pattern when you need both `useCallback` stability and current state in the same function."
+
+**Extracted `fetchStream`.** Both `start()` and `retry()` need the same fetch logic — create AbortController, call endpoint, parse SSE, dispatch actions. Instead of duplicating that in both callbacks, `fetchStream` holds the shared logic. `start()` dispatches `START` (resets retryCount), `retry()` dispatches `START` with `isRetry: true` (increments retryCount), then both call `fetchStream()`. DRY where it matters.
+
 **Content-Type sniffing.** The same endpoint returns JSON for cache hits and `text/event-stream` for fresh generation. Instead of two hooks or two endpoints, we check `Content-Type` and branch. The cache path dispatches `CACHE_HIT` (which jumps straight to `done` status), skipping the entire streaming machinery.
 
 **Line buffering.** SSE chunks don't arrive on clean event boundaries. A chunk might end mid-line: `event: text\ndata: {"tex`. The `parseSseLines` function splits on newlines, processes complete lines, and returns the incomplete remainder as the new buffer. This is a classic stream parsing pattern.
 
 ## 3. Code Walkthrough
 
-### Types (lines 5-19)
+### Types (lines 5-30)
 
 ```typescript
-export type StreamStatus = 'idle' | 'connecting' | 'streaming' | 'done' | 'error';
+export type StreamStatus = 'idle' | 'connecting' | 'streaming' | 'done' | 'error' | 'timeout' | 'free_preview';
 ```
 
-Five states forming a state machine. The valid transitions are:
+Seven states forming a state machine. The valid transitions are:
 - `idle` → `connecting` (START)
 - `connecting` → `streaming` (TEXT) or `error` (ERROR)
-- `streaming` → `done` (DONE) or `error` (ERROR)
+- `streaming` → `done` (DONE) or `error` (ERROR) or `timeout` (PARTIAL)
 - `idle` → `done` (CACHE_HIT — skips the stream entirely)
+- `error` → `connecting` (START with isRetry — retry flow)
+- `timeout` → `connecting` (START with isRetry — retry after partial)
 - any → `idle` (RESET)
 
-The `StreamAction` discriminated union has 6 variants. TypeScript's exhaustive switch checking means adding a new action type without handling it is a compile error.
+`StreamState` has six fields. The new ones from Story 3.4:
+- `code: string | null` — error code from the server (e.g., `RATE_LIMITED`, `AI_UNAVAILABLE`)
+- `retryable: boolean` — whether the error supports client retry
+- `retryCount: number` — how many retry attempts have been made (0 on fresh start)
 
-### streamReducer (lines 23-38)
+The `StreamAction` discriminated union has 7 variants. `START` gains `isRetry?: boolean`. `ERROR` gains `code?` and `retryable?`. New `PARTIAL` action carries the authoritative text for timeout delivery. TypeScript's exhaustive switch checking means adding a new action type without handling it is a compile error.
 
-Each case is one line. That's the beauty of reducers for state machines — every transition is explicit and visible. Notice `TEXT` spreads the existing state and appends the delta — this preserves the `error: null` from the previous state. `CACHE_HIT` creates a fresh state with `status: 'done'` directly, because cached content doesn't go through the intermediate states.
+### streamReducer (lines 41-70)
 
-### parseSseLines (lines 40-79)
+Each case is compact. Key transitions worth noting:
 
-This is the SSE protocol parser. The SSE spec says events look like:
-```
-event: text
-data: {"text":"hello"}
+**START:** Spreads `initialState` to reset everything, then conditionally handles `retryCount`. If `isRetry` is true, it increments the previous count. If false (fresh start), it resets to 0. This distinction matters — the UI uses `retryCount >= MAX_RETRIES` to hide the retry button.
 
-```
+**DONE:** Has a guard — `if (state.status === 'timeout') return state`. When the server sends a `partial` event followed by a `done` event, the DONE should not overwrite the timeout status. Without this guard, the state machine would jump from `timeout` to `done`, losing the timeout UI context.
 
-Two fields (`event:` and `data:`), separated by a blank line. The function:
-1. Splits input on `\n`
-2. Pops the last element (might be incomplete — save as remainder)
-3. Tracks `currentEvent` across lines
-4. When it hits a `data:` line, JSON-parses the payload and dispatches based on the event type
-5. Returns the remainder for the next chunk
+**PARTIAL:** Sets `status: 'timeout'` and `text: action.text`. The text is *authoritative* — it replaces whatever was accumulated via TEXT actions, rather than appending. This is because the server sends the full accumulated text in the partial event, giving the client one source of truth.
 
-The `partial` event type is interesting — it dispatches as `TEXT`, not a special action. From the UI's perspective, partial text looks the same as streamed text. The difference is purely semantic.
+**ERROR:** Now stores `code` and `retryable` from the action, defaulting to `null` and `false`. The text is preserved from the previous state — if the stream was mid-way through when the error hit, the accumulated text stays.
 
-### useAiStream hook (lines 81-151)
+### parseSseLines (lines 72-115)
 
-**`start` callback (90-140).** The fetch sequence:
-1. Abort any previous stream (idempotent — `cancel()` checks `abortRef.current`)
-2. Dispatch `START` → status becomes `connecting`
-3. Create new `AbortController`, stash in ref
-4. `fetch` with `credentials: 'same-origin'` (cookies flow through the BFF proxy)
-5. Check `res.ok` — non-2xx dispatches `ERROR`
-6. Check `Content-Type` — JSON means cache hit, dispatch `CACHE_HIT` and return early
-7. Otherwise, pipe through `TextDecoderStream`, read chunks in a loop, buffer and parse SSE lines
-8. After the loop, flush any remaining buffer content
+The SSE protocol parser. Changed in Story 3.4 to handle two new event types:
+- `partial` → dispatches `PARTIAL` action (was treated as `TEXT` before)
+- `error` → now extracts `code` and `retryable` from the JSON payload (was only extracting `message`)
 
-The `TextDecoderStream` handles UTF-8 decoding of the raw bytes. Without it, multi-byte characters split across chunks would produce garbled text.
+The structure: split on `\n`, pop the last element as remainder, track `currentEvent` across lines, JSON-parse data payloads, dispatch actions. The `try/catch` around `JSON.parse` silently skips malformed lines — defensive but intentional, since the parser can't do anything useful with bad JSON.
 
-**Auto-trigger effect (143-148).** When `datasetId` is non-null, `start()` fires on mount. The cleanup function calls `cancel()`, which aborts the fetch. This means navigating away from the dashboard cleanly cancels any in-flight stream — no orphaned requests.
+### Hook body (lines 119-212)
 
-**AbortError handling (137).** When the user navigates away, `cancel()` aborts the fetch, which throws an `AbortError`. We silently swallow it — there's no point dispatching `ERROR` to a component that's unmounting.
+**`statusRef` (lines 122-123).** Mirrors `state.status` into a ref on every render. Callbacks read `statusRef.current` instead of closing over `state.status`.
+
+**`fetchStream` (lines 130-181).** The shared fetch logic. Creates an AbortController, fetches the endpoint, handles error responses (dispatches ERROR with code/retryable from the response body), detects cache hits via Content-Type, and runs the SSE read loop. The error response handling now extracts structured error info from the JSON body.
+
+**`start` (lines 183-188).** Guards against concurrent calls via `statusRef`. Dispatches `START` (retryCount resets to 0), then calls `fetchStream()`.
+
+**`retry` (lines 190-195).** Same guard as `start`, but dispatches `START` with `isRetry: true` (retryCount increments). The caller doesn't need to track retry count — the hook manages it.
+
+**Auto-trigger effect (lines 198-203).** When `datasetId` is non-null, `start()` fires on mount. Cleanup calls `cancel()`.
+
+**Return value (lines 205-212).** Spreads state and adds `start`, `cancel`, `retry`, and `maxRetriesReached: state.retryCount >= MAX_RETRIES`. The `maxRetriesReached` is a computed property — the component doesn't need to know `MAX_RETRIES` is 3.
 
 ## 4. Complexity and Trade-offs
 
-**String concatenation in the reducer.** `state.text + action.delta` is O(n) per append, O(n^2) total over a stream. For AI summaries of 150-500 words, this is ~2-10KB of text — the V8 engine handles this without breaking a sweat. A `string[]` joined at the end would be O(n) total, but adds complexity for no measurable benefit at this scale.
+**String concatenation in the reducer.** `state.text + action.delta` is O(n) per append, O(n^2) total over a stream. For AI summaries of 150-500 words (~2-10KB), this is negligible. A `string[]` joined at the end would be O(n) total, but adds complexity for no measurable benefit at this scale.
 
-**No retry logic.** The hook dispatches `ERROR` and leaves retry to the UI layer (the `start` function is exposed for this). Baking retry with exponential backoff into the hook would be more robust, but the current approach keeps the hook simple and lets Story 3.4 add configurable retry behavior without reworking the hook's internals.
+**Retry count lives in the reducer, not the hook.** The `retryCount` is part of `StreamState`, making it testable through the pure reducer. The alternative — a separate `useRef` in the hook body — would work but would mean the retry count can't be tested without rendering the hook.
 
-**Single-buffer SSE parsing.** The parser uses string splitting, not a proper state machine. For well-formed SSE from our own server, this is fine. A malicious or buggy server could craft payloads that break the parser. Since we control both ends and the BFF proxy sits in between, this is an acceptable tradeoff.
+**`statusRef` duplicates state.** Having both `state.status` and `statusRef.current` is intentional redundancy. The ref exists solely for memoized callbacks to read current status without re-creating on every state change. It's a correctness-over-elegance tradeoff — without it, `start()` and `retry()` would see stale status values from their closure.
+
+**PARTIAL overwrites TEXT accumulation.** When the server sends a `partial` event, it includes the full accumulated text — the reducer uses this as the authoritative value rather than what the client accumulated via TEXT deltas. This means a dropped TEXT delta doesn't cause mismatched text. The server is the source of truth.
+
+**Single-buffer SSE parsing.** The parser uses string splitting, not a proper state machine. For well-formed SSE from our own server, this is fine. Since we control both ends and the BFF proxy sits in between, this is an acceptable tradeoff.
 
 ## 5. Patterns Worth Knowing
 
-**Discriminated union + exhaustive switch.** TypeScript narrows the `action` type inside each `case` branch. If you add `| { type: 'PAUSE' }` to `StreamAction` without adding a case, `tsc` warns about unhandled branches (with `--noImplicitReturns` or a default throw). This is the state machine pattern at the type level.
+**Discriminated union + exhaustive switch.** TypeScript narrows the `action` type inside each `case` branch. If you add `| { type: 'PAUSE' }` to `StreamAction` without adding a case, `tsc` warns about unhandled branches. This is the state machine pattern at the type level.
 
-**ReadableStream + TextDecoderStream pipeline.** `res.body.pipeThrough(new TextDecoderStream())` is the Web Streams API for transforming byte streams. The pipe creates backpressure — if the consumer (our read loop) is slow, the producer (the network) pauses. In practice, parsing SSE lines is much faster than network delivery, so backpressure doesn't activate.
+**How to say it in an interview:** "The reducer uses TypeScript discriminated unions so every state transition is type-checked. Adding a new action without handling it is a compile error."
 
-**Ref as mutable container.** `abortRef` stores the current `AbortController` without triggering re-renders. If we used `useState`, changing the controller would re-render the component, which would re-run the effect, which would abort the stream, which would... infinite loop. Refs are the escape hatch for mutable state that doesn't affect rendering.
+**Ref as live state mirror (statusRef).** `useCallback` captures variables at creation time. If the callback depends on a value that changes between renders, it sees stale data. The `statusRef` pattern — `useRef` that's updated on every render — gives callbacks a mutable window into current state without breaking memoization.
 
-**Effect cleanup for resource management.** The `useEffect` return function calls `cancel()`, which aborts the fetch. This is React's lifecycle hook for cleanup — it runs on unmount and before the effect re-runs (if deps change). Without it, navigating away would leave an orphaned HTTP connection and a state update on an unmounted component.
+**How to say it in an interview:** "I use a ref to mirror reducer state so memoized callbacks can read current values without going stale. It's the standard escape hatch for the useCallback-captures-stale-state problem."
+
+**ReadableStream + TextDecoderStream pipeline.** `res.body.pipeThrough(new TextDecoderStream())` is the Web Streams API for transforming byte streams. The pipe creates backpressure — if the consumer is slow, the producer pauses.
+
+**Extracted shared logic with semantic dispatch.** `start()` and `retry()` both call `fetchStream()`, but they dispatch different START variants. `start` resets retry count, `retry` increments it. The fetch logic doesn't know or care — it just does the fetch. The semantic difference lives in the dispatch, not the implementation.
+
+**Computed properties in hook returns.** `maxRetriesReached` is derived from `state.retryCount >= MAX_RETRIES`. The component doesn't import `MAX_RETRIES` or do the comparison — the hook owns that policy. If we change the max from 3 to 5, only this file changes.
+
+**Effect cleanup for resource management.** The `useEffect` return function calls `cancel()`, which aborts the fetch. This runs on unmount and before the effect re-runs. Without it, navigating away would leave an orphaned HTTP connection.
 
 ## 6. Interview Questions
 
 **Q: Why `useReducer` instead of `useState` for the stream state?**
-A: Three reasons. First, the state transitions have constraints — you can't be `streaming` with a non-null `error`. A reducer enforces these in one place. Second, multiple state fields change together on each action. Third, the reducer is a pure function I can unit test without React. A strong answer also mentions that `useReducer` is the React-recommended approach when "the next state depends on the previous one."
-Red flag: "I always use `useState` because it's simpler."
+A: Six pieces of state change together with constraints — you can't be streaming with a non-null error, retryCount only increments on retry starts. A reducer enforces these transitions atomically in one place. The reducer is pure and testable without React.
+*Red flag:* "I always use `useState` because it's simpler."
+
+**Q: What is `statusRef` and why do you need it?**
+A: `statusRef` mirrors `state.status` into a ref so memoized callbacks (`start`, `retry`) can read the current status without going stale. `useCallback` captures values at creation time. Without the ref, calling `start()` when status is already `connecting` might not see the `connecting` value — it'd see whatever status was when the callback was last created. The ref solves this without breaking memoization.
+*Red flag:* "Just remove `useCallback` and read state directly." That causes every child to re-render on every state change.
+
+**Q: How does `retry()` differ from a fresh `start()`?**
+A: Both call the same `fetchStream()`. The difference is the START action: `retry` passes `isRetry: true`, which increments `retryCount` in the reducer. `start` resets it to 0. The UI reads `maxRetriesReached` (computed as `retryCount >= 3`) to hide the retry button after 3 attempts.
+*Red flag:* "They're the same thing." They share fetch logic but have different retry-count semantics.
+
+**Q: Why does DONE return `state` unchanged when status is `timeout`?**
+A: The server sends `partial` then `done` events on timeout. PARTIAL sets status to `timeout`, which triggers timeout-specific UI (partial text + "we focused on the most important findings" message). Without the guard, the trailing DONE would overwrite `timeout` with `done`, and the timeout UI would flash and disappear. It's a state machine invariant — DONE is only meaningful when you're in a state that expects completion.
+*Red flag:* "DONE should always set status to done." That breaks the timeout UI.
 
 **Q: What happens if the component unmounts during streaming?**
 A: The effect cleanup calls `cancel()`, which aborts the `AbortController`. The fetch throws `AbortError`, which the catch block silently swallows (checks `err.name === 'AbortError'`). No state dispatch happens on the unmounted component.
-Red flag: "React handles that automatically" — it doesn't. Without abort, you'd get a "can't perform a React state update on an unmounted component" warning.
+*Red flag:* "React handles that automatically."
 
 **Q: Why not use `EventSource`?**
-A: Three reasons: no cookie/credential support for our auth model, no `AbortController` for clean cancellation, and auto-reconnect behavior we don't want. `fetch` + `ReadableStream` gives us full control. The tradeoff is we implement SSE parsing ourselves — about 40 lines of code.
-Red flag: "What's EventSource?"
-
-**Q: How would you add retry with exponential backoff?**
-A: I'd add a `retryCount` to `StreamState` and a `RETRY` action. On `ERROR`, if `retryable` is true and `retryCount < maxRetries`, dispatch `RETRY` (which sets status back to `connecting` and increments the count). The `start` function would check the retry count and add `2^retryCount * baseDelay` via `setTimeout`. The hook already exposes `start` for manual retry — this just automates it.
-
-**Q: What if an SSE chunk splits a multi-byte UTF-8 character?**
-A: `TextDecoderStream` handles this. It maintains internal state across chunks and only emits complete characters. If a chunk ends mid-character, the partial bytes are buffered internally until the next chunk completes the character. This is why we pipe through `TextDecoderStream` before our line parser.
-
-**Q: Can two streams run concurrently from this hook?**
-A: No, by design. `start()` calls `cancel()` first, aborting any existing stream before starting a new one. The `abortRef` only holds one controller at a time. This prevents duplicate streams if `datasetId` changes rapidly.
+A: Three reasons: no cookie/credential support for our auth model, no `AbortController` for clean cancellation, and auto-reconnect behavior we don't want. `fetch` + `ReadableStream` gives full control. The tradeoff is we implement SSE parsing ourselves — about 40 lines of code.
 
 ## 7. Data Structures
 
-**`StreamState`:** A flat object with three fields. `status` is the state machine position. `text` accumulates the full response (appended per `TEXT` action). `error` is nullable — only non-null in the `error` status.
+**`StreamState`:** A flat object with six fields. `status` is the state machine position. `text` accumulates the full response. `error` and `code` are nullable — only non-null in the `error` status. `retryable` indicates if the error supports retry. `retryCount` tracks consecutive retry attempts.
 
-**Line buffer (string):** The `buffer` variable in `start()` and the `remainder` return from `parseSseLines`. Holds incomplete SSE lines between chunks. This is a classic producer-consumer buffer — the network produces arbitrary chunks, the parser consumes complete lines.
+**Line buffer (string):** The `buffer` variable in `fetchStream()` and the `remainder` return from `parseSseLines`. Holds incomplete SSE lines between chunks. Classic producer-consumer buffer pattern.
 
-**`abortRef` (React ref):** A mutable container holding the current `AbortController` or `null`. Not part of React's state — changing it doesn't trigger re-renders. This is the canonical React pattern for "I need to hold a value that changes over time but doesn't affect what I render."
+**`abortRef` (React ref):** A mutable container holding the current `AbortController` or `null`. Changing it doesn't trigger re-renders. Canonical React pattern for mutable values that don't affect rendering.
+
+**`statusRef` (React ref):** Mirrors `state.status` for memoized callbacks to read without stale closures. Updated synchronously on every render via `statusRef.current = state.status`.
 
 ## 8. Impress the Interviewer
 
-**The exported reducer pattern.** Mention that `streamReducer` is exported and tested independently from the hook. Show that you understand the value of separating pure logic from effectful code. The reducer tests don't need `@testing-library/react`, don't need to mock `fetch`, and run in milliseconds. This is a testability decision, not an accident.
+**The exported reducer pattern.** Mention that `streamReducer` is exported and tested independently from the hook. Show that you understand the value of separating pure logic from effectful code. The reducer tests don't need `@testing-library/react`, don't need to mock `fetch`, and run in milliseconds. This is a testability decision.
 
-**Content-Type polymorphism.** The same endpoint, same fetch call, handles two response formats. Point out that this simplifies the client — one hook, one URL, one component. The alternative (two hooks or two fetch calls) would mean duplicated error handling, duplicated loading states, and a conditional render that decides which hook to use.
+**The DONE guard as state machine invariant.** The `if (state.status === 'timeout') return state` check in the DONE handler is a one-line guard that prevents a real bug. Without it, the server's `partial → done` event sequence would cause the timeout UI to flash and disappear. In an interview, this shows you think about event ordering across system boundaries — the server doesn't know what UI state the client is in.
 
-**The buffer-and-remainder pattern.** SSE parsing with `parseSseLines` returning the unprocessed remainder is a standard streaming parser technique. If you've seen this in protocol implementations, mention it. The key insight: you never know where chunk boundaries fall, so you must handle partial input gracefully.
+**Two-level retry architecture.** The Anthropic SDK handles server-side retries (maxRetries: 2 with exponential backoff for 5xx/429). This hook handles client-side retries (max 3, user-triggered). They're independent — SDK retries happen within a single `fetchStream` call, hook retries start entirely new calls. Mention this separation if asked about retry strategy.
 
-**Race condition prevention.** The `start()` function calls `cancel()` before creating a new AbortController. This means rapid `datasetId` changes (e.g., user switches datasets quickly) can't create orphaned streams. Each new stream cleanly kills the previous one. In an interview about React async patterns, this is gold — most developers forget to cancel the previous request.
+**Race condition prevention.** Two mechanisms working together: `cancel()` before every new fetch aborts orphaned streams, and `statusRef` guards prevent concurrent `start()`/`retry()` calls. Rapid dataset changes or button mashing can't create duplicate streams or corrupt state.
