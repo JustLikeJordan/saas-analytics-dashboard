@@ -68,7 +68,7 @@ development_status:
   3-2-curation-pipeline-prompt-assembly-llm-integration: done
   3-3-sse-streaming-delivery-ai-summary-card: done
   3-4-ai-summary-timeout-error-handling: done
-  3-5-free-preview-with-upgrade-cta: backlog
+  3-5-free-preview-with-upgrade-cta: ready-for-dev
   3-6-transparency-panel-mobile-first-layout: backlog
   epic-3-retrospective: optional
 
