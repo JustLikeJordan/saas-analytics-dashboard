@@ -28,7 +28,7 @@ export type StreamAction =
   | { type: 'TEXT'; delta: string }
   | { type: 'DONE'; metadata?: TransparencyMetadata | null }
   | { type: 'ERROR'; message: string; code?: string; retryable?: boolean }
-  | { type: 'PARTIAL'; text: string }
+  | { type: 'PARTIAL'; text: string; metadata?: TransparencyMetadata | null }
   | { type: 'CACHE_HIT'; content: string; metadata?: TransparencyMetadata | null }
   | { type: 'UPGRADE_REQUIRED'; wordCount: number }
   | { type: 'RESET' };
@@ -68,7 +68,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
         retryable: action.retryable ?? false,
       };
     case 'PARTIAL':
-      return { ...state, status: 'timeout', text: action.text };
+      return { ...state, status: 'timeout', text: action.text, metadata: action.metadata ?? null };
     case 'CACHE_HIT':
       return { ...initialState, status: 'done', text: action.content, metadata: action.metadata ?? null };
     case 'RESET':
@@ -108,7 +108,7 @@ function parseSseLines(
             });
             break;
           case 'partial':
-            dispatch({ type: 'PARTIAL', text: parsed.text });
+            dispatch({ type: 'PARTIAL', text: parsed.text, metadata: parsed.metadata ?? null });
             break;
           case 'upgrade_required':
             dispatch({ type: 'UPGRADE_REQUIRED', wordCount: parsed.wordCount });

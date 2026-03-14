@@ -190,7 +190,7 @@ export async function streamToSSE(
           { orgId, datasetId, partialLength: accumulatedText.length },
           'AI stream timed out — sending partial',
         );
-        writeSseEvent(res, 'partial', { text: accumulatedText } satisfies SsePartialEvent);
+        writeSseEvent(res, 'partial', { text: accumulatedText, metadata: validatedMetadata } satisfies SsePartialEvent);
         writeSseEvent(res, 'done', { usage: null, reason: 'timeout' } satisfies SseDoneEvent);
       } else {
         logger.warn({ orgId, datasetId }, 'AI stream timed out — no text received');

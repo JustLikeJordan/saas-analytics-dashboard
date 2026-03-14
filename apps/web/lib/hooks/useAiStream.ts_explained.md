@@ -183,4 +183,8 @@ A: Three reasons: no cookie/credential support for our auth model, no `AbortCont
 
 The reducer stores `action.metadata ?? null` in both cases. The `?? null` fallback handles older cached responses that predate the metadata field — they produce `undefined` which normalizes to `null`.
 
-**Why this matters for interviews:** This is a clean example of additive state evolution. The hook already had 7 states and 8 action types. Adding metadata to `DONE` and `CACHE_HIT` was a two-line change in the reducer. The type system caught every call site that needed updating. No existing behavior changed — metadata is just extra cargo on actions that already existed.
+- **PARTIAL** — the SSE `partial` event (timeout path) now also carries `metadata`. The curation pipeline completes *before* streaming starts, so `validatedMetadata` is available even when the stream times out. `parseSseLines` extracts it: `{ type: 'PARTIAL', text: parsed.text, metadata: parsed.metadata ?? null }`. The reducer stores it alongside the timeout text.
+
+This was caught in code review: the original implementation included metadata in `DONE` and `CACHE_HIT` but missed the timeout path. Since the reducer no-ops `DONE` after `PARTIAL` (line 58), metadata never reached the state in timeout scenarios. The fix was to carry metadata in the `PARTIAL` action itself.
+
+**Why this matters for interviews:** This is a clean example of additive state evolution. The hook already had 7 states and 8 action types. Adding metadata to `DONE`, `CACHE_HIT`, and `PARTIAL` was a three-line change in the reducer. The type system caught every call site that needed updating. No existing behavior changed — metadata is just extra cargo on actions that already existed. The timeout path fix shows why adversarial code review matters: the happy path worked, but the edge case (timeout) was silently broken.

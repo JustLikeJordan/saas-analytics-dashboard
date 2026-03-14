@@ -18,6 +18,7 @@ export interface SseErrorEvent {
 
 export interface SsePartialEvent {
   text: string;
+  metadata?: TransparencyMetadata;
 }
 
 export interface SseUpgradeRequiredEvent {

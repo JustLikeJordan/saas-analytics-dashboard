@@ -213,6 +213,9 @@ describe('streamToSSE', () => {
     const partialChunk = chunks.find((c) => c.startsWith('event: partial'));
     expect(partialChunk).toBeDefined();
     expect(partialChunk).toContain('Some partial content here');
+    // metadata should be included so TransparencyPanel works in timeout state
+    expect(partialChunk).toContain('"metadata"');
+    expect(partialChunk).toContain('"promptVersion"');
 
     const doneChunk = chunks.find((c) => c.startsWith('event: done'));
     expect(doneChunk).toBeDefined();

@@ -126,6 +126,27 @@ describe('streamReducer', () => {
     expect(next.status).toBe('timeout');
   });
 
+  it('PARTIAL stores metadata from action', () => {
+    const streaming: StreamState = { ...idle, status: 'streaming', text: 'streamed so far' };
+    const metadata = {
+      statTypes: ['trend'],
+      categoryCount: 3,
+      insightCount: 2,
+      scoringWeights: { novelty: 0.4, actionability: 0.35, specificity: 0.25 },
+      promptVersion: 'v1',
+      generatedAt: '2026-03-14T12:00:00Z',
+    };
+    const next = streamReducer(streaming, { type: 'PARTIAL', text: 'partial text', metadata });
+    expect(next.status).toBe('timeout');
+    expect(next.metadata).toEqual(metadata);
+  });
+
+  it('PARTIAL without metadata sets metadata to null', () => {
+    const streaming: StreamState = { ...idle, status: 'streaming', text: 'streamed' };
+    const next = streamReducer(streaming, { type: 'PARTIAL', text: 'partial text' });
+    expect(next.metadata).toBeNull();
+  });
+
   it('CACHE_HIT transitions directly to done with content', () => {
     const next = streamReducer(idle, { type: 'CACHE_HIT', content: 'Cached text' });
     expect(next.status).toBe('done');
