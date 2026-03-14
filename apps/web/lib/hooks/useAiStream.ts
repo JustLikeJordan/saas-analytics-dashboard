@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 
+import type { TransparencyMetadata } from 'shared/types';
+
 export type StreamStatus =
   | 'idle'
   | 'connecting'
@@ -14,6 +16,7 @@ export type StreamStatus =
 export interface StreamState {
   status: StreamStatus;
   text: string;
+  metadata: TransparencyMetadata | null;
   error: string | null;
   code: string | null;
   retryable: boolean;
@@ -23,16 +26,17 @@ export interface StreamState {
 export type StreamAction =
   | { type: 'START'; isRetry?: boolean }
   | { type: 'TEXT'; delta: string }
-  | { type: 'DONE' }
+  | { type: 'DONE'; metadata?: TransparencyMetadata | null }
   | { type: 'ERROR'; message: string; code?: string; retryable?: boolean }
   | { type: 'PARTIAL'; text: string }
-  | { type: 'CACHE_HIT'; content: string }
+  | { type: 'CACHE_HIT'; content: string; metadata?: TransparencyMetadata | null }
   | { type: 'UPGRADE_REQUIRED'; wordCount: number }
   | { type: 'RESET' };
 
 const initialState: StreamState = {
   status: 'idle',
   text: '',
+  metadata: null,
   error: null,
   code: null,
   retryable: false,
@@ -52,7 +56,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     case 'DONE':
       // after PARTIAL/UPGRADE_REQUIRED, the trailing done is a no-op
       if (state.status === 'timeout' || state.status === 'free_preview') return state;
-      return { ...state, status: 'done' };
+      return { ...state, status: 'done', metadata: action.metadata ?? null };
     case 'UPGRADE_REQUIRED':
       return { ...state, status: 'free_preview' };
     case 'ERROR':
@@ -66,7 +70,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     case 'PARTIAL':
       return { ...state, status: 'timeout', text: action.text };
     case 'CACHE_HIT':
-      return { ...initialState, status: 'done', text: action.content };
+      return { ...initialState, status: 'done', text: action.content, metadata: action.metadata ?? null };
     case 'RESET':
       return initialState;
   }
@@ -93,7 +97,7 @@ function parseSseLines(
             dispatch({ type: 'TEXT', delta: parsed.text });
             break;
           case 'done':
-            dispatch({ type: 'DONE' });
+            dispatch({ type: 'DONE', metadata: parsed.metadata ?? null });
             break;
           case 'error':
             dispatch({
@@ -162,7 +166,7 @@ export function useAiStream(datasetId: number | null) {
       // cache hit — JSON response
       if (res.headers.get('content-type')?.includes('application/json')) {
         const json = await res.json();
-        dispatch({ type: 'CACHE_HIT', content: json.data.content });
+        dispatch({ type: 'CACHE_HIT', content: json.data.content, metadata: json.data.metadata ?? null });
         return;
       }
 

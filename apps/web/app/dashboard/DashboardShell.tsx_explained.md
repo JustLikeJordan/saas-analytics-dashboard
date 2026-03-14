@@ -319,3 +319,25 @@ Charts are expensive to render. On mobile, where they stack vertically and the s
 **Why it matters:** You don't need all features built before you can communicate their presence. The skeleton tells users "there's an AI feature here" before the feature is ready. It sets expectations, reduces surprise on launch, and keeps the UI layout stable across stories.
 
 **How to bring it up:** "The AiSummarySkeleton is a forward-looking placeholder. The AI summary feature isn't live yet, but the skeleton reserves its space in the layout and gives users a preview of what's coming. When the real panel ships, it drops into place without any layout change."
+
+---
+
+## Story 3.6 Addendum: Transparency Panel & Mobile-First Layout
+
+### What Changed
+
+DashboardShell gained three responsibilities in Story 3.6:
+
+1. **Conditional mobile/desktop rendering** via `useIsMobile` hook. Mobile wraps the TransparencyPanel in a `BottomSheet` (native `<dialog>`). Desktop uses a CSS Grid with animated column expansion (`grid-cols-[1fr_0fr]` to `grid-cols-[1fr_320px]`). The conditional uses React JSX branching, not CSS `display:none`, to prevent mounting duplicate components (which would create duplicate SSE connections).
+
+2. **Transparency state management.** Three pieces of state: `transparencyOpen` (boolean toggle), `metadata` (TransparencyMetadata from either SSE stream or RSC cache), and `firedRef` (debounce guard for analytics). The metadata converges from two paths — `onMetadataReady` callback from AiSummaryCard (authenticated users via stream) and `cachedMetadata` prop from page.tsx (anonymous users via RSC fetch).
+
+3. **Analytics tracking.** `handleToggleTransparency` fires `transparency_panel.opened` via `trackClientEvent` on open only (not close). A `useRef` + `setTimeout(300ms)` guard prevents double-firing on rapid toggles.
+
+### Interview-Relevant Patterns
+
+**Two metadata convergence paths.** Authenticated users get metadata through the SSE stream's `done` event (via `useAiStream` in AiSummaryCard, lifted up via `onMetadataReady` callback). Anonymous users get it through the RSC cache fetch in `page.tsx` (via `cachedMetadata` prop). DashboardShell doesn't care which path delivered the data — it just passes whatever `metadata` value it has to TransparencyPanel.
+
+**CSS Grid 0fr trick.** The `grid-cols-[1fr_0fr]` to `grid-cols-[1fr_320px]` transition animates the panel sliding in without reflowing the AI card's width. The `1fr` column stays stable. `transition-[grid-template-columns]` with `duration-200` and `motion-reduce:duration-0` handles the animation.
+
+**Debounce guard pattern.** The analytics debounce uses `useRef` (not `useState`) because changing a ref doesn't trigger re-renders. The 300ms timeout resets the guard, allowing re-firing on future opens but preventing double-fires from rapid toggles within a single interaction.

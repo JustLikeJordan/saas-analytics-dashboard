@@ -7,12 +7,16 @@ import { UpgradeCta } from '@/components/common/UpgradeCta';
 import { AiSummarySkeleton } from './AiSummarySkeleton';
 import { FREE_PREVIEW_WORD_LIMIT } from 'shared/constants';
 
-import type { SubscriptionTier } from 'shared/types';
+import type { SubscriptionTier, TransparencyMetadata } from 'shared/types';
 
 interface AiSummaryCardProps {
   datasetId: number | null;
   cachedContent?: string;
+  cachedMetadata?: TransparencyMetadata | null;
   tier?: SubscriptionTier;
+  onToggleTransparency?: () => void;
+  transparencyOpen?: boolean;
+  onMetadataReady?: (metadata: TransparencyMetadata | null) => void;
   className?: string;
 }
 
@@ -76,17 +80,33 @@ function SummaryText({ text }: { text: string }) {
   );
 }
 
-function PostCompletionFooter() {
+interface PostCompletionFooterProps {
+  onToggleTransparency?: () => void;
+  transparencyOpen?: boolean;
+}
+
+function PostCompletionFooter({ onToggleTransparency, transparencyOpen }: PostCompletionFooterProps) {
   return (
     <div className="mt-4 flex items-center gap-3 border-t border-border pt-4 animate-fade-in">
       <span className="text-xs text-muted-foreground">Powered by AI</span>
       <span className="text-xs text-muted-foreground">·</span>
       <button
         type="button"
-        className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-        disabled
+        className="min-h-11 text-xs text-muted-foreground underline-offset-2 hover:underline"
+        onClick={onToggleTransparency}
+        aria-expanded={transparencyOpen}
+        disabled={!onToggleTransparency}
       >
         How I reached this conclusion
+        <span
+          className={cn(
+            'ml-1 inline-block transition-transform duration-150',
+            transparencyOpen && 'rotate-180',
+          )}
+          aria-hidden="true"
+        >
+          ▾
+        </span>
       </button>
       <div className="ml-auto">
         <button
@@ -129,10 +149,26 @@ function FreePreviewOverlay({ previewText, onUpgrade }: { previewText: string; o
   );
 }
 
-export function AiSummaryCard({ datasetId, cachedContent, tier, className }: AiSummaryCardProps) {
+export function AiSummaryCard({
+  datasetId,
+  cachedContent,
+  cachedMetadata,
+  tier,
+  onToggleTransparency,
+  transparencyOpen,
+  onMetadataReady,
+  className,
+}: AiSummaryCardProps) {
   const hasCached = !!cachedContent && !datasetId;
-  const { status, text, error, code, retryable, maxRetriesReached, retry } =
+  const { status, text, metadata: streamMetadata, error, code, retryable, maxRetriesReached, retry } =
     useAiStream(hasCached ? null : datasetId);
+
+  // converge two metadata paths — stream (authenticated) or RSC cache (anonymous)
+  const metadata = streamMetadata ?? cachedMetadata ?? null;
+
+  useEffect(() => {
+    onMetadataReady?.(metadata);
+  }, [metadata, onMetadataReady]);
   const completedRef = useRef(false);
   const [retryPending, setRetryPending] = useState(false);
 
@@ -176,7 +212,7 @@ export function AiSummaryCard({ datasetId, cachedContent, tier, className }: AiS
         ) : (
           <>
             <SummaryText text={cachedContent!} />
-            <PostCompletionFooter />
+            <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} />
           </>
         )}
       </div>
@@ -229,7 +265,7 @@ export function AiSummaryCard({ datasetId, cachedContent, tier, className }: AiS
         <p className="text-sm italic text-muted-foreground">
           We focused on the most important findings to keep things quick.
         </p>
-        <PostCompletionFooter />
+        <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} />
       </div>
     );
   }
@@ -294,7 +330,7 @@ export function AiSummaryCard({ datasetId, cachedContent, tier, className }: AiS
         <SummaryText text={text} />
         {isActive && <StreamingCursor />}
       </div>
-      {isDone && <PostCompletionFooter />}
+      {isDone && <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} />}
     </div>
   );
 }

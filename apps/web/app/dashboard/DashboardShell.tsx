@@ -1,12 +1,16 @@
 'use client';
 
-import { Component, type ReactNode, useCallback, useEffect, useState } from 'react';
+import { Component, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useSWR from 'swr';
 import { Upload, Filter } from 'lucide-react';
-import type { ChartData, SubscriptionTier } from 'shared/types';
+import { cn } from '@/lib/utils';
+import type { ChartData, SubscriptionTier, TransparencyMetadata } from 'shared/types';
+import { ANALYTICS_EVENTS } from 'shared/constants';
 import { apiClient } from '@/lib/api-client';
+import { trackClientEvent } from '@/lib/analytics';
+import { useIsMobile } from '@/lib/hooks/useIsMobile';
 import { useSidebar } from './contexts/SidebarContext';
 import { RevenueChart } from './charts/RevenueChart';
 import { ExpenseChart } from './charts/ExpenseChart';
@@ -15,11 +19,14 @@ import { LazyChart } from './charts/LazyChart';
 import { FilterBar, computeDateRange, type FilterState } from './FilterBar';
 import { AiSummaryCard } from './AiSummaryCard';
 import { AiSummaryErrorBoundary } from './AiSummaryErrorBoundary';
+import { TransparencyPanel } from './TransparencyPanel';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 import { DemoModeBanner } from '@/components/common/DemoModeBanner';
 
 interface DashboardShellProps {
   initialData: ChartData;
   cachedSummary?: string;
+  cachedMetadata?: TransparencyMetadata | null;
   tier?: SubscriptionTier;
 }
 
@@ -109,10 +116,14 @@ function FilteredEmptyState({ onReset }: { onReset: () => void }) {
   );
 }
 
-export function DashboardShell({ initialData, cachedSummary, tier }: DashboardShellProps) {
+export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tier }: DashboardShellProps) {
   const router = useRouter();
   const { setOrgName } = useSidebar();
+  const isMobile = useIsMobile();
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+  const [transparencyOpen, setTransparencyOpen] = useState(false);
+  const [metadata, setMetadata] = useState<TransparencyMetadata | null>(cachedMetadata ?? null);
+  const firedRef = useRef(false);
   const swrKey = buildSwrKey(filters);
   const hasActiveFilters = filters.datePreset !== null || filters.category !== null;
 
@@ -143,10 +154,45 @@ export function DashboardShell({ initialData, cachedSummary, tier }: DashboardSh
     router.push('/upload');
   }, [router]);
 
+  const handleToggleTransparency = useCallback(() => {
+    setTransparencyOpen((prev) => {
+      const opening = !prev;
+      if (opening && !firedRef.current) {
+        firedRef.current = true;
+        trackClientEvent(ANALYTICS_EVENTS.TRANSPARENCY_PANEL_OPENED, {
+          datasetId: data.datasetId,
+        });
+        // reset after a tick to allow re-firing on future opens
+        setTimeout(() => { firedRef.current = false; }, 300);
+      }
+      return opening;
+    });
+  }, [data.datasetId]);
+
+  const handleCloseTransparency = useCallback(() => {
+    setTransparencyOpen(false);
+  }, []);
+
+  const handleMetadataReady = useCallback((meta: TransparencyMetadata | null) => {
+    setMetadata(meta);
+  }, []);
+
   const hasRevenue = data.revenueTrend.length > 0;
   const hasExpenses = data.expenseBreakdown.length > 0;
   const hasData = hasRevenue || hasExpenses;
   const hasAnyData = initialData.revenueTrend.length > 0 || initialData.expenseBreakdown.length > 0;
+
+  const aiSummaryCard = (
+    <AiSummaryCard
+      datasetId={data.datasetId}
+      cachedContent={cachedSummary}
+      cachedMetadata={cachedMetadata}
+      tier={tier}
+      onToggleTransparency={handleToggleTransparency}
+      transparencyOpen={transparencyOpen}
+      onMetadataReady={handleMetadataReady}
+    />
+  );
 
   return (
     <>
@@ -177,12 +223,43 @@ export function DashboardShell({ initialData, cachedSummary, tier }: DashboardSh
         </div>
 
         <AiSummaryErrorBoundary className="mb-6">
-          <AiSummaryCard
-            datasetId={data.datasetId}
-            cachedContent={cachedSummary}
-            tier={tier}
-            className="mb-6"
-          />
+          {isMobile ? (
+            // mobile: AI card full-width, transparency in bottom sheet
+            <div className="mb-6">
+              {aiSummaryCard}
+              <BottomSheet open={transparencyOpen} onClose={handleCloseTransparency}>
+                <TransparencyPanel
+                  metadata={metadata}
+                  isOpen={transparencyOpen}
+                  onClose={handleCloseTransparency}
+                />
+              </BottomSheet>
+            </div>
+          ) : (
+            // desktop: CSS Grid with animated transparency column
+            <div
+              className={cn(
+                'mb-6 md:grid md:grid-cols-12 md:gap-6',
+              )}
+            >
+              <div className="md:col-span-8">
+                <div
+                  className={cn(
+                    'grid transition-[grid-template-columns] duration-200 ease-in-out motion-reduce:duration-0',
+                    transparencyOpen ? 'grid-cols-[1fr_320px]' : 'grid-cols-[1fr_0fr]',
+                  )}
+                >
+                  {aiSummaryCard}
+                  <TransparencyPanel
+                    metadata={metadata}
+                    isOpen={transparencyOpen}
+                    onClose={handleCloseTransparency}
+                    className="overflow-hidden min-w-0"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </AiSummaryErrorBoundary>
 
         <ChartErrorBoundary onRetry={() => mutate()}>

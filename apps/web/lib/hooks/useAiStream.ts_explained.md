@@ -169,3 +169,18 @@ A: Three reasons: no cookie/credential support for our auth model, no `AbortCont
 **Two-level retry architecture.** The Anthropic SDK handles server-side retries (maxRetries: 2 with exponential backoff for 5xx/429). This hook handles client-side retries (max 3, user-triggered). They're independent — SDK retries happen within a single `fetchStream` call, hook retries start entirely new calls. Mention this separation if asked about retry strategy.
 
 **Race condition prevention.** Two mechanisms working together: `cancel()` before every new fetch aborts orphaned streams, and `statusRef` guards prevent concurrent `start()`/`retry()` calls. Rapid dataset changes or button mashing can't create duplicate streams or corrupt state.
+
+---
+
+## Story 3.6 Addendum: Transparency Metadata
+
+### What Changed
+
+`StreamState` gained a `metadata: TransparencyMetadata | null` field (initialized as `null`). Two actions now carry metadata:
+
+- **DONE** — the SSE `done` event includes `metadata` from the curation pipeline's `validatedMetadata`. `parseSseLines` extracts it from the event's JSON data and dispatches `{ type: 'DONE', metadata: parsed.metadata ?? null }`.
+- **CACHE_HIT** — the JSON cache-hit response includes `metadata` alongside `content`. The dispatch becomes `{ type: 'CACHE_HIT', content, metadata: json.data.metadata ?? null }`.
+
+The reducer stores `action.metadata ?? null` in both cases. The `?? null` fallback handles older cached responses that predate the metadata field — they produce `undefined` which normalizes to `null`.
+
+**Why this matters for interviews:** This is a clean example of additive state evolution. The hook already had 7 states and 8 action types. Adding metadata to `DONE` and `CACHE_HIT` was a two-line change in the reducer. The type system caught every call site that needed updating. No existing behavior changed — metadata is just extra cargo on actions that already existed.

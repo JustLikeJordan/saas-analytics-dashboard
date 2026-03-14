@@ -151,7 +151,7 @@ export async function streamToSSE(
       return false;
     }
 
-    writeSseEvent(res, 'done', { usage: result.usage } satisfies SseDoneEvent);
+    writeSseEvent(res, 'done', { usage: result.usage, metadata: validatedMetadata } satisfies SseDoneEvent);
     safeEnd();
 
     try {

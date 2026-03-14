@@ -64,6 +64,30 @@ vi.mock('./AiSummaryCard', () => ({
   ),
 }));
 
+vi.mock('./AiSummaryErrorBoundary', () => ({
+  AiSummaryErrorBoundary: ({ children, className }: { children: React.ReactNode; className?: string }) => (
+    <div data-testid="ai-summary-error-boundary" className={className}>{children}</div>
+  ),
+}));
+
+vi.mock('./TransparencyPanel', () => ({
+  TransparencyPanel: () => <div data-testid="transparency-panel" />,
+}));
+
+vi.mock('@/components/ui/BottomSheet', () => ({
+  BottomSheet: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
+    open ? <div data-testid="bottom-sheet">{children}</div> : null,
+}));
+
+let mockIsMobile = false;
+vi.mock('@/lib/hooks/useIsMobile', () => ({
+  useIsMobile: () => mockIsMobile,
+}));
+
+vi.mock('@/lib/analytics', () => ({
+  trackClientEvent: vi.fn(),
+}));
+
 vi.mock('@/components/common/DemoModeBanner', () => ({
   DemoModeBanner: ({ demoState, onUploadClick }: { demoState: string; onUploadClick: () => void }) => (
     <div data-testid="demo-mode-banner" data-demo-state={demoState}>
@@ -107,6 +131,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   shouldThrow = false;
+  mockIsMobile = false;
   mockSwrReturn = { data: undefined as unknown, isLoading: false, mutate: mockMutate };
 });
 

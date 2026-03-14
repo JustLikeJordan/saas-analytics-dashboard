@@ -38,6 +38,7 @@ export const ANALYTICS_EVENTS = {
   CHART_FILTERED: 'chart.filtered',
   AI_PREVIEW_VIEWED: 'ai_preview.viewed',
   SUBSCRIPTION_UPGRADE_INTENDED: 'subscription.upgrade_intended',
+  TRANSPARENCY_PANEL_OPENED: 'transparency_panel.opened',
 } as const;
 
 export type AnalyticsEventName =

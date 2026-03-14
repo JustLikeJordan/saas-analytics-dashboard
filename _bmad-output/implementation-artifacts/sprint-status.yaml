@@ -69,7 +69,7 @@ development_status:
   3-3-sse-streaming-delivery-ai-summary-card: done
   3-4-ai-summary-timeout-error-handling: done
   3-5-free-preview-with-upgrade-cta: done
-  3-6-transparency-panel-mobile-first-layout: ready-for-dev
+  3-6-transparency-panel-mobile-first-layout: review
   epic-3-retrospective: optional
 
   # ── Epic 4: Sharing & Export ──

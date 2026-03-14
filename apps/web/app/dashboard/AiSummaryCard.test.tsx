@@ -15,6 +15,7 @@ function defaultHookReturn(overrides = {}) {
   return {
     status: 'idle',
     text: '',
+    metadata: null,
     error: null,
     code: null,
     retryable: false,
@@ -374,6 +375,56 @@ describe('AiSummaryCard', () => {
     const cursor = container.querySelector('[aria-hidden="true"]');
     expect(cursor).toBeTruthy();
     expect(cursor!.className).toContain('motion-reduce:animate-none');
+  });
+
+  // -- transparency button --
+
+  it('transparency button calls onToggleTransparency in done state', () => {
+    const toggle = vi.fn();
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'done', text: 'analysis' }),
+    );
+
+    render(
+      <AiSummaryCard datasetId={42} onToggleTransparency={toggle} transparencyOpen={false} />,
+    );
+    fireEvent.click(screen.getByText(/How I reached this conclusion/));
+    expect(toggle).toHaveBeenCalledOnce();
+  });
+
+  it('transparency button has aria-expanded attribute', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'done', text: 'analysis' }),
+    );
+
+    render(
+      <AiSummaryCard datasetId={42} onToggleTransparency={vi.fn()} transparencyOpen={true} />,
+    );
+    const btn = screen.getByText(/How I reached this conclusion/);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('transparency button works in timeout state', () => {
+    const toggle = vi.fn();
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'timeout', text: 'partial' }),
+    );
+
+    render(
+      <AiSummaryCard datasetId={42} onToggleTransparency={toggle} transparencyOpen={false} />,
+    );
+    fireEvent.click(screen.getByText(/How I reached this conclusion/));
+    expect(toggle).toHaveBeenCalledOnce();
+  });
+
+  it('transparency button is disabled when no handler provided', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'done', text: 'analysis' }),
+    );
+
+    render(<AiSummaryCard datasetId={42} />);
+    const btn = screen.getByText(/How I reached this conclusion/);
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

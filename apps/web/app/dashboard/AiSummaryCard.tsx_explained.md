@@ -146,3 +146,15 @@ A: Query for the cursor element and check its class includes `motion-reduce:anim
 **How to bring it up:** "The card has 7 levels of degradation. Anonymous users get the full cached summary instantly. Free users see a 150-word preview with a gradient blur and upgrade CTA. Pro users get the full stream. Each subsequent level — timeout, error, max retries — gives the user something appropriate rather than a blank screen."
 
 **Two convergent truncation paths.** The backend truncates SSE streams (it controls the tap), while the client truncates cached content (it arrives whole). Both feed into `FreePreviewOverlay`. This is worth mentioning because it shows you think about where truncation belongs based on data flow — you can't un-send bytes over SSE, but you can slice a string before rendering it.
+
+---
+
+## Story 3.6 Addendum: Transparency & Metadata
+
+### What Changed
+
+AiSummaryCard gained four new props: `cachedMetadata`, `onToggleTransparency`, `transparencyOpen`, and `onMetadataReady`. These wire the transparency panel feature without changing the card's state machine.
+
+**Metadata convergence.** `const metadata = streamMetadata ?? cachedMetadata ?? null` merges two paths. Stream metadata comes from `useAiStream`'s state (when the SSE `done` event arrives with metadata). Cached metadata comes from the RSC page.tsx fetch (for anonymous users). A `useEffect` calls `onMetadataReady` whenever metadata changes, lifting it up to DashboardShell.
+
+**PostCompletionFooter got props.** Previously a zero-prop component. Now accepts `onToggleTransparency` and `transparencyOpen`. The "How I reached this conclusion" button was `disabled` — now it's active with `aria-expanded`, a rotating chevron, and `onClick` wired to the parent's toggle handler. Appears in both `done` and `timeout` states (metadata is available in timeout because the curation pipeline completes before streaming). Hidden in `free_preview` (PostCompletionFooter doesn't render there).

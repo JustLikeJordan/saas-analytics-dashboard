@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import type { ChartData, SubscriptionTier } from 'shared/types';
+import type { ChartData, SubscriptionTier, TransparencyMetadata } from 'shared/types';
 import { apiServer, ApiServerError } from '@/lib/api-server';
 import { AUTH } from 'shared/constants';
 import { DashboardShell } from './DashboardShell';
@@ -15,10 +15,17 @@ const EMPTY_CHART_DATA: ChartData = {
   datasetId: null,
 };
 
-async function fetchCachedSummary(datasetId: number): Promise<string | undefined> {
+interface CachedSummaryResult {
+  content: string;
+  metadata: TransparencyMetadata | null;
+}
+
+async function fetchCachedSummary(datasetId: number): Promise<CachedSummaryResult | undefined> {
   try {
-    const res = await apiServer<{ content: string }>(`/ai-summaries/${datasetId}/cached`);
-    return res.data.content;
+    const res = await apiServer<{ content: string; metadata: TransparencyMetadata | null }>(
+      `/ai-summaries/${datasetId}/cached`,
+    );
+    return { content: res.data.content, metadata: res.data.metadata };
   } catch {
     return undefined;
   }
@@ -61,12 +68,22 @@ export default async function DashboardPage() {
   // anonymous visitors get pre-cached seed AI summary (no streaming)
   // no tier gating — full seed summary is the "aha moment"
   let cachedSummary: string | undefined;
+  let cachedMetadata: TransparencyMetadata | null = null;
   if (!hasAuth && chartData.datasetId) {
-    cachedSummary = await fetchCachedSummary(chartData.datasetId);
+    const cached = await fetchCachedSummary(chartData.datasetId);
+    cachedSummary = cached?.content;
+    cachedMetadata = cached?.metadata ?? null;
   }
 
   // authenticated users get tier-gated experience
   const tier = hasAuth ? await fetchTier(cookieHeader) : undefined;
 
-  return <DashboardShell initialData={chartData} cachedSummary={cachedSummary} tier={tier} />;
+  return (
+    <DashboardShell
+      initialData={chartData}
+      cachedSummary={cachedSummary}
+      cachedMetadata={cachedMetadata}
+      tier={tier}
+    />
+  );
 }

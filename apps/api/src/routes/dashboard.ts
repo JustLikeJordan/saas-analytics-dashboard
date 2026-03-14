@@ -118,7 +118,7 @@ dashboardRouter.get('/ai-summaries/:datasetId/cached', async (req: Request, res:
     return;
   }
 
-  res.json({ data: { content: cached.content } });
+  res.json({ data: { content: cached.content, metadata: cached.transparencyMetadata ?? null } });
 });
 
 export default dashboardRouter;

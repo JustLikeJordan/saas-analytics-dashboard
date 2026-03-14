@@ -4,6 +4,7 @@ import { streamReducer, type StreamState } from './useAiStream';
 const idle: StreamState = {
   status: 'idle',
   text: '',
+  metadata: null,
   error: null,
   code: null,
   retryable: false,
@@ -151,6 +152,47 @@ describe('streamReducer', () => {
     expect(next.status).toBe('free_preview');
     expect(next.text).toBe('preview text');
     expect(next).toBe(preview);
+  });
+
+  it('DONE stores metadata from action', () => {
+    const streaming: StreamState = { ...idle, status: 'streaming', text: 'response' };
+    const metadata = {
+      statTypes: ['trend', 'anomaly'],
+      categoryCount: 5,
+      insightCount: 3,
+      scoringWeights: { novelty: 0.4, actionability: 0.35, specificity: 0.25 },
+      promptVersion: 'v1',
+      generatedAt: '2026-03-14T12:00:00Z',
+    };
+    const next = streamReducer(streaming, { type: 'DONE', metadata });
+    expect(next.status).toBe('done');
+    expect(next.metadata).toEqual(metadata);
+  });
+
+  it('DONE without metadata sets metadata to null', () => {
+    const streaming: StreamState = { ...idle, status: 'streaming', text: 'response' };
+    const next = streamReducer(streaming, { type: 'DONE' });
+    expect(next.metadata).toBeNull();
+  });
+
+  it('CACHE_HIT stores metadata from action', () => {
+    const metadata = {
+      statTypes: ['total'],
+      categoryCount: 3,
+      insightCount: 2,
+      scoringWeights: { novelty: 0.4, actionability: 0.35, specificity: 0.25 },
+      promptVersion: 'v1',
+      generatedAt: '2026-03-14T12:00:00Z',
+    };
+    const next = streamReducer(idle, { type: 'CACHE_HIT', content: 'cached', metadata });
+    expect(next.status).toBe('done');
+    expect(next.text).toBe('cached');
+    expect(next.metadata).toEqual(metadata);
+  });
+
+  it('CACHE_HIT without metadata sets metadata to null', () => {
+    const next = streamReducer(idle, { type: 'CACHE_HIT', content: 'cached' });
+    expect(next.metadata).toBeNull();
   });
 
   it('retry count survives through START isRetry chain', () => {
