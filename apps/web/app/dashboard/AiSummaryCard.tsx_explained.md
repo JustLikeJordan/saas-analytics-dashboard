@@ -2,9 +2,9 @@
 
 ## 1. Elevator Pitch
 
-The AiSummaryCard is a React client component that renders AI-generated business summaries with 8 distinct visual states: idle (invisible), connecting (skeleton loader), streaming (progressive text with blinking cursor), done (full text with footer), timeout (partial text with "we focused on the key findings" message), error (classified message with conditional retry), free_preview (placeholder for paywall), and cached (instant display for anonymous visitors). It maps error codes to user-friendly messages, caps retries at 3, and uses different `aria-live` politeness levels for different failure severity.
+The AiSummaryCard is a React client component that renders AI-generated business summaries with 8 distinct visual states: idle (invisible), connecting (skeleton loader), streaming (progressive text with blinking cursor), done (full text with footer), timeout (partial text with "we focused on the key findings" message), error (classified message with conditional retry), free_preview (gradient blur + upgrade CTA over truncated content), and cached (instant display for anonymous visitors, with tier-aware truncation for free users). It maps error codes to user-friendly messages, caps retries at 3, uses different `aria-live` politeness levels for different failure severity, and implements subscription-tier-aware content gating with two distinct truncation paths (SSE stream truncation via backend, cached content truncation via `truncateAtWordBoundary`).
 
-**How to say it in an interview:** "I built the AI summary card with a state-driven architecture that handles 8 rendering states, including graceful timeout with partial content delivery and classified error handling. Error codes from the SSE stream get mapped to user-friendly messages, retry is capped at 3 attempts, and accessibility is handled with different aria-live politeness levels — polite for normal updates, assertive for errors."
+**How to say it in an interview:** "I built the AI summary card with a state-driven architecture that handles 8 rendering states, including a free-tier preview with gradient blur and upgrade CTA. There are two truncation paths — the backend truncates live streams at 150 words and sends an `upgrade_required` SSE event, while cached content gets client-side truncation via word boundary splitting. Both paths produce the same visual: readable preview text, gradient fade, blurred placeholder, and a centered upgrade CTA."
 
 ## 2. Why This Approach
 
@@ -20,17 +20,31 @@ The AiSummaryCard is a React client component that renders AI-generated business
 
 **Conditional retry with max cap.** The retry button only shows when `retryable && !maxRetriesReached`. After 3 retries, it's replaced by "Please try again later." — the user knows the system tried but needs time. This prevents infinite retry loops while keeping the UI honest about what's happening.
 
-**Cached content as a separate code path.** Anonymous visitors see seed data summaries from the server (passed as `cachedContent` prop). Rather than faking a "completed stream" by dispatching actions, the component short-circuits — `hasCached` causes the hook to receive `null`, keeping it idle. No fetch, no AbortController, no cleanup.
+**Subscription tier as a rendering concern, not a storage concern.** The `tier` prop (from the RSC's server-side fetch) controls what the user sees, not what the database stores. The AI summary cache always stores the full content. For free-tier users, `truncateAtWordBoundary` slices the cached text at 150 words client-side, then `FreePreviewOverlay` renders the preview with a gradient blur and upgrade CTA. Pro users and anonymous visitors see the full text. This separation means upgrading from free to pro is instant — no re-generation needed, just a different rendering path.
+
+**Two truncation paths, one visual.** SSE streams get truncated by the backend (which sends `upgrade_required` after 150 words), while cached content gets truncated by the client (via `truncateAtWordBoundary`). Both paths render through `FreePreviewOverlay`, producing identical visuals. The backend path exists because you can't un-send SSE chunks. The client path exists because cached content arrives as a complete string.
+
+**How to say it in an interview:** "There are two truncation paths that converge on the same UI. Live streams are truncated server-side because you can't un-stream bytes. Cached content is truncated client-side because it arrives whole. Both feed into the same FreePreviewOverlay component — gradient blur, placeholder text, upgrade CTA."
+
+**Cached content as a separate code path.** Anonymous visitors see seed data summaries from the server (passed as `cachedContent` prop). Rather than faking a "completed stream" by dispatching actions, the component short-circuits — `hasCached` causes the hook to receive `null`, keeping it idle. No fetch, no AbortController, no cleanup. For free-tier authenticated users, the cached path also applies tier gating — `truncateAtWordBoundary` slices at `FREE_PREVIEW_WORD_LIMIT` and triggers the preview overlay.
 
 **Composition over configuration.** `StreamingCursor`, `SummaryText`, and `PostCompletionFooter` are small, focused components rather than configuration props on a monolithic card. Each owns its own styling. Adding the transparency panel (Story 3.6) means adding a new component in the footer, not threading props through the card.
 
 ## 3. Code Walkthrough
 
-### ERROR_MESSAGES and userMessage (lines 14-26)
+### ERROR_MESSAGES and userMessage (lines 19-31)
 
 A `Record<string, string>` mapping error codes to human-readable messages. Six entries covering every code the server can send. `userMessage()` checks the record first, falls back to the raw error string, and has a final fallback for null errors. Three levels of defense against showing technical garbage to users.
 
-### StreamingCursor (lines 28-37)
+### truncateAtWordBoundary (lines 33-40)
+
+Exported utility that splits text on whitespace, counts words, and slices at the boundary if over the limit. Returns `{ preview, wasTruncated }` — the caller decides what to do with the truncation flag. `filter(Boolean)` handles multiple spaces and leading/trailing whitespace. The join reconstructs with single spaces — minor normalization, but consistent output.
+
+### FreePreviewOverlay (lines 104-130)
+
+The paywall gate UI. Shows the preview text via `SummaryText`, then a gradient fade (`bg-gradient-to-b from-card/0 to-card`) into blurred placeholder paragraphs (`blur-sm opacity-60`). The placeholder text is hardcoded — it's `aria-hidden="true"` and exists solely to create the visual impression of more content behind the blur. The UpgradeCta overlaps the blur via `z-20 -mt-8`, floating on top with the overlay variant.
+
+### StreamingCursor (lines 56-65)
 
 The `▋` character (lower half block) with `animate-blink` (530ms on/off, `step-end` timing). `motion-reduce:animate-none` respects `prefers-reduced-motion`. `aria-hidden="true"` hides it from screen readers.
 
@@ -42,13 +56,15 @@ Splits on double newlines to create paragraphs. `filter(Boolean)` removes emptie
 
 "Powered by AI" label, "How I reached this conclusion" button (placeholder for Story 3.6), "Share" button (placeholder for Story 4.1). Both buttons `disabled`. Fades in via `animate-fade-in`.
 
-### AiSummaryCard — main component (lines 76-202)
+### AiSummaryCard — main component (lines 132-300)
 
-**Cached path (93-107).** If `cachedContent` exists and no `datasetId`, render static text with full card chrome. Hook receives `null` → stays idle.
+**Cached path (159-184).** If `cachedContent` exists and no `datasetId`, render static text with full card chrome. Hook receives `null` → stays idle. Now tier-aware: when `tier === 'free'`, `truncateAtWordBoundary` slices the cached text at `FREE_PREVIEW_WORD_LIMIT` (150 words) and renders `FreePreviewOverlay` instead of the full text. Pro users and anonymous visitors (no tier) see the complete content with `PostCompletionFooter`.
 
-**Idle and free_preview (109).** Return `null`. `free_preview` is a placeholder for Story 3.5's paywall gate — the hook will signal this status when a free-tier user's subscription doesn't cover AI summaries.
+**Idle (186).** Returns `null`.
 
-**Connecting (111-120).** Skeleton + "Analyzing your data..." label.
+**Free preview from SSE (189-202).** When the backend sends `upgrade_required`, the hook sets status to `free_preview` with the accumulated text. The card renders `FreePreviewOverlay` with the streamed preview text. This path handles the live-stream truncation case — the backend stopped sending after 150 words.
+
+**Connecting (204-213).** Skeleton + "Analyzing your data..." label.
 
 **Timeout (122-142).** Partial text in the normal card chrome (primary left accent), then an `<hr>` divider, then an italic message about focusing on key findings. Gets `PostCompletionFooter` — the partial content is complete enough to attribute. `aria-live="polite"` because this is informational, not urgent.
 
@@ -109,7 +125,9 @@ A: Query for the cursor element and check its class includes `motion-reduce:anim
 
 ## 7. Data Structures
 
-**Props interface:** `{ datasetId: number | null, cachedContent?: string, className?: string }`. `datasetId` drives the hook — `null` means "don't stream." `cachedContent` is the server-fetched summary for anonymous visitors.
+**Props interface:** `{ datasetId: number | null, cachedContent?: string, tier?: SubscriptionTier, className?: string }`. `datasetId` drives the hook — `null` means "don't stream." `cachedContent` is the server-fetched summary for anonymous visitors. `tier` is the subscription tier from the RSC — `undefined` for anonymous (no gating), `'free'` for free-tier (truncated preview), `'pro'` for pro (full content).
+
+**truncateAtWordBoundary return:** `{ preview: string, wasTruncated: boolean }`. The `wasTruncated` flag drives the conditional: overlay for truncated, full content for non-truncated.
 
 **Hook return (destructured):** `{ status, text, error, code, retryable, maxRetriesReached, retry }`. The component reads `status` for branching, `text` for content, `error`/`code` for messages, `retryable`/`maxRetriesReached` for button visibility, and `retry` for the button handler.
 
@@ -123,6 +141,8 @@ A: Query for the cursor element and check its class includes `motion-reduce:anim
 
 **The dual rendering path.** The component handles server-cached content and client-streamed content without conditional hook calls (which would violate Rules of Hooks). `useAiStream` always runs but receives `null` when cached, causing it to idle. Mention this as a subtlety — many developers would try to conditionally call the hook.
 
-**Progressive degradation ladder.** Anonymous → cached instant display. Authenticated → streaming. Slow API → partial + positive reframe. Transient error → retry button. Persistent error → "try again later." Render crash → error boundary. Reduced motion → static cursor. Each layer degrades gracefully without the user feeling abandoned.
+**Progressive degradation ladder.** Anonymous → cached instant display (full). Free authenticated → cached with 150-word preview + upgrade CTA. Pro authenticated → streaming full content. Slow API → partial + positive reframe. Transient error → retry button. Persistent error → "try again later." Render crash → error boundary. Reduced motion → static cursor. Each layer degrades gracefully without the user feeling abandoned.
 
-**How to bring it up:** "The card has 6 levels of degradation, from instant cached display down to error boundary fallback. Each level gives the user something appropriate — partial content, a retry option, or at minimum a reassurance that their data is still available."
+**How to bring it up:** "The card has 7 levels of degradation. Anonymous users get the full cached summary instantly. Free users see a 150-word preview with a gradient blur and upgrade CTA. Pro users get the full stream. Each subsequent level — timeout, error, max retries — gives the user something appropriate rather than a blank screen."
+
+**Two convergent truncation paths.** The backend truncates SSE streams (it controls the tap), while the client truncates cached content (it arrives whole). Both feed into `FreePreviewOverlay`. This is worth mentioning because it shows you think about where truncation belongs based on data flow — you can't un-send bytes over SSE, but you can slice a string before rendering it.

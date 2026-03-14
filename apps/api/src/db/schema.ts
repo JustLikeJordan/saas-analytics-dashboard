@@ -193,6 +193,24 @@ export const aiSummaries = pgTable(
   ],
 );
 
+export const subscriptions = pgTable(
+  'subscriptions',
+  {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    orgId: integer('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    stripeCustomerId: varchar('stripe_customer_id', { length: 255 }),
+    stripeSubscriptionId: varchar('stripe_subscription_id', { length: 255 }),
+    status: varchar({ length: 50 }).notNull().default('inactive'),
+    plan: varchar({ length: 50 }).notNull().default('free'),
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_subscriptions_org_id').on(table.orgId)],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   userOrgs: many(userOrgs),
   refreshTokens: many(refreshTokens),
@@ -208,6 +226,7 @@ export const orgsRelations = relations(orgs, ({ many }) => ({
   analyticsEvents: many(analyticsEvents),
   datasets: many(datasets),
   aiSummaries: many(aiSummaries),
+  subscriptions: many(subscriptions),
 }));
 
 export const userOrgsRelations = relations(userOrgs, ({ one }) => ({
@@ -288,5 +307,12 @@ export const aiSummariesRelations = relations(aiSummaries, ({ one }) => ({
   dataset: one(datasets, {
     fields: [aiSummaries.datasetId],
     references: [datasets.id],
+  }),
+}));
+
+export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
+  org: one(orgs, {
+    fields: [subscriptions.orgId],
+    references: [orgs.id],
   }),
 }));

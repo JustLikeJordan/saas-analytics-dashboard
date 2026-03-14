@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useSWR from 'swr';
 import { Upload, Filter } from 'lucide-react';
-import type { ChartData } from 'shared/types';
+import type { ChartData, SubscriptionTier } from 'shared/types';
 import { apiClient } from '@/lib/api-client';
 import { useSidebar } from './contexts/SidebarContext';
 import { RevenueChart } from './charts/RevenueChart';
@@ -20,6 +20,7 @@ import { DemoModeBanner } from '@/components/common/DemoModeBanner';
 interface DashboardShellProps {
   initialData: ChartData;
   cachedSummary?: string;
+  tier?: SubscriptionTier;
 }
 
 const EMPTY_FILTERS: FilterState = { datePreset: null, category: null };
@@ -108,7 +109,7 @@ function FilteredEmptyState({ onReset }: { onReset: () => void }) {
   );
 }
 
-export function DashboardShell({ initialData, cachedSummary }: DashboardShellProps) {
+export function DashboardShell({ initialData, cachedSummary, tier }: DashboardShellProps) {
   const router = useRouter();
   const { setOrgName } = useSidebar();
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
@@ -179,6 +180,7 @@ export function DashboardShell({ initialData, cachedSummary }: DashboardShellPro
           <AiSummaryCard
             datasetId={data.datasetId}
             cachedContent={cachedSummary}
+            tier={tier}
             className="mb-6"
           />
         </AiSummaryErrorBoundary>

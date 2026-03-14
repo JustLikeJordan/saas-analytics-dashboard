@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/authMiddleware.js';
 import { inviteRouter } from './invites.js';
 import { datasetsRouter } from './datasets.js';
 import { aiSummaryRouter } from './aiSummary.js';
+import { subscriptionsRouter } from './subscriptions.js';
 
 const protectedRouter = Router();
 
@@ -13,5 +14,6 @@ protectedRouter.use('/invites', inviteRouter);
 protectedRouter.use('/datasets', datasetsRouter);
 
 protectedRouter.use('/ai-summaries', aiSummaryRouter);
+protectedRouter.use('/subscriptions', subscriptionsRouter);
 
 export default protectedRouter;

@@ -2,7 +2,10 @@ import { Router } from 'express';
 import type { Response } from 'express';
 import { ANALYTICS_EVENTS } from 'shared/constants';
 
+import type { SubscriptionTier } from 'shared/types';
+
 import type { AuthenticatedRequest } from '../middleware/authMiddleware.js';
+import { subscriptionGate, type TieredRequest } from '../middleware/subscriptionGate.js';
 import { rateLimitAi } from '../middleware/rateLimiter.js';
 import { aiSummariesQueries } from '../db/queries/index.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
@@ -12,11 +15,12 @@ import { logger } from '../lib/logger.js';
 
 const aiSummaryRouter = Router();
 
-aiSummaryRouter.get('/:datasetId', async (req, res: Response) => {
+aiSummaryRouter.get('/:datasetId', subscriptionGate, async (req, res: Response) => {
   const authedReq = req as AuthenticatedRequest;
   const orgId = authedReq.user.org_id;
   const userId = Number(authedReq.user.sub);
   const rawId = Number(req.params.datasetId);
+  const tier: SubscriptionTier = (req as TieredRequest).subscriptionTier ?? 'free';
 
   if (!Number.isInteger(rawId) || rawId <= 0) {
     throw new ValidationError('Invalid datasetId');
@@ -48,7 +52,7 @@ aiSummaryRouter.get('/:datasetId', async (req, res: Response) => {
   // if rateLimitAi already sent a 429, stop
   if (res.headersSent) return;
 
-  const ok = await streamToSSE(req, res, orgId, rawId);
+  const ok = await streamToSSE(req, res, orgId, rawId, tier);
 
   if (ok) {
     trackEvent(orgId, userId, ANALYTICS_EVENTS.AI_SUMMARY_COMPLETED, { datasetId: rawId });

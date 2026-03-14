@@ -1,6 +1,6 @@
 # Story 3.5: Free Preview with Upgrade CTA
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

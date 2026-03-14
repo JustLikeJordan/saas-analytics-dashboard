@@ -427,4 +427,153 @@ describe('streamToSSE', () => {
 
     expect(res.end).toHaveBeenCalledTimes(1);
   });
+
+  describe('free-tier truncation', () => {
+    function generateWords(count: number): string {
+      return Array.from({ length: count }, (_, i) => `word${i}`).join(' ');
+    }
+
+    it('truncates at ~150 words and sends upgrade_required for free tier', async () => {
+      const longText = generateWords(200);
+      mockStreamInterpretation.mockImplementation(
+        async (_prompt: string, onText: (d: string) => void) => {
+          onText(longText);
+          // abort fires synchronously inside onText — just throw
+          throw new Error('aborted');
+        },
+      );
+
+      const { res, chunks } = createMockRes();
+      const req = createMockReq();
+
+      const { streamToSSE } = await import('./streamHandler.js');
+      const result = await streamToSSE(req, res, 1, 1, 'free');
+
+      const upgradeChunk = chunks.find((c) => c.startsWith('event: upgrade_required'));
+      expect(upgradeChunk).toBeDefined();
+      expect(upgradeChunk).toContain('"wordCount"');
+
+      const doneChunk = chunks.find((c) => c.startsWith('event: done'));
+      expect(doneChunk).toBeDefined();
+      expect(doneChunk).toContain('"reason":"free_preview"');
+
+      expect(res.end).toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+
+    it('streams fully for pro tier', async () => {
+      const longText = generateWords(200);
+      mockStreamInterpretation.mockImplementation(
+        async (_prompt: string, onText: (d: string) => void) => {
+          onText(longText);
+          return {
+            fullText: longText,
+            usage: { inputTokens: 100, outputTokens: 200 },
+          };
+        },
+      );
+
+      const { res, chunks } = createMockRes();
+      const req = createMockReq();
+
+      const { streamToSSE } = await import('./streamHandler.js');
+      await streamToSSE(req, res, 1, 1, 'pro');
+
+      const upgradeChunk = chunks.find((c) => c.startsWith('event: upgrade_required'));
+      expect(upgradeChunk).toBeUndefined();
+
+      const doneChunk = chunks.find((c) => c.startsWith('event: done'));
+      expect(doneChunk).toBeDefined();
+    });
+
+    it('does not truncate if word count is under limit', async () => {
+      const shortText = generateWords(100);
+      mockStreamInterpretation.mockImplementation(
+        async (_prompt: string, onText: (d: string) => void) => {
+          onText(shortText);
+          return {
+            fullText: shortText,
+            usage: { inputTokens: 100, outputTokens: 50 },
+          };
+        },
+      );
+
+      const { res, chunks } = createMockRes();
+      const req = createMockReq();
+
+      const { streamToSSE } = await import('./streamHandler.js');
+      await streamToSSE(req, res, 1, 1, 'free');
+
+      const upgradeChunk = chunks.find((c) => c.startsWith('event: upgrade_required'));
+      expect(upgradeChunk).toBeUndefined();
+    });
+
+    it('timeout takes precedence over truncation when it fires first', async () => {
+      // stream only 50 words then stall until timeout
+      const shortText = generateWords(50);
+      mockStreamInterpretation.mockImplementation(
+        async (_prompt: string, onText: (d: string) => void, signal?: AbortSignal) => {
+          onText(shortText);
+          return new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          });
+        },
+      );
+
+      const { res, chunks } = createMockRes();
+      const req = createMockReq();
+
+      const { streamToSSE } = await import('./streamHandler.js');
+      const promise = streamToSSE(req, res, 1, 1, 'free');
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      await promise;
+
+      // timeout should produce partial, not upgrade_required
+      const upgradeChunk = chunks.find((c) => c.startsWith('event: upgrade_required'));
+      expect(upgradeChunk).toBeUndefined();
+
+      const partialChunk = chunks.find((c) => c.startsWith('event: partial'));
+      expect(partialChunk).toBeDefined();
+    });
+
+    it('aborts Claude stream after truncation to save tokens', async () => {
+      let abortSignal: AbortSignal | undefined;
+      const longText = generateWords(200);
+      mockStreamInterpretation.mockImplementation(
+        async (_prompt: string, onText: (d: string) => void, signal?: AbortSignal) => {
+          abortSignal = signal;
+          onText(longText);
+          // abort fires synchronously inside onText — just throw
+          throw new Error('aborted');
+        },
+      );
+
+      const { res } = createMockRes();
+      const req = createMockReq();
+
+      const { streamToSSE } = await import('./streamHandler.js');
+      await streamToSSE(req, res, 1, 1, 'free');
+
+      expect(abortSignal?.aborted).toBe(true);
+    });
+
+    it('does not cache truncated free-tier summaries', async () => {
+      const longText = generateWords(200);
+      mockStreamInterpretation.mockImplementation(
+        async (_prompt: string, onText: (d: string) => void) => {
+          onText(longText);
+          throw new Error('aborted');
+        },
+      );
+
+      const { res } = createMockRes();
+      const req = createMockReq();
+
+      const { streamToSSE } = await import('./streamHandler.js');
+      await streamToSSE(req, res, 1, 1, 'free');
+
+      expect(mockStoreSummary).not.toHaveBeenCalled();
+    });
+  });
 });

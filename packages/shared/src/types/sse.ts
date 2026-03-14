@@ -16,3 +16,7 @@ export interface SseErrorEvent {
 export interface SsePartialEvent {
   text: string;
 }
+
+export interface SseUpgradeRequiredEvent {
+  wordCount: number;
+}

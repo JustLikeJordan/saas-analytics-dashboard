@@ -1,8 +1,9 @@
 import type { Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
-import type { SseTextEvent, SseDoneEvent, SseErrorEvent, SsePartialEvent } from 'shared/types';
+import type { SseTextEvent, SseDoneEvent, SseErrorEvent, SsePartialEvent, SseUpgradeRequiredEvent } from 'shared/types';
+import type { SubscriptionTier } from '../../db/queries/subscriptions.js';
 
-import { AI_TIMEOUT_MS } from 'shared/constants';
+import { AI_TIMEOUT_MS, FREE_PREVIEW_WORD_LIMIT } from 'shared/constants';
 import { logger } from '../../lib/logger.js';
 import { aiSummariesQueries } from '../../db/queries/index.js';
 import { runCurationPipeline, assemblePrompt, transparencyMetadataSchema } from '../curation/index.js';
@@ -10,6 +11,10 @@ import { streamInterpretation } from './claudeClient.js';
 
 function writeSseEvent(res: Response, event: string, data: unknown) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+function countWords(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
 }
 
 function mapStreamError(err: unknown): SseErrorEvent {
@@ -40,6 +45,7 @@ export async function streamToSSE(
   res: Response,
   orgId: number,
   datasetId: number,
+  tier: SubscriptionTier = 'free',
 ): Promise<boolean> {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -52,6 +58,7 @@ export async function streamToSSE(
   let timedOut = false;
   let clientDisconnected = false;
   let ended = false;
+  let truncatedForFree = false;
 
   function safeEnd() {
     if (ended) return;
@@ -99,13 +106,28 @@ export async function streamToSSE(
 
   // -- stream phase --
   try {
-    logger.info({ orgId, datasetId, promptVersion }, 'starting AI summary stream');
+    logger.info({ orgId, datasetId, promptVersion, tier }, 'starting AI summary stream');
 
     const result = await streamInterpretation(
       prompt,
       (delta) => {
-        if (clientDisconnected || ended) return;
+        if (clientDisconnected || ended || truncatedForFree) return;
         accumulatedText += delta;
+
+        if (tier === 'free' && countWords(accumulatedText) >= FREE_PREVIEW_WORD_LIMIT) {
+          truncatedForFree = true;
+          writeSseEvent(res, 'text', { text: delta } satisfies SseTextEvent);
+
+          const wordCount = countWords(accumulatedText);
+          writeSseEvent(res, 'upgrade_required', { wordCount } satisfies SseUpgradeRequiredEvent);
+          writeSseEvent(res, 'done', { usage: null, reason: 'free_preview' } satisfies SseDoneEvent);
+          safeEnd();
+
+          // stop consuming Claude tokens
+          abortController.abort();
+          return;
+        }
+
         writeSseEvent(res, 'text', { text: delta } satisfies SseTextEvent);
       },
       abortController.signal,
@@ -113,6 +135,10 @@ export async function streamToSSE(
 
     clearTimeout(timeout);
     if (clientDisconnected) return false;
+
+    // free-tier truncation already streamed + ended — skip caching so
+    // a pro user requesting the same dataset gets a fresh full generation
+    if (truncatedForFree) return true;
 
     if (!result.fullText) {
       logger.warn({ orgId, datasetId }, 'Claude returned empty response');
@@ -152,6 +178,9 @@ export async function streamToSSE(
       logger.info({ orgId, datasetId }, 'client disconnected during AI stream');
       return false;
     }
+
+    // free-tier abort triggers a catch — that's expected, not an error
+    if (truncatedForFree) return true;
 
     if (timedOut) {
       if (ended) return false;

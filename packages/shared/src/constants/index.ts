@@ -1,6 +1,7 @@
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 export const AI_TIMEOUT_MS = 15_000; // 15s total, TTFT < 2s
+export const FREE_PREVIEW_WORD_LIMIT = 150;
 
 export const RATE_LIMITS = {
   auth: { max: 10, windowMs: 60_000 },
@@ -35,6 +36,8 @@ export const ANALYTICS_EVENTS = {
   SHARE_VIEWED: 'share.viewed',
   DASHBOARD_VIEWED: 'dashboard.viewed',
   CHART_FILTERED: 'chart.filtered',
+  AI_PREVIEW_VIEWED: 'ai_preview.viewed',
+  SUBSCRIPTION_UPGRADE_INTENDED: 'subscription.upgrade_intended',
 } as const;
 
 export type AnalyticsEventName =

@@ -3,11 +3,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useAiStream } from '@/lib/hooks/useAiStream';
+import { UpgradeCta } from '@/components/common/UpgradeCta';
 import { AiSummarySkeleton } from './AiSummarySkeleton';
+import { FREE_PREVIEW_WORD_LIMIT } from 'shared/constants';
+
+import type { SubscriptionTier } from 'shared/types';
 
 interface AiSummaryCardProps {
   datasetId: number | null;
   cachedContent?: string;
+  tier?: SubscriptionTier;
   className?: string;
 }
 
@@ -23,6 +28,15 @@ const ERROR_MESSAGES: Record<string, string> = {
 function userMessage(code: string | null, fallback: string | null): string {
   if (code && ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
   return fallback ?? 'Something went wrong generating insights.';
+}
+
+export function truncateAtWordBoundary(
+  text: string,
+  maxWords: number,
+): { preview: string; wasTruncated: boolean } {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return { preview: text, wasTruncated: false };
+  return { preview: words.slice(0, maxWords).join(' '), wasTruncated: true };
 }
 
 function RetrySpinner() {
@@ -87,12 +101,44 @@ function PostCompletionFooter() {
   );
 }
 
-export function AiSummaryCard({ datasetId, cachedContent, className }: AiSummaryCardProps) {
+function FreePreviewOverlay({ previewText, onUpgrade }: { previewText: string; onUpgrade: () => void }) {
+  return (
+    <div className="relative">
+      <SummaryText text={previewText} />
+
+      {/* gradient fade into blurred placeholder */}
+      <div className="relative mt-0" aria-hidden="true">
+        <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-card/0 to-card z-10" />
+        <div className="select-none blur-sm opacity-60">
+          <div className="max-w-prose text-base leading-[1.6] md:text-[17px] md:leading-[1.8] [&>p+p]:mt-[1.5em]">
+            <p>Continue reading to discover key trends in your revenue growth, expense patterns, and actionable recommendations for optimizing your business performance over the coming quarter.</p>
+            <p>Our analysis identifies several opportunities for cost reduction and revenue acceleration based on your historical data patterns.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="relative z-20 -mt-8 flex justify-center">
+        <UpgradeCta
+          variant="overlay"
+          onUpgrade={onUpgrade}
+          disabled
+          disabledTooltip="Pro plan coming soon"
+        />
+      </div>
+    </div>
+  );
+}
+
+export function AiSummaryCard({ datasetId, cachedContent, tier, className }: AiSummaryCardProps) {
   const hasCached = !!cachedContent && !datasetId;
   const { status, text, error, code, retryable, maxRetriesReached, retry } =
     useAiStream(hasCached ? null : datasetId);
   const completedRef = useRef(false);
   const [retryPending, setRetryPending] = useState(false);
+
+  const handleUpgrade = () => {
+    // pre-Epic 5: track intent only, no navigation
+  };
 
   useEffect(() => {
     if (status === 'done' && !completedRef.current) {
@@ -111,6 +157,11 @@ export function AiSummaryCard({ datasetId, cachedContent, className }: AiSummary
 
   // cached content from RSC
   if (hasCached) {
+    const isFree = tier === 'free';
+    const { preview, wasTruncated } = isFree
+      ? truncateAtWordBoundary(cachedContent!, FREE_PREVIEW_WORD_LIMIT)
+      : { preview: cachedContent!, wasTruncated: false };
+
     return (
       <div
         className={cn(
@@ -120,13 +171,35 @@ export function AiSummaryCard({ datasetId, cachedContent, className }: AiSummary
         role="region"
         aria-label="AI business summary"
       >
-        <SummaryText text={cachedContent!} />
-        <PostCompletionFooter />
+        {wasTruncated ? (
+          <FreePreviewOverlay previewText={preview} onUpgrade={handleUpgrade} />
+        ) : (
+          <>
+            <SummaryText text={cachedContent!} />
+            <PostCompletionFooter />
+          </>
+        )}
       </div>
     );
   }
 
-  if (status === 'idle' || status === 'free_preview') return null;
+  if (status === 'idle') return null;
+
+  // free preview from SSE — backend truncated + sent upgrade_required
+  if (status === 'free_preview') {
+    return (
+      <div
+        className={cn(
+          'rounded-lg border border-border border-l-4 border-l-primary bg-card p-4 shadow-md md:p-6',
+          className,
+        )}
+        role="region"
+        aria-label="AI business summary"
+      >
+        <FreePreviewOverlay previewText={text} onUpgrade={handleUpgrade} />
+      </div>
+    );
+  }
 
   if (status === 'connecting') {
     return (

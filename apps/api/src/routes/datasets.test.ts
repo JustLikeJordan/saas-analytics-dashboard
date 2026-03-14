@@ -30,8 +30,13 @@ vi.mock('../lib/logger.js', () => ({
   },
 }));
 
-vi.mock('../db/queries/datasets.js', () => ({
-  persistUpload: mockPersistUpload,
+vi.mock('../db/queries/index.js', () => ({
+  datasetsQueries: {
+    persistUpload: (...args: unknown[]) => mockPersistUpload(...args),
+  },
+  subscriptionsQueries: {
+    getActiveTier: vi.fn().mockResolvedValue('free'),
+  },
 }));
 
 const { createTestApp } = await import('../test/helpers/testApp.js');

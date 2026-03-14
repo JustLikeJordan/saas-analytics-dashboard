@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import type { ChartData } from 'shared/types';
+import type { ChartData, SubscriptionTier } from 'shared/types';
 import { apiServer, ApiServerError } from '@/lib/api-server';
 import { AUTH } from 'shared/constants';
 import { DashboardShell } from './DashboardShell';
@@ -21,6 +21,17 @@ async function fetchCachedSummary(datasetId: number): Promise<string | undefined
     return res.data.content;
   } catch {
     return undefined;
+  }
+}
+
+async function fetchTier(cookieHeader: string): Promise<SubscriptionTier> {
+  try {
+    const res = await apiServer<{ tier: SubscriptionTier }>('/subscriptions/tier', {
+      cookies: cookieHeader,
+    });
+    return res.data.tier;
+  } catch {
+    return 'free';
   }
 }
 
@@ -48,10 +59,14 @@ export default async function DashboardPage() {
   }
 
   // anonymous visitors get pre-cached seed AI summary (no streaming)
+  // no tier gating — full seed summary is the "aha moment"
   let cachedSummary: string | undefined;
   if (!hasAuth && chartData.datasetId) {
     cachedSummary = await fetchCachedSummary(chartData.datasetId);
   }
 
-  return <DashboardShell initialData={chartData} cachedSummary={cachedSummary} />;
+  // authenticated users get tier-gated experience
+  const tier = hasAuth ? await fetchTier(cookieHeader) : undefined;
+
+  return <DashboardShell initialData={chartData} cachedSummary={cachedSummary} tier={tier} />;
 }

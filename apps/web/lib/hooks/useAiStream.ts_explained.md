@@ -2,9 +2,9 @@
 
 ## 1. Elevator Pitch
 
-A React hook that consumes Server-Sent Events for real-time AI summary streaming. It manages 7 connection states through a reducer, parses the SSE protocol with a line buffer, handles both JSON cache hits and SSE streams from the same endpoint, supports client-side retry with a 3-attempt cap, degrades gracefully on timeout (delivering partial text), and cleans up on unmount or cancellation.
+A React hook that consumes Server-Sent Events for real-time AI summary streaming. It manages 7 connection states through a reducer (including `free_preview` for subscription-gated truncation), parses the SSE protocol with a line buffer, handles both JSON cache hits and SSE streams from the same endpoint, supports client-side retry with a 3-attempt cap, degrades gracefully on timeout (delivering partial text), handles `upgrade_required` SSE events for free-tier word-limit truncation, and cleans up on unmount or cancellation.
 
-**How to say it in an interview:** "I built a custom React hook that uses `fetch` with `ReadableStream` to consume SSE streams. It manages connection state through a `useReducer` with discriminated union actions — including timeout, retry tracking, and error code propagation. The reducer is exported as a pure function so every state transition can be tested without React."
+**How to say it in an interview:** "I built a custom React hook that uses `fetch` with `ReadableStream` to consume SSE streams. It manages connection state through a `useReducer` with discriminated union actions — including timeout, retry tracking, error code propagation, and subscription-tier gating via an `upgrade_required` event. The reducer is exported as a pure function so every state transition can be tested without React."
 
 ## 2. Why This Approach
 
@@ -40,7 +40,7 @@ export type StreamStatus = 'idle' | 'connecting' | 'streaming' | 'done' | 'error
 Seven states forming a state machine. The valid transitions are:
 - `idle` → `connecting` (START)
 - `connecting` → `streaming` (TEXT) or `error` (ERROR)
-- `streaming` → `done` (DONE) or `error` (ERROR) or `timeout` (PARTIAL)
+- `streaming` → `done` (DONE) or `error` (ERROR) or `timeout` (PARTIAL) or `free_preview` (UPGRADE_REQUIRED)
 - `idle` → `done` (CACHE_HIT — skips the stream entirely)
 - `error` → `connecting` (START with isRetry — retry flow)
 - `timeout` → `connecting` (START with isRetry — retry after partial)
@@ -51,7 +51,7 @@ Seven states forming a state machine. The valid transitions are:
 - `retryable: boolean` — whether the error supports client retry
 - `retryCount: number` — how many retry attempts have been made (0 on fresh start)
 
-The `StreamAction` discriminated union has 7 variants. `START` gains `isRetry?: boolean`. `ERROR` gains `code?` and `retryable?`. New `PARTIAL` action carries the authoritative text for timeout delivery. TypeScript's exhaustive switch checking means adding a new action type without handling it is a compile error.
+The `StreamAction` discriminated union has 8 variants. `START` gains `isRetry?: boolean`. `ERROR` gains `code?` and `retryable?`. `PARTIAL` carries the authoritative text for timeout delivery. `UPGRADE_REQUIRED` (added in Story 3.5) carries `wordCount` and transitions to `free_preview` — the backend signals that a free-tier user has received their allotted preview words. TypeScript's exhaustive switch checking means adding a new action type without handling it is a compile error.
 
 ### streamReducer (lines 41-70)
 
@@ -59,7 +59,9 @@ Each case is compact. Key transitions worth noting:
 
 **START:** Spreads `initialState` to reset everything, then conditionally handles `retryCount`. If `isRetry` is true, it increments the previous count. If false (fresh start), it resets to 0. This distinction matters — the UI uses `retryCount >= MAX_RETRIES` to hide the retry button.
 
-**DONE:** Has a guard — `if (state.status === 'timeout') return state`. When the server sends a `partial` event followed by a `done` event, the DONE should not overwrite the timeout status. Without this guard, the state machine would jump from `timeout` to `done`, losing the timeout UI context.
+**DONE:** Has a guard — `if (state.status === 'timeout' || state.status === 'free_preview') return state`. When the server sends a terminal event (`partial` or `upgrade_required`) followed by a trailing `done`, the DONE should not overwrite the terminal status. Without this guard, the state machine would jump from `timeout`/`free_preview` to `done`, losing the appropriate UI context.
+
+**UPGRADE_REQUIRED:** Sets `status: 'free_preview'`, preserving the accumulated text. The `wordCount` payload is available for analytics but not used in the state — the text itself is already truncated by the backend before this event arrives. The DONE guard above ensures the trailing `done` event doesn't overwrite `free_preview`.
 
 **PARTIAL:** Sets `status: 'timeout'` and `text: action.text`. The text is *authoritative* — it replaces whatever was accumulated via TEXT actions, rather than appending. This is because the server sends the full accumulated text in the partial event, giving the client one source of truth.
 
@@ -67,9 +69,12 @@ Each case is compact. Key transitions worth noting:
 
 ### parseSseLines (lines 72-115)
 
-The SSE protocol parser. Changed in Story 3.4 to handle two new event types:
-- `partial` → dispatches `PARTIAL` action (was treated as `TEXT` before)
-- `error` → now extracts `code` and `retryable` from the JSON payload (was only extracting `message`)
+The SSE protocol parser. Handles five event types:
+- `text` → dispatches `TEXT` with delta
+- `done` → dispatches `DONE`
+- `error` → dispatches `ERROR` with `code` and `retryable` from JSON payload
+- `partial` → dispatches `PARTIAL` (Story 3.4 — timeout with partial content)
+- `upgrade_required` → dispatches `UPGRADE_REQUIRED` with `wordCount` (Story 3.5 — free-tier truncation)
 
 The structure: split on `\n`, pop the last element as remainder, track `currentEvent` across lines, JSON-parse data payloads, dispatch actions. The `try/catch` around `JSON.parse` silently skips malformed lines — defensive but intentional, since the parser can't do anything useful with bad JSON.
 
@@ -131,9 +136,12 @@ A: `statusRef` mirrors `state.status` into a ref so memoized callbacks (`start`,
 A: Both call the same `fetchStream()`. The difference is the START action: `retry` passes `isRetry: true`, which increments `retryCount` in the reducer. `start` resets it to 0. The UI reads `maxRetriesReached` (computed as `retryCount >= 3`) to hide the retry button after 3 attempts.
 *Red flag:* "They're the same thing." They share fetch logic but have different retry-count semantics.
 
-**Q: Why does DONE return `state` unchanged when status is `timeout`?**
-A: The server sends `partial` then `done` events on timeout. PARTIAL sets status to `timeout`, which triggers timeout-specific UI (partial text + "we focused on the most important findings" message). Without the guard, the trailing DONE would overwrite `timeout` with `done`, and the timeout UI would flash and disappear. It's a state machine invariant — DONE is only meaningful when you're in a state that expects completion.
-*Red flag:* "DONE should always set status to done." That breaks the timeout UI.
+**Q: Why does DONE return `state` unchanged when status is `timeout` or `free_preview`?**
+A: The server sends terminal events (`partial` or `upgrade_required`) followed by a trailing `done`. The terminal event sets the appropriate status (`timeout` or `free_preview`), which triggers specific UI. Without the guard, the trailing DONE would overwrite the terminal status with `done`, and the paywall/timeout UI would flash and disappear. It's a state machine invariant — DONE is only meaningful when you're in a state that expects completion.
+*Red flag:* "DONE should always set status to done." That breaks both the timeout UI and the free-preview paywall.
+
+**Q: What happens when the backend sends `upgrade_required`?**
+A: The UPGRADE_REQUIRED action sets status to `free_preview`, preserving the accumulated text (already truncated to ~150 words by the backend). The component renders a gradient blur + upgrade CTA over the preview text. The trailing `done` event is a no-op because of the DONE guard. The `wordCount` in the action payload is available for analytics but doesn't affect rendering.
 
 **Q: What happens if the component unmounts during streaming?**
 A: The effect cleanup calls `cancel()`, which aborts the `AbortController`. The fetch throws `AbortError`, which the catch block silently swallows (checks `err.name === 'AbortError'`). No state dispatch happens on the unmounted component.
@@ -156,7 +164,7 @@ A: Three reasons: no cookie/credential support for our auth model, no `AbortCont
 
 **The exported reducer pattern.** Mention that `streamReducer` is exported and tested independently from the hook. Show that you understand the value of separating pure logic from effectful code. The reducer tests don't need `@testing-library/react`, don't need to mock `fetch`, and run in milliseconds. This is a testability decision.
 
-**The DONE guard as state machine invariant.** The `if (state.status === 'timeout') return state` check in the DONE handler is a one-line guard that prevents a real bug. Without it, the server's `partial → done` event sequence would cause the timeout UI to flash and disappear. In an interview, this shows you think about event ordering across system boundaries — the server doesn't know what UI state the client is in.
+**The DONE guard as state machine invariant.** The `if (state.status === 'timeout' || state.status === 'free_preview') return state` check in the DONE handler prevents a real bug for two different flows. Without it, the server's `partial → done` or `upgrade_required → done` event sequences would cause the timeout/paywall UI to flash and disappear. This shows you think about event ordering across system boundaries — the server sends a trailing `done` as protocol hygiene, but the client has already reached its terminal state.
 
 **Two-level retry architecture.** The Anthropic SDK handles server-side retries (maxRetries: 2 with exponential backoff for 5xx/429). This hook handles client-side retries (max 3, user-triggered). They're independent — SDK retries happen within a single `fetchStream` call, hook retries start entirely new calls. Mention this separation if asked about retry strategy.
 

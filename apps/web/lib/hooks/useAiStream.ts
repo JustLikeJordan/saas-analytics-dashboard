@@ -27,6 +27,7 @@ export type StreamAction =
   | { type: 'ERROR'; message: string; code?: string; retryable?: boolean }
   | { type: 'PARTIAL'; text: string }
   | { type: 'CACHE_HIT'; content: string }
+  | { type: 'UPGRADE_REQUIRED'; wordCount: number }
   | { type: 'RESET' };
 
 const initialState: StreamState = {
@@ -49,9 +50,11 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     case 'TEXT':
       return { ...state, status: 'streaming', text: state.text + action.delta };
     case 'DONE':
-      // after PARTIAL sets timeout, the trailing done event is a no-op
-      if (state.status === 'timeout') return state;
+      // after PARTIAL/UPGRADE_REQUIRED, the trailing done is a no-op
+      if (state.status === 'timeout' || state.status === 'free_preview') return state;
       return { ...state, status: 'done' };
+    case 'UPGRADE_REQUIRED':
+      return { ...state, status: 'free_preview' };
     case 'ERROR':
       return {
         ...state,
@@ -102,6 +105,9 @@ function parseSseLines(
             break;
           case 'partial':
             dispatch({ type: 'PARTIAL', text: parsed.text });
+            break;
+          case 'upgrade_required':
+            dispatch({ type: 'UPGRADE_REQUIRED', wordCount: parsed.wordCount });
             break;
         }
       } catch {

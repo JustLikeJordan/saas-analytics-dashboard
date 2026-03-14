@@ -138,6 +138,21 @@ describe('streamReducer', () => {
     expect(next).toEqual(idle);
   });
 
+  it('UPGRADE_REQUIRED sets free_preview and preserves text', () => {
+    const streaming: StreamState = { ...idle, status: 'streaming', text: 'Here is your summary' };
+    const next = streamReducer(streaming, { type: 'UPGRADE_REQUIRED', wordCount: 150 });
+    expect(next.status).toBe('free_preview');
+    expect(next.text).toBe('Here is your summary');
+  });
+
+  it('DONE after UPGRADE_REQUIRED is a no-op', () => {
+    const preview: StreamState = { ...idle, status: 'free_preview', text: 'preview text' };
+    const next = streamReducer(preview, { type: 'DONE' });
+    expect(next.status).toBe('free_preview');
+    expect(next.text).toBe('preview text');
+    expect(next).toBe(preview);
+  });
+
   it('retry count survives through START isRetry chain', () => {
     let state = idle;
     state = streamReducer(state, { type: 'START' }); // retryCount = 0

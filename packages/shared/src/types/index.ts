@@ -33,4 +33,7 @@ export type {
   SseDoneEvent,
   SseErrorEvent,
   SsePartialEvent,
+  SseUpgradeRequiredEvent,
 } from './sse.js';
+
+export type { SubscriptionTier } from './subscription.js';

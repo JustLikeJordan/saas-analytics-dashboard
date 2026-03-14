@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
-import { AiSummaryCard } from './AiSummaryCard';
+import { AiSummaryCard, truncateAtWordBoundary } from './AiSummaryCard';
 import { AiSummaryErrorBoundary } from './AiSummaryErrorBoundary';
 
 const mockUseAiStream = vi.fn();
@@ -208,11 +208,63 @@ describe('AiSummaryCard', () => {
 
   // -- free_preview --
 
-  it('renders nothing for free_preview status', () => {
-    mockUseAiStream.mockReturnValue(defaultHookReturn({ status: 'free_preview' }));
+  it('renders preview text with blur overlay and UpgradeCta for free_preview', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'free_preview', text: 'Here is a preview of your analysis' }),
+    );
+
+    render(<AiSummaryCard datasetId={42} />);
+    expect(screen.getByText('Here is a preview of your analysis')).toBeTruthy();
+    expect(screen.getByText('Unlock full analysis')).toBeTruthy();
+    expect(screen.getByLabelText('Upgrade to Pro subscription')).toBeTruthy();
+  });
+
+  it('hides PostCompletionFooter in free_preview state', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'free_preview', text: 'preview' }),
+    );
+
+    render(<AiSummaryCard datasetId={42} />);
+    expect(screen.queryByText('Powered by AI')).toBeNull();
+  });
+
+  it('renders blurred placeholder text with aria-hidden', () => {
+    mockUseAiStream.mockReturnValue(
+      defaultHookReturn({ status: 'free_preview', text: 'preview' }),
+    );
 
     const { container } = render(<AiSummaryCard datasetId={42} />);
-    expect(container.firstChild).toBeNull();
+    const blurredSection = container.querySelector('[aria-hidden="true"].relative');
+    expect(blurredSection).toBeTruthy();
+    expect(blurredSection!.querySelector('.blur-sm')).toBeTruthy();
+  });
+
+  it('truncates cached content for free tier and shows UpgradeCta', () => {
+    mockUseAiStream.mockReturnValue(defaultHookReturn());
+    const longContent = Array.from({ length: 200 }, (_, i) => `word${i}`).join(' ');
+
+    render(<AiSummaryCard datasetId={null} cachedContent={longContent} tier="free" />);
+    expect(screen.getByText('Unlock full analysis')).toBeTruthy();
+    expect(screen.queryByText('Powered by AI')).toBeNull();
+  });
+
+  it('renders full cached content for pro tier', () => {
+    mockUseAiStream.mockReturnValue(defaultHookReturn());
+    const content = 'Full pro analysis content.';
+
+    render(<AiSummaryCard datasetId={null} cachedContent={content} tier="pro" />);
+    expect(screen.getByText('Full pro analysis content.')).toBeTruthy();
+    expect(screen.getByText('Powered by AI')).toBeTruthy();
+    expect(screen.queryByText('Unlock full analysis')).toBeNull();
+  });
+
+  it('renders full cached content when no tier specified (anonymous)', () => {
+    mockUseAiStream.mockReturnValue(defaultHookReturn());
+
+    render(<AiSummaryCard datasetId={null} cachedContent="Seed summary for visitors" />);
+    expect(screen.getByText('Seed summary for visitors')).toBeTruthy();
+    expect(screen.getByText('Powered by AI')).toBeTruthy();
+    expect(screen.queryByText('Unlock full analysis')).toBeNull();
   });
 
   // -- accessibility --
@@ -263,7 +315,7 @@ describe('AiSummaryCard', () => {
   // -- error boundary --
 
   it('error boundary catches render errors and shows fallback', () => {
-    function Thrower(): JSX.Element {
+    function Thrower(): never {
       throw new Error('render crash');
     }
 
@@ -322,5 +374,28 @@ describe('AiSummaryCard', () => {
     const cursor = container.querySelector('[aria-hidden="true"]');
     expect(cursor).toBeTruthy();
     expect(cursor!.className).toContain('motion-reduce:animate-none');
+  });
+});
+
+describe('truncateAtWordBoundary', () => {
+  it('returns original text when under limit', () => {
+    const result = truncateAtWordBoundary('hello world', 10);
+    expect(result).toEqual({ preview: 'hello world', wasTruncated: false });
+  });
+
+  it('truncates at word boundary', () => {
+    const text = 'one two three four five';
+    const result = truncateAtWordBoundary(text, 3);
+    expect(result).toEqual({ preview: 'one two three', wasTruncated: true });
+  });
+
+  it('handles exact word count', () => {
+    const result = truncateAtWordBoundary('a b c', 3);
+    expect(result).toEqual({ preview: 'a b c', wasTruncated: false });
+  });
+
+  it('handles empty string', () => {
+    const result = truncateAtWordBoundary('', 150);
+    expect(result).toEqual({ preview: '', wasTruncated: false });
   });
 });

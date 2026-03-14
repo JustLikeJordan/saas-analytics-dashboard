@@ -26,6 +26,9 @@ vi.mock('../db/queries/index.js', () => ({
   aiSummariesQueries: {
     getCachedSummary: (...args: unknown[]) => mockGetCachedSummary(...args),
   },
+  subscriptionsQueries: {
+    getActiveTier: vi.fn().mockResolvedValue('free'),
+  },
 }));
 
 const mockTrackEvent = vi.fn();
@@ -53,6 +56,17 @@ vi.mock('../middleware/authMiddleware.js', () => ({
     (req as { user: { sub: string; org_id: number } }).user = { sub: '1', org_id: 1 };
     next();
   }),
+}));
+
+vi.mock('../middleware/subscriptionGate.js', () => ({
+  subscriptionGate: vi.fn((req: unknown, _res: unknown, next: () => void) => {
+    (req as { subscriptionTier: string }).subscriptionTier = 'free';
+    next();
+  }),
+}));
+
+vi.mock('../db/queries/subscriptions.js', () => ({
+  getActiveTier: vi.fn().mockResolvedValue('free'),
 }));
 
 const { createTestApp } = await import('../test/helpers/testApp.js');
@@ -104,6 +118,7 @@ describe('GET /ai-summaries/:datasetId', () => {
       expect.anything(),
       1,
       42,
+      'free',
     );
   });
 
