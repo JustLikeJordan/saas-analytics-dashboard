@@ -74,9 +74,11 @@ vi.mock('./TransparencyPanel', () => ({
   TransparencyPanel: () => <div data-testid="transparency-panel" />,
 }));
 
-vi.mock('@/components/ui/BottomSheet', () => ({
-  BottomSheet: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
+vi.mock('@/components/ui/sheet', () => ({
+  Sheet: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
     open ? <div data-testid="bottom-sheet">{children}</div> : null,
+  SheetContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SheetTitle: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 
 let mockIsMobile = false;

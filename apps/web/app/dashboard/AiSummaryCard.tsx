@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useAiStream } from '@/lib/hooks/useAiStream';
 import { UpgradeCta } from '@/components/common/UpgradeCta';
@@ -169,27 +169,11 @@ export function AiSummaryCard({
   useEffect(() => {
     onMetadataReady?.(metadata);
   }, [metadata, onMetadataReady]);
-  const completedRef = useRef(false);
-  const [retryPending, setRetryPending] = useState(false);
+  const retryPending = status === 'connecting' && text === '';
 
   const handleUpgrade = () => {
     // pre-Epic 5: track intent only, no navigation
   };
-
-  useEffect(() => {
-    if (status === 'done' && !completedRef.current) {
-      completedRef.current = true;
-    }
-  }, [status]);
-
-  useEffect(() => {
-    completedRef.current = false;
-    setRetryPending(false);
-  }, [datasetId]);
-
-  useEffect(() => {
-    if (status !== 'error') setRetryPending(false);
-  }, [status]);
 
   // cached content from RSC
   if (hasCached) {
@@ -292,10 +276,7 @@ export function AiSummaryCard({
           <button
             type="button"
             disabled={retryPending}
-            onClick={() => {
-              setRetryPending(true);
-              retry();
-            }}
+            onClick={retry}
             className="mt-3 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
           >
             {retryPending && <RetrySpinner />}

@@ -1,6 +1,6 @@
 # DashboardShell.tsx — Interview-Ready Documentation
 
-> Source file: `apps/web/app/dashboard/DashboardShell.tsx` (~207 lines)
+> Source file: `apps/web/app/dashboard/DashboardShell.tsx` (~293 lines)
 
 ---
 
@@ -328,7 +328,7 @@ Charts are expensive to render. On mobile, where they stack vertically and the s
 
 DashboardShell gained three responsibilities in Story 3.6:
 
-1. **Conditional mobile/desktop rendering** via `useIsMobile` hook. Mobile wraps the TransparencyPanel in a `BottomSheet` (native `<dialog>`). Desktop uses a CSS Grid with animated column expansion (`grid-cols-[1fr_0fr]` to `grid-cols-[1fr_320px]`). The conditional uses React JSX branching, not CSS `display:none`, to prevent mounting duplicate components (which would create duplicate SSE connections).
+1. **Conditional mobile/desktop rendering** via `useIsMobile` hook. Mobile wraps the TransparencyPanel in a shadcn/ui `Sheet` (Radix Dialog primitive, `side="bottom"`). Desktop uses a CSS Grid with animated column expansion (`grid-cols-[1fr_0fr]` to `grid-cols-[1fr_320px]`). The conditional uses React JSX branching, not CSS `display:none`, to prevent mounting duplicate components (which would create duplicate SSE connections). The Sheet replaced the native `<dialog>`-based BottomSheet — Radix handles focus trapping, scroll lock, and portal rendering automatically.
 
 2. **Transparency state management.** Three pieces of state: `transparencyOpen` (boolean toggle), `metadata` (TransparencyMetadata from either SSE stream or RSC cache), and `firedRef` (debounce guard for analytics). The metadata converges from two paths — `onMetadataReady` callback from AiSummaryCard (authenticated users via stream) and `cachedMetadata` prop from page.tsx (anonymous users via RSC fetch).
 
@@ -337,6 +337,8 @@ DashboardShell gained three responsibilities in Story 3.6:
 ### Interview-Relevant Patterns
 
 **Two metadata convergence paths.** Authenticated users get metadata through the SSE stream's `done` event (via `useAiStream` in AiSummaryCard, lifted up via `onMetadataReady` callback). Anonymous users get it through the RSC cache fetch in `page.tsx` (via `cachedMetadata` prop). DashboardShell doesn't care which path delivered the data — it just passes whatever `metadata` value it has to TransparencyPanel.
+
+**shadcn/ui Sheet for mobile bottom drawer.** The mobile transparency panel uses `<Sheet open={...} onOpenChange={...}>` with `<SheetContent side="bottom">`. Radix Dialog (which Sheet wraps) handles focus trapping, scroll lock, backdrop click/Escape dismissal, and portal rendering — all things the previous native `<dialog>` implementation handled manually or incompletely. A `sr-only` `<SheetTitle>` satisfies the Radix accessibility requirement for dialog labeling.
 
 **CSS Grid 0fr trick.** The `grid-cols-[1fr_0fr]` to `grid-cols-[1fr_320px]` transition animates the panel sliding in without reflowing the AI card's width. The `1fr` column stays stable. `transition-[grid-template-columns]` with `duration-200` and `motion-reduce:duration-0` handles the animation.
 

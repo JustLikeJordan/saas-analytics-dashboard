@@ -1,6 +1,6 @@
 # Story 3.2: Curation Pipeline — Prompt Assembly & LLM Integration
 
-Status: review
+Status: done
 
 ## Story
 

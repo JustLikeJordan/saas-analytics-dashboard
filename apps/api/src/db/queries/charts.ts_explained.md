@@ -1,14 +1,14 @@
 # charts.ts — Interview-Ready Documentation
 
-> Source file: `apps/api/src/db/queries/charts.ts` (95 lines)
+> Source file: `apps/api/src/db/queries/charts.ts` (97 lines)
 
 ---
 
 ## 1. 30-Second Elevator Pitch
 
-This file turns raw database rows into chart-ready data. It runs a single query against `data_rows` for a given org, then does all the filtering and aggregation in JavaScript — grouping revenue by month, totaling expenses by category, and collecting metadata like available categories and date range. The metadata always reflects the full dataset (so filter dropdowns show all options), while the chart data respects whatever date/category filters the user has active.
+This file turns raw database rows into chart-ready data. It runs a single query against `data_rows` for a given org (capped at 2,000 rows by default), then does all the filtering and aggregation in JavaScript — grouping revenue by month, totaling expenses by category, and collecting metadata like available categories and date range. The metadata always reflects the full dataset within that window (so filter dropdowns show all options), while the chart data respects whatever date/category filters the user has active. The 2,000-row cap is specific to charts — the curation pipeline uses a separate unbounded query (`getRowsByDataset`) because the AI needs the full picture.
 
-**How to say it in an interview:** "This query module fetches all data_rows for an org in a single query, then filters and aggregates in-process. Metadata is computed from the full dataset so filter UI always shows complete options, while chart data respects active filters. It's a deliberate choice — one query with JS aggregation, optimized for simplicity at our current data scale."
+**How to say it in an interview:** "This query module fetches up to 2,000 data_rows for an org, then filters and aggregates in-process. The limit is a chart-specific safeguard — the curation pipeline stays unbounded because the AI needs complete data. Metadata is computed from the full returned set so filter UI always shows complete options."
 
 ---
 
@@ -16,11 +16,19 @@ This file turns raw database rows into chart-ready data. It runs a single query 
 
 ### Decision 1: Single query + JS aggregation instead of SQL GROUP BY
 
-**What's happening:** Instead of writing a SQL query with `GROUP BY month, category` and `WHERE date BETWEEN ... AND ...`, this fetches every row for the org and loops through them in JavaScript. Why? Two reasons. First, we need two different aggregation passes — one unfiltered (for metadata) and one filtered (for chart data). In SQL, that's two queries or a CTE. In JS, it's two loops over the same array. Second, the current data scale is <50K rows per org — a trivial amount for V8 to iterate.
+**What's happening:** Instead of writing a SQL query with `GROUP BY month, category` and `WHERE date BETWEEN ... AND ...`, this fetches rows for the org (capped at 2,000) and loops through them in JavaScript. We need two different aggregation passes — one for metadata and one filtered for chart data. In SQL, that's two queries or a CTE. In JS, it's two loops over the same array. The 2,000-row cap keeps memory bounded.
 
-**How to say it in an interview:** "I chose JS aggregation over SQL GROUP BY because I need two aggregation passes — one for unfiltered metadata and one for filtered chart data. In SQL, that's two queries or a CTE. In JS, it's two loops over the same data. For <50K rows, the simplicity wins."
+**How to say it in an interview:** "I chose JS aggregation over SQL GROUP BY because I need two aggregation passes — one for metadata and one for filtered chart data. In SQL, that's two queries or a CTE. In JS, it's two loops over the same data. The query is capped at 2,000 rows for charts, so memory is bounded."
 
-**Over alternative:** SQL aggregation would be faster at scale but would require either two queries (one filtered, one unfiltered) or a complex CTE with window functions. The comment on line 31 explicitly calls out the scaling threshold.
+**Over alternative:** SQL aggregation would be faster at scale but would require either two queries (one filtered, one unfiltered) or a complex CTE with window functions.
+
+### Decision 2: Row limit for charts, unlimited for curation pipeline
+
+**What's happening:** `getChartData` defaults to 2,000 rows via the `limit` parameter. The curation pipeline uses a different function (`getRowsByDataset` in `dataRows.ts`) that stays unlimited because the AI summary needs the complete dataset for accurate analysis. The chart visualization doesn't need every row — 2,000 data points produce visually identical charts to 50,000 for monthly aggregations.
+
+**How to say it in an interview:** "Two access patterns, two limits. Charts cap at 2,000 rows because monthly aggregation produces the same visual output regardless. The AI curation pipeline stays unlimited because accuracy depends on seeing every data point. The limit is a parameter, not a constant — callers can override it."
+
+**Over alternative:** Applying the same limit to both would either starve the AI pipeline or leave charts unbounded. Separate functions with separate defaults is the right separation.
 
 ### Decision 2: ISO string comparison for date filtering
 
@@ -58,9 +66,13 @@ This file turns raw database rows into chart-ready data. It runs a single query 
 
 `isInDateRange` (lines 15-20) compares ISO strings. The guard structure (`if from && d < from`) means filters are individually optional — you can have just a start date, just an end date, or both.
 
-### getChartData — metadata pass (lines 32-54)
+### Constants (line 11)
 
-Fetches all rows for the org, ordered by date. The first loop builds `categorySet` (expense categories only — income isn't filterable by category), `minDate`, and `maxDate`. These become `availableCategories` and `dateRange` in the return value. This pass ignores filters entirely — it sees the whole dataset.
+`DEFAULT_CHART_ROW_LIMIT = 2000` — the default cap for chart queries. Exposed as a parameter on `getChartData` so callers can override it (tests pass 500, for instance). The curation pipeline doesn't use this function at all.
+
+### getChartData — metadata pass (lines 34-56)
+
+Fetches up to `limit` rows for the org, ordered by date. The `limit` parameter defaults to `DEFAULT_CHART_ROW_LIMIT`. The first loop builds `categorySet` (expense categories only — income isn't filterable by category), `minDate`, and `maxDate`. These become `availableCategories` and `dateRange` in the return value. This pass ignores filters entirely — it sees the whole dataset.
 
 The `parentCategory === 'Expenses'` check on line 44 means only expense categories appear in the filter dropdown. Revenue categories aren't exposed because the revenue chart shows total income, not broken down by source.
 
@@ -80,7 +92,7 @@ Expense entries are mapped to `{ category, total }` and sorted by total descendi
 
 ## 4. Complexity and Trade-offs
 
-**Fetches all rows, always.** Even with filters, the query returns every row for the org. The metadata pass needs the full set, and running two separate queries (one filtered, one not) would double the database load. At <50K rows, fetching everything is fine. At 500K rows, this becomes a bottleneck — you'd split the metadata query (runs once, cached) from the filtered query (runs per request with SQL WHERE).
+**Fetches up to 2,000 rows.** The query returns at most `limit` rows (default 2,000). This bounds memory usage and keeps the response time predictable. The trade-off: metadata (available categories, date range) reflects the capped window, not the complete dataset. For most orgs with <2K rows, the window is the entire dataset. For larger orgs, the categories and date range might be incomplete — an acceptable trade-off since chart visualization doesn't require every row.
 
 **Two full iterations over the same array.** The metadata loop and aggregation loop are separate. Combining them into a single loop would halve the iteration count but tangle the logic. At 50K rows, the second pass adds ~1ms. Not worth the complexity cost.
 
@@ -88,7 +100,7 @@ Expense entries are mapped to `{ category, total }` and sorted by total descendi
 
 **No caching.** Every dashboard load hits the database. SWR caches on the client, but the API always runs the query fresh. Adding a Redis cache keyed by `orgId + filters` would reduce DB load, but data changes only on CSV upload — and the architecture already plans to invalidate on upload. Worth adding when traffic justifies it.
 
-**How to say it in an interview:** "The main trade-off is fetching all rows for every request. It's deliberate — I need unfiltered metadata alongside filtered chart data, and at <50K rows the cost is negligible. The scaling path is clear: split metadata into a cached query and use SQL WHERE for the filtered aggregation."
+**How to say it in an interview:** "The main trade-off is that metadata reflects a 2,000-row window. For most orgs that's the complete dataset. For larger orgs, the categories and date range might miss rows beyond the cap. The scaling path is clear: move metadata into a cached SQL query and use SQL GROUP BY for the filtered aggregation."
 
 ---
 
@@ -130,13 +142,13 @@ Comparing dates as ISO strings (`YYYY-MM-DD`) instead of timestamps. ISO date st
 
 **Red flag:** "SQL is always better for aggregation." — Not when you need two different aggregation contexts from the same data at this scale.
 
-### Q2: "What happens if an org has 500K rows?"
+### Q2: "Why cap at 2,000 rows instead of just letting the DB return everything?"
 
-**Context if you need it:** Probes your awareness of the scaling limit.
+**Context if you need it:** Probes your awareness of bounded resource usage.
 
-**Strong answer:** "The query fetches all rows into memory, which at 500K would be ~200MB. I'd split the approach: cache the unfiltered metadata (it changes only on upload) and use SQL GROUP BY with WHERE clauses for the filtered chart data. The current architecture already plans for cache invalidation on upload."
+**Strong answer:** "2,000 rows is enough for accurate monthly aggregation in a chart — you'll get the same visual output as 50,000 rows because we're summing into monthly buckets. The cap bounds memory and response time. The curation pipeline uses a separate unbounded query because the AI summary needs every data point for accuracy. Different access patterns, different limits."
 
-**Red flag:** "It would be fine." — 500K rows in memory is not fine. You need to show awareness of the limit.
+**Red flag:** "It would be fine without a limit." — unbounded queries are a ticking time bomb as data grows.
 
 ### Q3: "Why compare ISO strings instead of timestamps?"
 

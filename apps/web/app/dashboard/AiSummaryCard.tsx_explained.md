@@ -18,6 +18,10 @@ The AiSummaryCard is a React client component that renders AI-generated business
 
 **How to say it in an interview:** "We frame timeout as intentional curation rather than failure. The user sees their partial summary with a message that positions the truncation positively. It's a UX decision — the same technical event (timeout) gets very different emotional treatment depending on how you present it."
 
+**Derived state over synchronized state.** The `retryPending` flag is computed as `status === 'connecting' && text === ''` — a pure derivation from the stream hook's state. An earlier version used `useState` + three `useEffect` blocks to synchronize `retryPending` with `status` and `datasetId` changes. React 19's `react-hooks/set-state-in-effect` rule flagged all three effects. The fix wasn't to suppress the rule — it was to realize that `retryPending` was never independent state. It's a function of what's already known.
+
+**How to say it in an interview:** "I replaced three useEffects with a single derived value. If the component is connecting and has no text yet, a retry is pending. That's a boolean expression, not a piece of state. React 19's lint rule caught the unnecessary synchronization — the fix was to stop treating a derived value as independent state."
+
 **Conditional retry with max cap.** The retry button only shows when `retryable && !maxRetriesReached`. After 3 retries, it's replaced by "Please try again later." — the user knows the system tried but needs time. This prevents infinite retry loops while keeping the UI honest about what's happening.
 
 **Subscription tier as a rendering concern, not a storage concern.** The `tier` prop (from the RSC's server-side fetch) controls what the user sees, not what the database stores. The AI summary cache always stores the full content. For free-tier users, `truncateAtWordBoundary` slices the cached text at 150 words client-side, then `FreePreviewOverlay` renders the preview with a gradient blur and upgrade CTA. Pro users and anonymous visitors see the full text. This separation means upgrading from free to pro is instant — no re-generation needed, just a different rendering path.
@@ -72,9 +76,11 @@ Splits on double newlines to create paragraphs. `filter(Boolean)` removes emptie
 
 **Streaming and Done (180-201).** Same container, different details. Streaming gets cursor + `aria-busy={true}`. Done gets `PostCompletionFooter` + `aria-busy={false}`. The `transition-opacity duration-150` smooths the transition.
 
-### Analytics effects (82-91)
+### Hook and derived state (lines 152-163)
 
-Two `useEffect` hooks: one marks completion (gates future analytics), the other resets the flag when `datasetId` changes.
+The hook returns `{ status, text, metadata: streamMetadata, error, code, retryable, maxRetriesReached, retry }`. The metadata convergence — `streamMetadata ?? cachedMetadata ?? null` — merges SSE stream and RSC cache paths. A `useEffect` lifts metadata up to DashboardShell via `onMetadataReady`.
+
+`retryPending` is derived, not stored: `const retryPending = status === 'connecting' && text === ''`. This replaced three `useEffect` blocks that synchronized a `useState` boolean with `status` and `datasetId` changes — React 19 flagged them as cascading renders.
 
 ## 4. Complexity and Trade-offs
 
@@ -99,6 +105,10 @@ Two `useEffect` hooks: one marks completion (gates future analytics), the other 
 **`motion-reduce:` Tailwind prefix.** Maps to `@media (prefers-reduced-motion: reduce)`. The cursor still renders but the animation stops. One line of CSS, big accessibility impact.
 
 **Error code lookup table.** The `ERROR_MESSAGES` record is a simple pattern for decoupling error codes from display text. The server sends machine-readable codes, the client translates. If you need localization later, you swap the record with an i18n lookup.
+
+**Derived state over effect synchronization.** Instead of `useState` + `useEffect` to track a boolean that's fully determined by existing state, compute it inline: `const retryPending = status === 'connecting' && text === ''`. No effect, no stale closure, no cascading render. React 19 explicitly flags the `useState` + `useEffect` pattern — the derived value is the idiomatic alternative.
+
+**Interview-ready:** "If a value can be computed from existing state, it shouldn't be state. Derived values update automatically when their source state changes — no synchronization effects needed, no bugs from forgetting to reset them."
 
 ## 6. Interview Questions
 

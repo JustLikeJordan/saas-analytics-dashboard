@@ -20,7 +20,7 @@ import { FilterBar, computeDateRange, type FilterState } from './FilterBar';
 import { AiSummaryCard } from './AiSummaryCard';
 import { AiSummaryErrorBoundary } from './AiSummaryErrorBoundary';
 import { TransparencyPanel } from './TransparencyPanel';
-import { BottomSheet } from '@/components/ui/BottomSheet';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { DemoModeBanner } from '@/components/common/DemoModeBanner';
 
 interface DashboardShellProps {
@@ -227,13 +227,16 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
             // mobile: AI card full-width, transparency in bottom sheet
             <div className="mb-6">
               {aiSummaryCard}
-              <BottomSheet open={transparencyOpen} onClose={handleCloseTransparency}>
-                <TransparencyPanel
-                  metadata={metadata}
-                  isOpen={transparencyOpen}
-                  onClose={handleCloseTransparency}
-                />
-              </BottomSheet>
+              <Sheet open={transparencyOpen} onOpenChange={(open) => !open && handleCloseTransparency()}>
+                <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto rounded-t-xl">
+                  <SheetTitle className="sr-only">How I reached this conclusion</SheetTitle>
+                  <TransparencyPanel
+                    metadata={metadata}
+                    isOpen={transparencyOpen}
+                    onClose={handleCloseTransparency}
+                  />
+                </SheetContent>
+              </Sheet>
             </div>
           ) : (
             // desktop: CSS Grid with animated transparency column

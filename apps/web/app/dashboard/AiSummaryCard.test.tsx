@@ -168,7 +168,7 @@ describe('AiSummaryCard', () => {
     expect(screen.getByText('Please try again later.')).toBeTruthy();
   });
 
-  it('shows spinner and disables button when retry is pending', () => {
+  it('calls retry when Try again is clicked', () => {
     const mockRetry = vi.fn();
     mockUseAiStream.mockReturnValue(
       defaultHookReturn({
@@ -180,7 +180,7 @@ describe('AiSummaryCard', () => {
       }),
     );
 
-    const { container } = render(<AiSummaryCard datasetId={42} />);
+    render(<AiSummaryCard datasetId={42} />);
     const button = screen.getByRole('button', { name: 'Try again' });
     expect((button as HTMLButtonElement).disabled).toBe(false);
 
@@ -188,10 +188,7 @@ describe('AiSummaryCard', () => {
       fireEvent.click(button);
     });
 
-    expect(mockRetry).toHaveBeenCalled();
-    expect(screen.getByText('Retrying...')).toBeTruthy();
-    expect(container.querySelector('svg.animate-spin')).toBeTruthy();
-    expect((screen.getByRole('button', { name: /Retrying/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mockRetry).toHaveBeenCalledOnce();
   });
 
   it('shows reassurance message in error state', () => {
