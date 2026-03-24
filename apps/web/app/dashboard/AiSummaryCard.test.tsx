@@ -3,6 +3,11 @@ import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { AiSummaryCard, truncateAtWordBoundary } from './AiSummaryCard';
 import { AiSummaryErrorBoundary } from './AiSummaryErrorBoundary';
 
+// ShareMenu imports useIsMobile which calls matchMedia at module scope
+vi.mock('@/lib/hooks/useIsMobile', () => ({
+  useIsMobile: () => false,
+}));
+
 const mockUseAiStream = vi.fn();
 
 vi.mock('@/lib/hooks/useAiStream', () => ({

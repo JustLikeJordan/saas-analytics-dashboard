@@ -343,3 +343,35 @@ DashboardShell gained three responsibilities in Story 3.6:
 **CSS Grid 0fr trick.** The `grid-cols-[1fr_0fr]` to `grid-cols-[1fr_320px]` transition animates the panel sliding in without reflowing the AI card's width. The `1fr` column stays stable. `transition-[grid-template-columns]` with `duration-200` and `motion-reduce:duration-0` handles the animation.
 
 **Debounce guard pattern.** The analytics debounce uses `useRef` (not `useState`) because changing a ref doesn't trigger re-renders. The 300ms timeout resets the guard, allowing re-firing on future opens but preventing double-fires from rapid toggles within a single interaction.
+
+---
+
+## Story 4.1 Addendum: Share Insight as Rendered Image
+
+### What Changed
+
+DashboardShell became the orchestration point for the share feature — it owns the capture ref, instantiates the share hook, threads callbacks down, and gates the mobile FAB on AI completion.
+
+**Capture ref and useShareInsight hook (lines 185-186).** `captureRef` is a `useRef<HTMLDivElement>` attached to the `div` that wraps the AI summary card and chart grid (line 238). `useShareInsight(captureRef)` returns `{ status, generatePng, downloadPng, copyToClipboard }`. The ref defines the DOM subtree that gets captured as a PNG — everything inside it becomes the image.
+
+**AI completion gating for ShareFab (lines 182-183, 309-315).** `aiDone` is a boolean state that flips to `true` when AiSummaryCard fires `onStreamComplete`. The ShareFab's `visible` prop changed from `hasData` to `hasData && aiDone` — the FAB only appears after the AI summary finishes. Without this gate, the FAB would appear while the summary is still streaming, and the captured PNG would show incomplete text. This was the highest-severity finding in the code review.
+
+**Callback threading (lines 193-207, 309-315).** AiSummaryCard receives `onShare={generatePng}`, `onShareDownload={downloadPng}`, `onShareCopy={copyToClipboard}`, and `shareState={shareStatus}`. ShareFab receives the same set. The shell is the single source of truth — both the desktop ShareMenu (inside AiSummaryCard's footer) and the mobile ShareFab call the same hook functions.
+
+### Interview-Relevant Patterns
+
+**Ref-based DOM capture boundary.** The `captureRef` div wraps both the AI card and charts. This means the exported PNG includes the full dashboard context — not just the AI text, but the charts alongside it. The ref placement is a product decision disguised as a technical one: "what does 'sharing an insight' mean?" means "what DOM subtree do we screenshot?"
+
+**How to say it in an interview:** "The capture ref wraps the AI summary and charts together. Where you place the ref determines what ends up in the exported image. I wrapped both because the insight only makes sense alongside the data it references — sharing just the text without the charts would lose context."
+
+**Completion gating.** `aiDone` is a boolean derived from a callback, not from polling the hook's status. AiSummaryCard knows when streaming finishes (it has the `useAiStream` hook), and DashboardShell needs to know (to gate ShareFab). The callback pattern avoids DashboardShell importing or depending on the stream hook's internals.
+
+**How to say it in an interview:** "The mobile share button only appears after the AI summary completes. I gate it with a callback from the card rather than reading the stream hook's status directly. This keeps the stream lifecycle encapsulated in AiSummaryCard — DashboardShell just knows 'it's done' without knowing how streaming works."
+
+**Single hook, dual consumers.** Both ShareMenu (desktop, inside AiSummaryCard footer) and ShareFab (mobile, rendered directly by DashboardShell) call the same `generatePng`, `downloadPng`, and `copyToClipboard` from one `useShareInsight` instance. The PNG caching guard in the hook (added during code review) means whichever consumer triggers generation first wins — the second consumer gets the cached result instantly.
+
+### Updated Data Structures
+
+**DashboardShellProps** gained no new props — the share feature is entirely self-contained within the shell. `captureRef`, `shareStatus`, and the hook functions are internal state, not passed from the server component.
+
+**New state: `aiDone` (boolean).** Starts `false`, flips to `true` via `handleStreamComplete`. Never flips back — once the AI is done for this data, it stays done. A new `datasetId` from a filter change would remount the AiSummaryCard (via the key change in SWR), but the shell doesn't reset `aiDone` — the card fires `onStreamComplete` again when the new stream finishes.

@@ -1,6 +1,6 @@
 # Story 4.1: Share Insight as Rendered Image
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -22,58 +22,58 @@ so that I can send it to colleagues via messaging apps without requiring them to
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Install `html-to-image` library** (AC: 1)
-  - [ ] `pnpm add html-to-image --filter=web`
-  - [ ] Verify it works with React 19.2 + Next.js 16
+- [x] **Task 1: Install `html-to-image` library** (AC: 1)
+  - [x] `pnpm add html-to-image --filter=web`
+  - [x] Verify it works with React 19.2 + Next.js 16
 
-- [ ] **Task 2: Build `useShareInsight` hook** (AC: 1, 2, 4)
-  - [ ] Create `apps/web/lib/hooks/useShareInsight.ts`
-  - [ ] Accept a `ref` to the DOM node to capture (the card element)
-  - [ ] `generatePng()` — calls `toPng()` from `html-to-image`, returns blob/dataUrl
-  - [ ] `downloadPng()` — triggers browser download of the generated image
-  - [ ] `copyToClipboard()` — writes PNG blob to `navigator.clipboard.write()` (Clipboard API)
-  - [ ] Track via `trackClientEvent(ANALYTICS_EVENTS.SHARE_CREATED)` from `apps/web/lib/analytics.ts` — resolves to `'share.created'`
-  - [ ] Timeout handling: wrap `toPng()` in `Promise.race` with configurable timeout (default 10s)
-  - [ ] Error states: `idle | generating | done | error` — expose via hook return
-  - [ ] Write tests in `useShareInsight.test.ts`
+- [x] **Task 2: Build `useShareInsight` hook** (AC: 1, 2, 4)
+  - [x] Create `apps/web/lib/hooks/useShareInsight.ts`
+  - [x] Accept a `ref` to the DOM node to capture (the card element)
+  - [x] `generatePng()` — calls `toPng()` from `html-to-image`, returns blob/dataUrl
+  - [x] `downloadPng()` — triggers browser download of the generated image
+  - [x] `copyToClipboard()` — writes PNG blob to `navigator.clipboard.write()` (Clipboard API)
+  - [x] Track via `trackClientEvent(ANALYTICS_EVENTS.SHARE_CREATED)` from `apps/web/lib/analytics.ts` — resolves to `'share.created'`
+  - [x] Timeout handling: wrap `toPng()` in `Promise.race` with configurable timeout (default 10s)
+  - [x] Error states: `idle | generating | done | error` — expose via hook return
+  - [x] Write tests in `useShareInsight.test.ts`
 
-- [ ] **Task 3: Build share menu UI** (AC: 2, 5)
-  - [ ] Create `apps/web/app/dashboard/ShareMenu.tsx`
-  - [ ] Two options: "Download PNG" and "Copy to clipboard"
-  - [ ] Use shadcn `Sheet` (bottom drawer) on mobile, popover/dropdown on desktop
-  - [ ] Use `useIsMobile()` hook (already exists at `apps/web/lib/hooks/useIsMobile.ts`) for responsive switch
-  - [ ] All actions keyboard-accessible (Enter/Space triggers, Escape closes)
-  - [ ] `aria-label` on all interactive elements
-  - [ ] Loading spinner while `generating`, success toast on `done`, error message on `error`
-  - [ ] State feedback (`generating` → `done` → `error`) must be screen-reader accessible — use `role="status"` or `aria-live="polite"` on the feedback region
-  - [ ] `motion-reduce:duration-0` on Sheet slide animation and popover fade (same pattern as TransparencyPanel)
-  - [ ] Write tests in `ShareMenu.test.tsx`
+- [x] **Task 3: Build share menu UI** (AC: 2, 5)
+  - [x] Create `apps/web/app/dashboard/ShareMenu.tsx`
+  - [x] Two options: "Download PNG" and "Copy to clipboard"
+  - [x] Use shadcn `Sheet` (bottom drawer) on mobile, popover/dropdown on desktop
+  - [x] Use `useIsMobile()` hook (already exists at `apps/web/lib/hooks/useIsMobile.ts`) for responsive switch
+  - [x] All actions keyboard-accessible (Enter/Space triggers, Escape closes)
+  - [x] `aria-label` on all interactive elements
+  - [x] Loading spinner while `generating`, success toast on `done`, error message on `error`
+  - [x] State feedback (`generating` → `done` → `error`) must be screen-reader accessible — use `role="status"` or `aria-live="polite"` on the feedback region
+  - [x] `motion-reduce:duration-0` on Sheet slide animation and popover fade (same pattern as TransparencyPanel)
+  - [x] Write tests in `ShareMenu.test.tsx`
 
-- [ ] **Task 4: Wire share button and capture region** (AC: 1, 3)
-  - [ ] In `apps/web/app/dashboard/DashboardShell.tsx`, wrap the charts grid + AiSummaryCard region in a single `<div ref={captureRef}>` — this becomes the PNG capture boundary (charts are siblings to AiSummaryCard, not children — the ref must live in DashboardShell)
-  - [ ] Pass `captureRef` down to AiSummaryCard as a prop (no `forwardRef` needed — just a prop)
-  - [ ] In `apps/web/app/dashboard/AiSummaryCard.tsx`, replace the disabled Share button placeholder (line ~112 in `PostCompletionFooter`)
-  - [ ] Extend `PostCompletionFooterProps` to accept share callbacks (`onShare`, `shareState`)
-  - [ ] On desktop: inline button opens popover
-  - [ ] On mobile: FAB at bottom-right (48px touch target, `fixed bottom-4 right-4`) opens `Sheet`
-  - [ ] FAB only renders when `isDone` (streaming complete)
-  - [ ] Update existing AiSummaryCard and DashboardShell tests for new share integration
+- [x] **Task 4: Wire share button and capture region** (AC: 1, 3)
+  - [x] In `apps/web/app/dashboard/DashboardShell.tsx`, wrap the charts grid + AiSummaryCard region in a single `<div ref={captureRef}>` — this becomes the PNG capture boundary (charts are siblings to AiSummaryCard, not children — the ref must live in DashboardShell)
+  - [x] Pass `captureRef` down to AiSummaryCard as a prop (no `forwardRef` needed — just a prop)
+  - [x] In `apps/web/app/dashboard/AiSummaryCard.tsx`, replace the disabled Share button placeholder (line ~112 in `PostCompletionFooter`)
+  - [x] Extend `PostCompletionFooterProps` to accept share callbacks (`onShare`, `shareState`)
+  - [x] On desktop: inline button opens popover
+  - [x] On mobile: FAB at bottom-right (48px touch target, `fixed bottom-4 right-4`) opens `Sheet`
+  - [x] FAB only renders when `isDone` (streaming complete)
+  - [x] Update existing AiSummaryCard and DashboardShell tests for new share integration
 
-- [ ] **Task 5: Mobile FAB component** (AC: 3)
-  - [ ] Create FAB as part of `ShareMenu.tsx` (or separate `ShareFab.tsx` if cleaner)
-  - [ ] `position: fixed`, `bottom-right`, 48x48px minimum, `z-50`
-  - [ ] Uses `useIsMobile()` to conditionally render
-  - [ ] Opens shadcn `Sheet` (already installed) with share options
-  - [ ] `motion-reduce:duration-0` on animations (a11y, same pattern as TransparencyPanel)
+- [x] **Task 5: Mobile FAB component** (AC: 3)
+  - [x] Create FAB as part of `ShareMenu.tsx` (or separate `ShareFab.tsx` if cleaner)
+  - [x] `position: fixed`, `bottom-right`, 48x48px minimum, `z-50`
+  - [x] Uses `useIsMobile()` to conditionally render
+  - [x] Opens shadcn `Sheet` (already installed) with share options
+  - [x] `motion-reduce:duration-0` on animations (a11y, same pattern as TransparencyPanel)
 
-- [ ] **Task 6: Integration tests** (AC: 1–5)
-  - [ ] Test PNG generation with mocked `html-to-image`
-  - [ ] Test download triggers browser download
-  - [ ] Test clipboard write succeeds/fails gracefully
-  - [ ] Test timeout handling fires error state
-  - [ ] Test analytics event fires on successful share
-  - [ ] Test keyboard navigation through share menu
-  - [ ] Test FAB renders on mobile, inline button on desktop
+- [x] **Task 6: Integration tests** (AC: 1–5)
+  - [x] Test PNG generation with mocked `html-to-image`
+  - [x] Test download triggers browser download
+  - [x] Test clipboard write succeeds/fails gracefully
+  - [x] Test timeout handling fires error state
+  - [x] Test analytics event fires on successful share
+  - [x] Test keyboard navigation through share menu
+  - [x] Test FAB renders on mobile, inline button on desktop
 
 ## Dev Notes
 
@@ -164,12 +164,56 @@ apps/web/package.json                          — Add html-to-image dependency
 - [Source: apps/web/lib/analytics.ts — Client-side analytics]
 - [Source: packages/shared/src/constants/index.ts:35 — SHARE_CREATED constant]
 
+## Change Log
+
+- Added `html-to-image` dependency to `apps/web/package.json`
+- Created `useShareInsight` hook with PNG generation, download, clipboard copy, timeout handling, and analytics tracking
+- Created `ShareMenu` component (desktop popover) and `ShareFab` component (mobile FAB with Sheet)
+- Wired share callbacks through `DashboardShell` → `AiSummaryCard` → `PostCompletionFooter`
+- Added capture ref in `DashboardShell` wrapping charts grid + AI summary card
+- Full test coverage: 10 hook tests, 15 component tests, all passing
+
+### Code Review Fixes (2026-03-24)
+
+- **H1**: ShareFab now gated on AI completion — `visible={hasData && aiDone}` via `onStreamComplete` callback from AiSummaryCard
+- **H2+M3**: ShareMenu popover now has click-outside-to-close, focus management on open, Escape returns focus to trigger; removed incorrect `role="menu"`
+- **H3+M1**: Added per-action success feedback ("Downloaded!" / "Copied to clipboard!") with 2s auto-dismiss; copy checkmark now reflects actual copy success, not just PNG generation
+- **M2**: `generatePng` now skips redundant `toPng()` calls when PNG is already cached in `dataUrlRef`
+- **M4**: `pnpm-lock.yaml` documented in File List below
+- **L1**: Moved mid-file `ShareMenu` import to top of `AiSummaryCard.tsx`
+- **L2**: `downloadPng` now properly attaches/removes `<a>` element to DOM
+- **L3**: Timeout timer in `generatePng` now cleaned up via `clearTimeout` on both success and error paths
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 4.6
+
 ### Debug Log References
+
+N/A — no debug logs generated (frontend-only story, no API debugging needed)
 
 ### Completion Notes List
 
+- All 6 tasks complete with all subtasks
+- 255 tests passing (+1 caching test), TypeScript type-check clean
+- `html-to-image` verified working with React 19.2 + Next.js 16
+- Clipboard API uses `fetch(dataUrl).blob()` conversion pattern
+- jsdom test quirks handled: `ClipboardItem` stub, `matchMedia` module mock, async `noop`
+
 ### File List
+
+**New files:**
+- `apps/web/lib/hooks/useShareInsight.ts` — PNG generation hook
+- `apps/web/lib/hooks/useShareInsight.test.ts` — Hook tests (10 tests)
+- `apps/web/app/dashboard/ShareMenu.tsx` — Share menu + FAB component
+- `apps/web/app/dashboard/ShareMenu.test.tsx` — Component tests (15 tests)
+
+**Modified files:**
+- `apps/web/package.json` — Added `html-to-image` dependency
+- `pnpm-lock.yaml` — Lockfile updated for html-to-image
+- `apps/web/app/dashboard/DashboardShell.tsx` — Capture ref, share hook, ShareFab, aiDone state
+- `apps/web/app/dashboard/DashboardShell.test.tsx` — Mocks for ShareMenu + useShareInsight
+- `apps/web/app/dashboard/AiSummaryCard.tsx` — Share props threading, ShareMenu integration, onStreamComplete callback
+- `apps/web/app/dashboard/AiSummaryCard.test.tsx` — useIsMobile mock for ShareMenu import

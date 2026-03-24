@@ -168,3 +168,25 @@ AiSummaryCard gained four new props: `cachedMetadata`, `onToggleTransparency`, `
 **Metadata convergence.** `const metadata = streamMetadata ?? cachedMetadata ?? null` merges two paths. Stream metadata comes from `useAiStream`'s state (when the SSE `done` event arrives with metadata). Cached metadata comes from the RSC page.tsx fetch (for anonymous users). A `useEffect` calls `onMetadataReady` whenever metadata changes, lifting it up to DashboardShell.
 
 **PostCompletionFooter got props.** Previously a zero-prop component. Now accepts `onToggleTransparency` and `transparencyOpen`. The "How I reached this conclusion" button was `disabled` — now it's active with `aria-expanded`, a rotating chevron, and `onClick` wired to the parent's toggle handler. Appears in both `done` and `timeout` states (metadata is available in timeout because the curation pipeline completes before streaming). Hidden in `free_preview` (PostCompletionFooter doesn't render there).
+
+---
+
+## Story 4.1 Addendum: Share Insight & Stream Completion
+
+### What Changed
+
+AiSummaryCard gained share-related props and a stream completion callback to support the "Share as Image" feature.
+
+**Share props threaded through PostCompletionFooter (lines 22-26, 89-96, 98-148).** Four new props: `onShare`, `onShareDownload`, `onShareCopy`, and `shareState`. These are callbacks and status from `useShareInsight` in DashboardShell, passed through AiSummaryCard into `PostCompletionFooter`, which renders the `ShareMenu` component. The footer conditionally renders — if all three share callbacks exist, it mounts `ShareMenu`; otherwise, a disabled placeholder "Share" button. This means the share feature degrades gracefully if the parent doesn't provide the callbacks.
+
+**`onStreamComplete` callback (lines 21, 204-206, 214-216).** DashboardShell needs to know when the AI summary finishes (done or timeout) to show the mobile ShareFab. Two `useEffect` blocks fire `onStreamComplete`: one for the stream path (`status === 'done' || status === 'timeout'`), one for the cached path (`hasCached`). This follows the same lift-state-up pattern as `onMetadataReady` — the card reports completion, the shell decides what to do with it.
+
+**PostCompletionFooter share integration (lines 128-145).** The footer now has a conditional: if all share callbacks are provided, render `ShareMenu` with the status and callbacks. Otherwise, render a disabled "Share" button as a placeholder. The `ShareMenu` sits in a `ml-auto` div to push it to the right edge of the footer.
+
+### Interview-Relevant Patterns
+
+**Callback-based state lifting.** `onStreamComplete` is the third callback AiSummaryCard fires upward (after `onMetadataReady` and the implicit state from `useAiStream`). The pattern is consistent: the card knows when something happened, the shell decides what to do about it. The card doesn't know about ShareFab, the shell doesn't know about stream status internals.
+
+**How to say it in an interview:** "AiSummaryCard reports events upward via callbacks — metadata ready, stream complete — without knowing what the parent does with them. DashboardShell uses `onStreamComplete` to gate the mobile share FAB's visibility. The card and the FAB are decoupled through the shell."
+
+**Conditional feature rendering.** The `onShare && onShareDownload && onShareCopy` guard in PostCompletionFooter means the share feature is opt-in. If a consumer of AiSummaryCard doesn't pass share callbacks, the footer still renders but with a disabled placeholder. This is useful for testing (render the card without the share hook wired up) and for future contexts where sharing might not make sense (e.g., an embedded widget).

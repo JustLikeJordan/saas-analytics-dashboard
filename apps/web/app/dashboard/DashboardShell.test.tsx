@@ -74,6 +74,19 @@ vi.mock('./TransparencyPanel', () => ({
   TransparencyPanel: () => <div data-testid="transparency-panel" />,
 }));
 
+vi.mock('./ShareMenu', () => ({
+  ShareFab: () => <div data-testid="share-fab" />,
+}));
+
+vi.mock('@/lib/hooks/useShareInsight', () => ({
+  useShareInsight: () => ({
+    status: 'idle',
+    generatePng: vi.fn(),
+    downloadPng: vi.fn(),
+    copyToClipboard: vi.fn(),
+  }),
+}));
+
 vi.mock('@/components/ui/sheet', () => ({
   Sheet: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
     open ? <div data-testid="bottom-sheet">{children}</div> : null,

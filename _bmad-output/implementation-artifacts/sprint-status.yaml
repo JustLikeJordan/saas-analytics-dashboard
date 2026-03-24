@@ -74,7 +74,7 @@ development_status:
 
   # ── Epic 4: Sharing & Export ──
   epic-4: in-progress
-  4-1-share-insight-as-rendered-image: ready-for-dev
+  4-1-share-insight-as-rendered-image: done
   4-2-shareable-read-only-link: backlog
   4-3-shared-insight-card-view: backlog
   epic-4-retrospective: optional

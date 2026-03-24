@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { useAiStream } from '@/lib/hooks/useAiStream';
 import { UpgradeCta } from '@/components/common/UpgradeCta';
 import { AiSummarySkeleton } from './AiSummarySkeleton';
+import { ShareMenu, type ShareStatus } from './ShareMenu';
 import { FREE_PREVIEW_WORD_LIMIT } from 'shared/constants';
 
 import type { SubscriptionTier, TransparencyMetadata } from 'shared/types';
@@ -17,6 +18,11 @@ interface AiSummaryCardProps {
   onToggleTransparency?: () => void;
   transparencyOpen?: boolean;
   onMetadataReady?: (metadata: TransparencyMetadata | null) => void;
+  onStreamComplete?: () => void;
+  onShare?: () => Promise<void>;
+  onShareDownload?: () => void;
+  onShareCopy?: () => Promise<void>;
+  shareState?: ShareStatus;
   className?: string;
 }
 
@@ -83,9 +89,20 @@ function SummaryText({ text }: { text: string }) {
 interface PostCompletionFooterProps {
   onToggleTransparency?: () => void;
   transparencyOpen?: boolean;
+  onShare?: () => Promise<void>;
+  onShareDownload?: () => void;
+  onShareCopy?: () => Promise<void>;
+  shareState?: ShareStatus;
 }
 
-function PostCompletionFooter({ onToggleTransparency, transparencyOpen }: PostCompletionFooterProps) {
+function PostCompletionFooter({
+  onToggleTransparency,
+  transparencyOpen,
+  onShare,
+  onShareDownload,
+  onShareCopy,
+  shareState = 'idle',
+}: PostCompletionFooterProps) {
   return (
     <div className="mt-4 flex items-center gap-3 border-t border-border pt-4 animate-fade-in">
       <span className="text-xs text-muted-foreground">Powered by AI</span>
@@ -109,13 +126,22 @@ function PostCompletionFooter({ onToggleTransparency, transparencyOpen }: PostCo
         </span>
       </button>
       <div className="ml-auto">
-        <button
-          type="button"
-          className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
-          disabled
-        >
-          Share
-        </button>
+        {onShare && onShareDownload && onShareCopy ? (
+          <ShareMenu
+            status={shareState}
+            onGenerate={onShare}
+            onDownload={onShareDownload}
+            onCopy={onShareCopy}
+          />
+        ) : (
+          <button
+            type="button"
+            className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            disabled
+          >
+            Share
+          </button>
+        )}
       </div>
     </div>
   );
@@ -157,6 +183,11 @@ export function AiSummaryCard({
   onToggleTransparency,
   transparencyOpen,
   onMetadataReady,
+  onStreamComplete,
+  onShare,
+  onShareDownload,
+  onShareCopy,
+  shareState,
   className,
 }: AiSummaryCardProps) {
   const hasCached = !!cachedContent && !datasetId;
@@ -169,13 +200,21 @@ export function AiSummaryCard({
   useEffect(() => {
     onMetadataReady?.(metadata);
   }, [metadata, onMetadataReady]);
+
+  useEffect(() => {
+    if (status === 'done' || status === 'timeout') onStreamComplete?.();
+  }, [status, onStreamComplete]);
   const retryPending = status === 'connecting' && text === '';
 
   const handleUpgrade = () => {
     // pre-Epic 5: track intent only, no navigation
   };
 
-  // cached content from RSC
+  // cached content — AI is already "done"
+  useEffect(() => {
+    if (hasCached) onStreamComplete?.();
+  }, [hasCached, onStreamComplete]);
+
   if (hasCached) {
     const isFree = tier === 'free';
     const { preview, wasTruncated } = isFree
@@ -196,7 +235,7 @@ export function AiSummaryCard({
         ) : (
           <>
             <SummaryText text={cachedContent!} />
-            <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} />
+            <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} />
           </>
         )}
       </div>
@@ -249,7 +288,7 @@ export function AiSummaryCard({
         <p className="text-sm italic text-muted-foreground">
           We focused on the most important findings to keep things quick.
         </p>
-        <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} />
+        <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} />
       </div>
     );
   }
@@ -311,7 +350,7 @@ export function AiSummaryCard({
         <SummaryText text={text} />
         {isActive && <StreamingCursor />}
       </div>
-      {isDone && <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} />}
+      {isDone && <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} />}
     </div>
   );
 }
