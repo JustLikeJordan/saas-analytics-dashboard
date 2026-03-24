@@ -22,6 +22,7 @@ import { AiSummaryErrorBoundary } from './AiSummaryErrorBoundary';
 import { TransparencyPanel } from './TransparencyPanel';
 import { ShareFab } from './ShareMenu';
 import { useShareInsight } from '@/lib/hooks/useShareInsight';
+import { useCreateShareLink } from '@/lib/hooks/useCreateShareLink';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { DemoModeBanner } from '@/components/common/DemoModeBanner';
 
@@ -184,6 +185,11 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
 
   const captureRef = useRef<HTMLDivElement>(null);
   const { status: shareStatus, generatePng, downloadPng, copyToClipboard } = useShareInsight(captureRef);
+  const { status: linkStatus, createLink } = useCreateShareLink();
+
+  const handleCopyLink = useCallback(async () => {
+    if (data.datasetId != null) await createLink(data.datasetId);
+  }, [data.datasetId, createLink]);
 
   const hasRevenue = data.revenueTrend.length > 0;
   const hasExpenses = data.expenseBreakdown.length > 0;
@@ -204,6 +210,8 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
       onShareDownload={downloadPng}
       onShareCopy={copyToClipboard}
       shareState={shareStatus}
+      onShareCopyLink={handleCopyLink}
+      shareLinkStatus={linkStatus}
     />
   );
 
@@ -312,6 +320,8 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
           onGenerate={generatePng}
           onDownload={downloadPng}
           onCopy={copyToClipboard}
+          onCopyLink={handleCopyLink}
+          linkStatus={linkStatus}
         />
       </section>
     </>

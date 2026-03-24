@@ -1,22 +1,25 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, Copy, Share2, Check, Loader2 } from 'lucide-react';
+import { Download, Copy, Share2, Check, Loader2, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/lib/hooks/useIsMobile';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 
 export type ShareStatus = 'idle' | 'generating' | 'done' | 'error';
+export type LinkStatus = 'idle' | 'creating' | 'done' | 'error';
 
 interface ShareMenuProps {
   status: ShareStatus;
   onGenerate: () => Promise<void>;
   onDownload: () => void;
   onCopy: () => Promise<void>;
+  onCopyLink?: () => Promise<void>;
+  linkStatus?: LinkStatus;
   className?: string;
 }
 
-type ActionFeedback = 'idle' | 'downloaded' | 'copied';
+type ActionFeedback = 'idle' | 'downloaded' | 'copied' | 'linked';
 
 const FEEDBACK_DURATION_MS = 2000;
 
@@ -25,8 +28,11 @@ function ShareOptions({
   onDownload,
   onCopy,
   onGenerate,
-}: Pick<ShareMenuProps, 'status' | 'onDownload' | 'onCopy' | 'onGenerate'>) {
+  onCopyLink,
+  linkStatus = 'idle',
+}: Pick<ShareMenuProps, 'status' | 'onDownload' | 'onCopy' | 'onGenerate' | 'onCopyLink' | 'linkStatus'>) {
   const isGenerating = status === 'generating';
+  const isLinking = linkStatus === 'creating';
   const [feedback, setFeedback] = useState<ActionFeedback>('idle');
   const feedbackTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -50,6 +56,18 @@ function ShareOptions({
     showFeedback('copied');
   }, [onGenerate, onCopy, showFeedback]);
 
+  const handleCopyLink = useCallback(async () => {
+    if (!onCopyLink) return;
+    await onCopyLink();
+    showFeedback('linked');
+  }, [onCopyLink, showFeedback]);
+
+  const feedbackText: Record<Exclude<ActionFeedback, 'idle'>, string> = {
+    downloaded: 'Downloaded!',
+    copied: 'Copied to clipboard!',
+    linked: 'Link copied!',
+  };
+
   return (
     <div className="flex flex-col gap-1 p-1">
       {isGenerating && (
@@ -58,15 +76,42 @@ function ShareOptions({
           Generating image...
         </div>
       )}
+      {isLinking && (
+        <div role="status" className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground" aria-live="polite">
+          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          Creating link...
+        </div>
+      )}
       {status === 'error' && (
         <p className="px-3 py-2 text-sm text-destructive" role="status" aria-live="polite">
           Failed to generate image. Try again.
         </p>
       )}
+      {linkStatus === 'error' && (
+        <p className="px-3 py-2 text-sm text-destructive" role="status" aria-live="polite">
+          Failed to create link. Try again.
+        </p>
+      )}
       {feedback !== 'idle' && (
         <p className="px-3 py-1.5 text-xs font-medium text-green-600" role="status" aria-live="polite">
-          {feedback === 'downloaded' ? 'Downloaded!' : 'Copied to clipboard!'}
+          {feedbackText[feedback]}
         </p>
+      )}
+      {onCopyLink && (
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          onClick={handleCopyLink}
+          disabled={isLinking}
+          aria-label="Copy link"
+        >
+          {feedback === 'linked' ? (
+            <Check className="h-4 w-4 text-green-500" aria-hidden="true" />
+          ) : (
+            <Link2 className="h-4 w-4" aria-hidden="true" />
+          )}
+          Copy link
+        </button>
       )}
       <button
         type="button"
@@ -94,13 +139,13 @@ function ShareOptions({
         ) : (
           <Copy className="h-4 w-4" aria-hidden="true" />
         )}
-        Copy to clipboard
+        Copy image
       </button>
     </div>
   );
 }
 
-export function ShareMenu({ status, onGenerate, onDownload, onCopy, className }: ShareMenuProps) {
+export function ShareMenu({ status, onGenerate, onDownload, onCopy, onCopyLink, linkStatus, className }: ShareMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -159,6 +204,8 @@ export function ShareMenu({ status, onGenerate, onDownload, onCopy, className }:
             onGenerate={onGenerate}
             onDownload={onDownload}
             onCopy={onCopy}
+            onCopyLink={onCopyLink}
+            linkStatus={linkStatus}
           />
         </div>
       )}
@@ -172,9 +219,11 @@ interface ShareFabProps {
   onGenerate: () => Promise<void>;
   onDownload: () => void;
   onCopy: () => Promise<void>;
+  onCopyLink?: () => Promise<void>;
+  linkStatus?: LinkStatus;
 }
 
-export function ShareFab({ visible, status, onGenerate, onDownload, onCopy }: ShareFabProps) {
+export function ShareFab({ visible, status, onGenerate, onDownload, onCopy, onCopyLink, linkStatus }: ShareFabProps) {
   const isMobile = useIsMobile();
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -199,6 +248,8 @@ export function ShareFab({ visible, status, onGenerate, onDownload, onCopy }: Sh
             onGenerate={onGenerate}
             onDownload={onDownload}
             onCopy={onCopy}
+            onCopyLink={onCopyLink}
+            linkStatus={linkStatus}
           />
         </SheetContent>
       </Sheet>

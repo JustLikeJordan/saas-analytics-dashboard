@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useAiStream } from '@/lib/hooks/useAiStream';
 import { UpgradeCta } from '@/components/common/UpgradeCta';
 import { AiSummarySkeleton } from './AiSummarySkeleton';
-import { ShareMenu, type ShareStatus } from './ShareMenu';
+import { ShareMenu, type ShareStatus, type LinkStatus } from './ShareMenu';
 import { FREE_PREVIEW_WORD_LIMIT } from 'shared/constants';
 
 import type { SubscriptionTier, TransparencyMetadata } from 'shared/types';
@@ -23,6 +23,8 @@ interface AiSummaryCardProps {
   onShareDownload?: () => void;
   onShareCopy?: () => Promise<void>;
   shareState?: ShareStatus;
+  onShareCopyLink?: () => Promise<void>;
+  shareLinkStatus?: LinkStatus;
   className?: string;
 }
 
@@ -93,6 +95,8 @@ interface PostCompletionFooterProps {
   onShareDownload?: () => void;
   onShareCopy?: () => Promise<void>;
   shareState?: ShareStatus;
+  onShareCopyLink?: () => Promise<void>;
+  shareLinkStatus?: LinkStatus;
 }
 
 function PostCompletionFooter({
@@ -102,6 +106,8 @@ function PostCompletionFooter({
   onShareDownload,
   onShareCopy,
   shareState = 'idle',
+  onShareCopyLink,
+  shareLinkStatus,
 }: PostCompletionFooterProps) {
   return (
     <div className="mt-4 flex items-center gap-3 border-t border-border pt-4 animate-fade-in">
@@ -132,6 +138,8 @@ function PostCompletionFooter({
             onGenerate={onShare}
             onDownload={onShareDownload}
             onCopy={onShareCopy}
+            onCopyLink={onShareCopyLink}
+            linkStatus={shareLinkStatus}
           />
         ) : (
           <button
@@ -188,6 +196,8 @@ export function AiSummaryCard({
   onShareDownload,
   onShareCopy,
   shareState,
+  onShareCopyLink,
+  shareLinkStatus,
   className,
 }: AiSummaryCardProps) {
   const hasCached = !!cachedContent && !datasetId;
@@ -235,7 +245,7 @@ export function AiSummaryCard({
         ) : (
           <>
             <SummaryText text={cachedContent!} />
-            <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} />
+            <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} />
           </>
         )}
       </div>
@@ -288,7 +298,7 @@ export function AiSummaryCard({
         <p className="text-sm italic text-muted-foreground">
           We focused on the most important findings to keep things quick.
         </p>
-        <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} />
+        <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} />
       </div>
     );
   }
@@ -350,7 +360,7 @@ export function AiSummaryCard({
         <SummaryText text={text} />
         {isActive && <StreamingCursor />}
       </div>
-      {isDone && <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} />}
+      {isDone && <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} />}
     </div>
   );
 }

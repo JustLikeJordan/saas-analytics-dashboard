@@ -1,6 +1,6 @@
 # Story 4.2: Shareable Read-Only Link
 
-Status: ready-for-dev
+Status: review
 
 <!-- Validated: 2026-03-24. Fixed: RLS migration gap, tokenHash naming (was shareToken), expiry check in GET route, line number corrections. -->
 
