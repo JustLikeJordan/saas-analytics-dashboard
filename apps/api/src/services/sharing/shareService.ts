@@ -23,18 +23,15 @@ export async function generateShareLink(orgId: number, datasetId: number, create
     throw new NotFoundError('Organization not found');
   }
 
+  const meta = summary.transparencyMetadata as Record<string, unknown> | null;
+  const dateRange = (meta && typeof meta.dateRange === 'string') ? meta.dateRange : 'Date range unavailable';
+
   const snapshot: InsightSnapshot = {
     orgName: org.name,
-    dateRange: '', // populated by caller or from summary metadata if available
+    dateRange,
     aiSummaryContent: summary.content,
     chartConfig: {},
   };
-
-  // pull date range from transparency metadata if available
-  const meta = summary.transparencyMetadata as Record<string, unknown> | null;
-  if (meta && typeof meta.dateRange === 'string') {
-    snapshot.dateRange = meta.dateRange;
-  }
 
   const raw = randomBytes(SHARES.TOKEN_BYTES).toString('hex');
   const tokenHash = hashToken(raw);

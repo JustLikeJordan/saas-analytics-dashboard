@@ -97,6 +97,23 @@ describe('shareService', () => {
       expect(snapshot.dateRange).toBe('Jan 2026 – Feb 2026');
     });
 
+    it('falls back to placeholder when transparencyMetadata lacks dateRange', async () => {
+      const noDateSummary = { id: 1, content: 'Some insight.', transparencyMetadata: {} };
+      mockGetCachedSummary.mockResolvedValueOnce(noDateSummary);
+      mockFindOrgById.mockResolvedValueOnce(fakeOrg);
+      mockCreateShare.mockImplementationOnce(
+        (_orgId, _dsId, _hash, _snap, _createdBy, expiresAt) => ({
+          id: 4,
+          expiresAt,
+        }),
+      );
+
+      await generateShareLink(10, 5, 1);
+
+      const snapshot = mockCreateShare.mock.calls[0]![3];
+      expect(snapshot.dateRange).toBe('Date range unavailable');
+    });
+
     it('throws ValidationError when no cached summary exists', async () => {
       mockGetCachedSummary.mockResolvedValueOnce(null);
 

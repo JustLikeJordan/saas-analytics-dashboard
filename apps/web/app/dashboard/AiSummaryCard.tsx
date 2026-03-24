@@ -25,6 +25,7 @@ interface AiSummaryCardProps {
   shareState?: ShareStatus;
   onShareCopyLink?: () => Promise<void>;
   shareLinkStatus?: LinkStatus;
+  shareLinkClipboardFailed?: boolean;
   className?: string;
 }
 
@@ -97,6 +98,7 @@ interface PostCompletionFooterProps {
   shareState?: ShareStatus;
   onShareCopyLink?: () => Promise<void>;
   shareLinkStatus?: LinkStatus;
+  shareLinkClipboardFailed?: boolean;
 }
 
 function PostCompletionFooter({
@@ -108,6 +110,7 @@ function PostCompletionFooter({
   shareState = 'idle',
   onShareCopyLink,
   shareLinkStatus,
+  shareLinkClipboardFailed,
 }: PostCompletionFooterProps) {
   return (
     <div className="mt-4 flex items-center gap-3 border-t border-border pt-4 animate-fade-in">
@@ -140,6 +143,7 @@ function PostCompletionFooter({
             onCopy={onShareCopy}
             onCopyLink={onShareCopyLink}
             linkStatus={shareLinkStatus}
+            linkClipboardFailed={shareLinkClipboardFailed}
           />
         ) : (
           <button
@@ -198,6 +202,7 @@ export function AiSummaryCard({
   shareState,
   onShareCopyLink,
   shareLinkStatus,
+  shareLinkClipboardFailed,
   className,
 }: AiSummaryCardProps) {
   const hasCached = !!cachedContent && !datasetId;
@@ -245,7 +250,7 @@ export function AiSummaryCard({
         ) : (
           <>
             <SummaryText text={cachedContent!} />
-            <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} />
+            <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} shareLinkClipboardFailed={shareLinkClipboardFailed} />
           </>
         )}
       </div>
@@ -298,7 +303,7 @@ export function AiSummaryCard({
         <p className="text-sm italic text-muted-foreground">
           We focused on the most important findings to keep things quick.
         </p>
-        <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} />
+        <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} shareLinkClipboardFailed={shareLinkClipboardFailed} />
       </div>
     );
   }
@@ -360,7 +365,7 @@ export function AiSummaryCard({
         <SummaryText text={text} />
         {isActive && <StreamingCursor />}
       </div>
-      {isDone && <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} />}
+      {isDone && <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} shareLinkClipboardFailed={shareLinkClipboardFailed} />}
     </div>
   );
 }

@@ -16,6 +16,7 @@ interface ShareMenuProps {
   onCopy: () => Promise<void>;
   onCopyLink?: () => Promise<void>;
   linkStatus?: LinkStatus;
+  linkClipboardFailed?: boolean;
   className?: string;
 }
 
@@ -30,7 +31,8 @@ function ShareOptions({
   onGenerate,
   onCopyLink,
   linkStatus = 'idle',
-}: Pick<ShareMenuProps, 'status' | 'onDownload' | 'onCopy' | 'onGenerate' | 'onCopyLink' | 'linkStatus'>) {
+  linkClipboardFailed = false,
+}: Pick<ShareMenuProps, 'status' | 'onDownload' | 'onCopy' | 'onGenerate' | 'onCopyLink' | 'linkStatus' | 'linkClipboardFailed'>) {
   const isGenerating = status === 'generating';
   const isLinking = linkStatus === 'creating';
   const [feedback, setFeedback] = useState<ActionFeedback>('idle');
@@ -92,6 +94,11 @@ function ShareOptions({
           Failed to create link. Try again.
         </p>
       )}
+      {linkClipboardFailed && (
+        <p className="px-3 py-2 text-xs text-amber-600" role="status" aria-live="polite">
+          Link created but clipboard unavailable — copy from the URL bar.
+        </p>
+      )}
       {feedback !== 'idle' && (
         <p className="px-3 py-1.5 text-xs font-medium text-green-600" role="status" aria-live="polite">
           {feedbackText[feedback]}
@@ -145,7 +152,7 @@ function ShareOptions({
   );
 }
 
-export function ShareMenu({ status, onGenerate, onDownload, onCopy, onCopyLink, linkStatus, className }: ShareMenuProps) {
+export function ShareMenu({ status, onGenerate, onDownload, onCopy, onCopyLink, linkStatus, linkClipboardFailed, className }: ShareMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -206,6 +213,7 @@ export function ShareMenu({ status, onGenerate, onDownload, onCopy, onCopyLink, 
             onCopy={onCopy}
             onCopyLink={onCopyLink}
             linkStatus={linkStatus}
+            linkClipboardFailed={linkClipboardFailed}
           />
         </div>
       )}
@@ -221,9 +229,10 @@ interface ShareFabProps {
   onCopy: () => Promise<void>;
   onCopyLink?: () => Promise<void>;
   linkStatus?: LinkStatus;
+  linkClipboardFailed?: boolean;
 }
 
-export function ShareFab({ visible, status, onGenerate, onDownload, onCopy, onCopyLink, linkStatus }: ShareFabProps) {
+export function ShareFab({ visible, status, onGenerate, onDownload, onCopy, onCopyLink, linkStatus, linkClipboardFailed }: ShareFabProps) {
   const isMobile = useIsMobile();
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -250,6 +259,7 @@ export function ShareFab({ visible, status, onGenerate, onDownload, onCopy, onCo
             onCopy={onCopy}
             onCopyLink={onCopyLink}
             linkStatus={linkStatus}
+            linkClipboardFailed={linkClipboardFailed}
           />
         </SheetContent>
       </Sheet>

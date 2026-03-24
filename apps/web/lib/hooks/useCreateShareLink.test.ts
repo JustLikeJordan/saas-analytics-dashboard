@@ -75,6 +75,41 @@ describe('useCreateShareLink', () => {
     expect(trackClientEvent).toHaveBeenCalledWith('share.created', { datasetId: 5 });
   });
 
+  it('still transitions to done and exposes URL when clipboard fails', async () => {
+    mockWriteText.mockRejectedValueOnce(new Error('Clipboard permission denied'));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ data: { url: 'http://localhost:3000/share/abc' } }),
+    } as Response);
+
+    const { result } = renderHook(() => useCreateShareLink());
+
+    await act(async () => {
+      await result.current.createLink(5);
+    });
+
+    expect(result.current.status).toBe('done');
+    expect(result.current.shareUrl).toBe('http://localhost:3000/share/abc');
+    expect(result.current.clipboardFailed).toBe(true);
+  });
+
+  it('exposes error message from API on failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({ error: { message: 'No cached summary' } }),
+    } as Response);
+
+    const { result } = renderHook(() => useCreateShareLink());
+
+    await act(async () => {
+      await result.current.createLink(5);
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.errorMsg).toBe('No cached summary');
+  });
+
   it('transitions to error on API failure', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
       ok: false,

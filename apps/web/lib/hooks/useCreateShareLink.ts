@@ -11,10 +11,14 @@ const TIMEOUT_MS = 10_000;
 export function useCreateShareLink() {
   const [status, setStatus] = useState<LinkStatus>('idle');
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [clipboardFailed, setClipboardFailed] = useState(false);
 
   const createLink = useCallback(async (datasetId: number) => {
     setStatus('creating');
     setShareUrl(null);
+    setErrorMsg(null);
+    setClipboardFailed(false);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -36,15 +40,22 @@ export function useCreateShareLink() {
 
       const { data } = (await res.json()) as { data: { url: string } };
 
-      await navigator.clipboard.writeText(data.url);
+      // commit the URL before attempting clipboard — the share exists in the DB
       setShareUrl(data.url);
       setStatus('done');
       trackClientEvent(ANALYTICS_EVENTS.SHARE_CREATED, { datasetId });
-    } catch {
+
+      try {
+        await navigator.clipboard.writeText(data.url);
+      } catch {
+        setClipboardFailed(true);
+      }
+    } catch (err) {
       clearTimeout(timer);
+      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong');
       setStatus('error');
     }
   }, []);
 
-  return { status, shareUrl, createLink };
+  return { status, shareUrl, errorMsg, clipboardFailed, createLink };
 }

@@ -31,6 +31,7 @@ export async function incrementViewCount(id: number) {
     .set({ viewCount: sql`${shares.viewCount} + 1` })
     .where(eq(shares.id, id))
     .returning();
+  if (!share) throw new Error(`Share ${id} not found during view count increment`);
   return share;
 }
 

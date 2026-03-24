@@ -185,7 +185,7 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
 
   const captureRef = useRef<HTMLDivElement>(null);
   const { status: shareStatus, generatePng, downloadPng, copyToClipboard } = useShareInsight(captureRef);
-  const { status: linkStatus, createLink } = useCreateShareLink();
+  const { status: linkStatus, clipboardFailed: linkClipboardFailed, createLink } = useCreateShareLink();
 
   const handleCopyLink = useCallback(async () => {
     if (data.datasetId != null) await createLink(data.datasetId);
@@ -212,6 +212,7 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
       shareState={shareStatus}
       onShareCopyLink={handleCopyLink}
       shareLinkStatus={linkStatus}
+      shareLinkClipboardFailed={linkClipboardFailed}
     />
   );
 
@@ -322,6 +323,7 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
           onCopy={copyToClipboard}
           onCopyLink={handleCopyLink}
           linkStatus={linkStatus}
+          linkClipboardFailed={linkClipboardFailed}
         />
       </section>
     </>
