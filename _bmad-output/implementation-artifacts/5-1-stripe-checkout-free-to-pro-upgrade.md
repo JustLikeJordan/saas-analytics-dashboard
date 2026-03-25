@@ -1,6 +1,6 @@
 # Story 5.1: Stripe Checkout & Free-to-Pro Upgrade
 
-Status: review
+Status: done
 
 <!-- Note: Validation is REQUIRED. Every story must complete all 4 steps: Create → Validate → Dev → Code Review. -->
 
