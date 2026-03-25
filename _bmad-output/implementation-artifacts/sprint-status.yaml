@@ -73,10 +73,10 @@ development_status:
   epic-3-retrospective: done
 
   # ── Epic 4: Sharing & Export ──
-  epic-4: in-progress
+  epic-4: done
   4-1-share-insight-as-rendered-image: done
   4-2-shareable-read-only-link: done
-  4-3-shared-insight-card-view: ready-for-dev
+  4-3-shared-insight-card-view: done
   epic-4-retrospective: optional
 
   # ── Epic 5: Subscription & Payments ──

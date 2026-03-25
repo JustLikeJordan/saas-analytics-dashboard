@@ -2,7 +2,7 @@
 
 Status: ready-for-dev
 
-<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+<!-- Note: Validation is REQUIRED. Every story must complete all 4 steps: Create → Validate → Dev → Code Review. -->
 
 ## Story
 

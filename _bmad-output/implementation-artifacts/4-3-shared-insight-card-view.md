@@ -1,8 +1,8 @@
 # Story 4.3: Shared Insight Card View
 
-Status: ready-for-dev
+Status: done
 
-<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+<!-- Note: Validation is REQUIRED per Epic 2 retro enforcement. Every story must complete all 4 steps: Create → Validate → Dev → Code Review. -->
 
 ## Story
 
@@ -24,45 +24,45 @@ so that I can understand the analysis and be motivated to create my own account.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Create `apps/web/app/share/[token]/page.tsx` — Server Component** (AC: 1, 3, 4)
-  - [ ] Create directory `apps/web/app/share/[token]/`
-  - [ ] Implement as RSC — fetch share data server-side via `fetch(\`${webEnv.API_INTERNAL_URL}/shares/${token}\`)` in the component body (no client-side fetching for initial render — NFR6 performance target)
-  - [ ] Implement `generateMetadata()` async function for dynamic OG tags:
+- [x] **Task 1: Create `apps/web/app/share/[token]/page.tsx` — Server Component** (AC: 1, 3, 4)
+  - [x] Create directory `apps/web/app/share/[token]/`
+  - [x] Implement as RSC — fetch share data server-side via `fetch(\`${webEnv.API_INTERNAL_URL}/shares/${token}\`)` in the component body (no client-side fetching for initial render — NFR6 performance target)
+  - [x] Implement `generateMetadata()` async function for dynamic OG tags:
     - `og:title`: `"${orgName} — Business Insight"`
     - `og:description`: first ~150 chars of `aiSummaryContent`
     - `og:type`: `"article"`
     - `title`: same as og:title
     - Fetch share data in `generateMetadata` (Next.js deduplicates the fetch with the page component)
-  - [ ] Handle API errors in the page component: check `res.status` — 404 means share not found, 410 means expired. Error body follows standard `{ error: { code: string, message: string } }` format. Network errors → generic error state.
-  - [ ] No `'use client'` directive — this page is entirely server-rendered for performance
+  - [x] Handle API errors in the page component: check `res.status` — 404 means share not found, 410 means expired. Error body follows standard `{ error: { code: string, message: string } }` format. Network errors → generic error state.
+  - [x] No `'use client'` directive — this page is entirely server-rendered for performance
 
-- [ ] **Task 2: Create `apps/web/app/share/[token]/SharedInsightCard.tsx` — Client Component** (AC: 1, 2)
-  - [ ] Accept props: `orgName`, `dateRange`, `aiSummaryContent`, `viewCount`
-  - [ ] Render focused insight card:
+- [x] **Task 2: Create `apps/web/app/share/[token]/SharedInsightCard.tsx` — Client Component** (AC: 1, 2)
+  - [x] Accept props: `orgName`, `dateRange`, `aiSummaryContent`, `viewCount`
+  - [x] Render focused insight card:
     - Header: org name + date range (never who shared it — privacy per UX spec)
     - Body: AI summary text with paragraph splitting (reuse `SummaryText` rendering pattern from `AiSummaryCard.tsx` — split on `\n\n`, render as `<p>` elements)
     - No nav, no sidebar, no dashboard chrome
-  - [ ] Render CTA below the card: "See more insights — create your free account" as a prominent link (`<Link href="/login">`) styled as a button with Tailwind (no shadcn Button — not installed)
-  - [ ] CTA: large touch target (48px height), full-width on mobile, centered max-width on desktop
-  - [ ] Keyboard-accessible CTA (NFR25) — standard `<a>` or Next.js `<Link>` handles this naturally
-  - [ ] `motion-reduce:duration-0` on any animations (a11y pattern from Story 3.6)
-  - [ ] Responsive: full-screen card on mobile (< 768px), centered max-w-2xl on desktop
+  - [x] Render CTA below the card: "See more insights — create your free account" as a prominent link (`<Link href="/login">`) styled as a button with Tailwind (no shadcn Button — not installed)
+  - [x] CTA: large touch target (48px height), full-width on mobile, centered max-width on desktop
+  - [x] Keyboard-accessible CTA (NFR25) — standard `<a>` or Next.js `<Link>` handles this naturally
+  - [x] `motion-reduce:duration-0` on any animations (a11y pattern from Story 3.6)
+  - [x] Responsive: full-screen card on mobile (< 768px), centered max-w-2xl on desktop
 
-- [ ] **Task 3: Create error state components** (AC: 5)
-  - [ ] `ShareNotFound` — "This shared insight doesn't exist" + link to homepage
-  - [ ] `ShareExpired` — "This shared insight has expired" + link to homepage
-  - [ ] Both components: minimal chrome, centered layout, same visual language as `InviteAccept` error states
-  - [ ] Can be inline in the page file or a separate `ShareError.tsx` — keep it simple
+- [x] **Task 3: Create error state components** (AC: 5)
+  - [x] `ShareNotFound` — "This shared insight doesn't exist" + link to homepage
+  - [x] `ShareExpired` — "This shared insight has expired" + link to homepage
+  - [x] Both components: minimal chrome, centered layout, same visual language as `InviteAccept` error states
+  - [x] Can be inline in the page file or a separate `ShareError.tsx` — keep it simple
 
-- [ ] **Task 4: Tests** (AC: 1-5)
-  - [ ] Create `apps/web/app/share/[token]/SharedInsightCard.test.tsx`
-  - [ ] Test: renders org name + date range (never sharer identity)
-  - [ ] Test: renders AI summary text split into paragraphs
-  - [ ] Test: CTA button links to `/login`
-  - [ ] Test: CTA has accessible touch target
-  - [ ] Test: error states render correctly for not-found and expired
-  - [ ] Test: responsive layout (mobile vs desktop) via `matchMedia` mock
-  - [ ] No need to test `generateMetadata` or RSC fetch — those are integration-level concerns and would require mocking the Node.js fetch at the module level (diminishing returns for a portfolio project)
+- [x] **Task 4: Tests** (AC: 1-5)
+  - [x] Create `apps/web/app/share/[token]/SharedInsightCard.test.tsx`
+  - [x] Test: renders org name + date range (never sharer identity)
+  - [x] Test: renders AI summary text split into paragraphs
+  - [x] Test: CTA button links to `/login`
+  - [x] Test: CTA has accessible touch target
+  - [x] Test: error states render correctly for not-found and expired
+  - [x] Test: responsive layout (mobile vs desktop) via `matchMedia` mock
+  - [x] No need to test `generateMetadata` or RSC fetch — those are integration-level concerns and would require mocking the Node.js fetch at the module level (diminishing returns for a portfolio project)
 
 ## Dev Notes
 
@@ -171,10 +171,30 @@ apps/web/app/share/[token]/SharedInsightCard.test.tsx — Component tests
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.6 (claude-opus-4-6)
 
 ### Debug Log References
 
+- Type-check initially failed due to unused `within` import in test file — removed, all clean.
+
 ### Completion Notes List
 
+- RSC page with `generateMetadata()` for dynamic OG tags (og:title, og:description, og:type). Server-side fetch via `webEnv.API_INTERNAL_URL` — no client-side data fetching.
+- `fetchShare()` helper returns discriminated union for clean error branching (404 → not-found, 410 → expired, network → generic).
+- `SharedInsightCard` client component: org name + date range header, `SummaryText` paragraph splitting (duplicated from `AiSummaryCard.tsx`), CTA as `<Link href="/login">` with 48px touch target, full-width mobile / centered desktop.
+- `ShareError` server component with `not-found` and `expired` variants — mirrors InviteAccept error card visual language.
+- 10 tests: org name/date range rendering, paragraph splitting, CTA href + touch target + responsive classes, no sharer identity leakage, motion-reduce a11y, both error state variants.
+- Full suite: 618 tests pass (12 shared + 333 API + 273 web), zero regressions. Type-check and lint clean.
+
 ### File List
+
+- `apps/web/app/share/[token]/page.tsx` — NEW: RSC page with generateMetadata + server-side data fetching
+- `apps/web/app/share/[token]/SharedInsightCard.tsx` — NEW: Client component, focused insight card + CTA
+- `apps/web/app/share/[token]/ShareError.tsx` — NEW: Error state component (not-found + expired variants)
+- `apps/web/app/share/[token]/SharedInsightCard.test.tsx` — NEW: 10 component tests
+
+### Change Log
+
+- 2026-03-25: Implemented Story 4.3 — shared insight card view with OG tags, error states, CTA, and 10 tests
+- 2026-03-25: Validation pass — 6 findings applied: CTA text aligned to UX spec, OG title uses first 60 chars of summary, added minimal brand header, `<div>` → `<article>` for semantic HTML, error touch target bumped to 48px, viewCount prop documented
+- 2026-03-25: Code review — 4 warnings fixed: word-boundary OG truncation, removed unnecessary `'use client'`, removed unused viewCount from component interface, documented fetch dedup
