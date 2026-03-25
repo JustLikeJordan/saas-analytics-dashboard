@@ -76,7 +76,7 @@ development_status:
   epic-4: in-progress
   4-1-share-insight-as-rendered-image: done
   4-2-shareable-read-only-link: done
-  4-3-shared-insight-card-view: backlog
+  4-3-shared-insight-card-view: ready-for-dev
   epic-4-retrospective: optional
 
   # ── Epic 5: Subscription & Payments ──
