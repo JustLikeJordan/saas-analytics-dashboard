@@ -26,6 +26,8 @@ vi.mock('drizzle-orm', () => ({
   and: (...args: unknown[]) => args,
   eq: (a: unknown, b: unknown) => ({ eq: [a, b] }),
   gt: (a: unknown, b: unknown) => ({ gt: [a, b] }),
+  or: (...args: unknown[]) => ({ or: args }),
+  isNull: (a: unknown) => ({ isNull: a }),
 }));
 
 describe('getActiveTier', () => {
