@@ -40,7 +40,11 @@ Checks if a specific user belongs to a specific org. Uses `and()` to combine two
 
 Returns all org memberships for a user with the full org data eager-loaded. Flagged as a cross-org lookup (intentional exception) because it queries across all orgs for a single user — needed during login to determine which org to log them into.
 
-### getOrgMembers (lines 32-37)
+### getOrgOwnerId (lines 32-38)
+
+Returns the `userId` of the org's owner, or `null` if none is found. Uses `and()` to combine org ID with `role = 'owner'`, and requests only the `userId` column (no need to load the full user record). This exists because webhook handlers need to attribute analytics events to a user, but webhooks only carry `orgId` — the owner is the natural attribution target.
+
+### getOrgMembers (lines 40-45)
 
 The inverse — returns all members of an org with user data. This one is org-scoped (you pass the orgId), so it's not a cross-org exception. Used for member management features.
 

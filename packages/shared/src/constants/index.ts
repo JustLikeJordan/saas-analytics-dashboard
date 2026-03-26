@@ -44,6 +44,7 @@ export const ANALYTICS_EVENTS = {
   AI_PREVIEW_VIEWED: 'ai_preview.viewed',
   SUBSCRIPTION_UPGRADE_INTENDED: 'subscription.upgrade_intended',
   SUBSCRIPTION_UPGRADED: 'subscription.upgraded',
+  SUBSCRIPTION_CANCELLED: 'subscription.cancelled',
   TRANSPARENCY_PANEL_OPENED: 'transparency_panel.opened',
 } as const;
 

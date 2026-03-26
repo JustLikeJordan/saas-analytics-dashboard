@@ -82,7 +82,7 @@ development_status:
   # ── Epic 5: Subscription & Payments ──
   epic-5: in-progress
   5-1-stripe-checkout-free-to-pro-upgrade: done
-  5-2-subscription-lifecycle-management: backlog
+  5-2-subscription-lifecycle-management: done
   5-3-subscription-status-verification: backlog
   5-4-payment-failure-pro-access-revocation: backlog
   epic-5-retrospective: optional

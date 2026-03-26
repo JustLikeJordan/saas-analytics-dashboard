@@ -2,64 +2,89 @@
 
 ## Elevator Pitch
 
-This file processes Stripe webhook events after they've been verified. Right now it handles exactly one event type — `checkout.session.completed` — which upgrades an org from Free to Pro. It's deliberately narrow: a switch statement with one case and a default that logs and moves on. Future Stripe events (cancellations, renewals, payment failures) will slot into the same switch.
+This is the nerve center for Stripe subscription events. When a customer upgrades, cancels, renews, or reactivates their plan, Stripe fires a webhook — and this handler translates those raw events into database state changes and analytics tracking. Two event types, two handler functions, one switch statement. It's the single source of truth for subscription lifecycle transitions.
+
+**How to say it in an interview:** "This is an event-driven state machine for subscription lifecycle. Stripe webhooks arrive, we dispatch by event type, apply idempotent database mutations, and fire analytics. The handler is designed for at-least-once delivery — every operation is safe to replay."
 
 ## Why This Approach
 
-The handler is separated from the route for a clear reason: the route deals with HTTP concerns (signature verification, request/response), while this file deals with business logic (what does "checkout completed" mean for our data model?). This separation means you can test the business logic by passing in a mock `Stripe.Event` without spinning up an HTTP server.
+Stripe's `customer.subscription.updated` event carries everything you need for cancellation, renewal, and reactivation — all in one event type. Rather than subscribing to a dozen specialized events (`customer.subscription.deleted`, `invoice.paid`, etc.), we handle one event and branch on its fields. This keeps the webhook surface area small and testable.
 
-The switch-on-event-type pattern is what Stripe themselves recommend. You could build an event registry or use a pub/sub system, but for a handful of event types, a switch statement is honest and readable. Over-engineering this into an event bus when you have one case would be premature abstraction.
+The handler delegates all persistence to query functions that are themselves idempotent. If Stripe retries a webhook (which it will — at least 3 times), calling the same handler twice produces the same database state. No event deduplication table needed.
 
-One interesting choice: `currentPeriodEnd` is set to `null` with a comment that Story 5.2 will populate it via `subscription.updated`. This is intentional incompleteness — the checkout event doesn't carry period info reliably, so rather than guess, the code leaves it null and lets a future webhook fill it in.
+We also hit a real-world Stripe SDK quirk here. The TypeScript types for Stripe SDK v20 moved `current_period_end` from `Subscription` to `SubscriptionItem`, but the webhook payload still includes it at the subscription root. The intersection type `SubscriptionWebhookPayload` bridges that gap without lying about the runtime shape.
 
 ## Code Walkthrough
 
-**`handleWebhookEvent(event)`** — The entry point. Receives a verified `Stripe.Event` (verification already happened in the route). The switch dispatches based on `event.type`. Unhandled events get logged at info level — not warn, because Stripe sends many event types you might not care about yet.
+**`handleWebhookEvent(event)`** — The entry point. Receives a verified `Stripe.Event` (verification already happened in the route). The switch dispatches based on `event.type` to one of two handlers. Unhandled events get logged at info level — not warn, because Stripe sends many event types you might not care about yet.
 
-**`handleCheckoutCompleted(session)`** — This is where the money is (literally). It does four things:
+**`handleCheckoutCompleted(session)`** — The initial upgrade path. It:
 
-1. **Extracts metadata** — Pulls `orgId` and `userId` from the session's metadata. These are the same values that `createCheckoutSession` embedded earlier. The `Number()` conversion is necessary because Stripe metadata is always strings.
+1. **Extracts metadata** — Pulls `orgId` and `userId` from the session's metadata. These were embedded during `createCheckoutSession`. The `Number()` conversion is necessary because Stripe metadata is always strings.
 
-2. **Normalizes Stripe's polymorphic fields** — `session.customer` and `session.subscription` can be either a string ID or an expanded object, depending on your Stripe API version and expand settings. The ternary handles both shapes. This is a gotcha that trips people up in production.
+2. **Normalizes Stripe's polymorphic fields** — `session.customer` and `session.subscription` can be either a string ID or an expanded object. The ternary handles both shapes.
 
-3. **Validates required fields** — If anything is missing, it logs an error and returns without throwing. This is important: webhook handlers should almost never throw. Throwing would cause a 500 response, and Stripe would retry the webhook — but if the data is malformed, retrying won't help. You'd just get an infinite retry loop.
+3. **Validates required fields** — If anything is missing, logs an error and returns without throwing. Webhook handlers should almost never throw — a 500 would trigger Stripe retries for data that's genuinely malformed, creating an infinite retry loop.
 
-4. **Upserts the subscription** — Uses `upsertSubscription` so it works whether this is the org's first subscription or a re-subscription after cancellation. Sets `plan: 'pro'` and `status: 'active'`.
+4. **Upserts the subscription** — Sets `plan: 'pro'` and `status: 'active'` with `currentPeriodEnd: null`. The null is deliberate — the `subscription.updated` webhook fills in the period end moments later.
 
-After the DB write, it fires an analytics event (`SUBSCRIPTION_UPGRADED`) and logs success. The `trackEvent` call is fire-and-forget — it doesn't await a response, so analytics failures don't break the payment flow.
+**`handleSubscriptionUpdated(subscription)`** — The lifecycle handler, added in Story 5.2. This is where cancellation, reactivation, and period renewal happen:
 
-## Complexity / Trade-offs
+1. **Extract and validate** — `orgId` from subscription metadata. If missing, log and bail. No orgId means we can't update anything.
 
-**Gained:** Clean separation of concerns. The webhook route is ~30 lines of HTTP plumbing, and this file is pure business logic. Testability is high — mock the DB queries and analytics, pass in a fake event, assert the upsert was called.
+2. **Guard against `past_due`** — Payment failure is a different domain (Story 5.4). Early return.
 
-**Sacrificed:** Only one event type is handled. Cancellation, payment failure, and subscription renewal are all deferred to future stories. An org that cancels in Stripe won't have their status updated in the DB until Story 5.2 ships.
+3. **Always update period** — `updateSubscriptionPeriod` runs regardless of cancellation state. This keeps `currentPeriodEnd` fresh so `getActiveTier` can make correct access decisions.
 
-**Design tension:** The fail-silently-on-bad-data approach (early return instead of throw) means you could silently lose upgrade events if there's a bug in metadata propagation. The structured error log is your safety net — you'd need alerting on these log entries.
+4. **Branch on cancellation state:**
+   - `cancel_at_period_end === true`: Mark as `canceled`, look up the org owner for analytics (webhooks don't carry userId), fire the `SUBSCRIPTION_CANCELLED` event. If the owner lookup fails, log a warning but don't fail — analytics is non-critical.
+   - `status === 'active'` and not canceling: This is reactivation. Someone canceled then changed their mind. Flip back to `active`.
+
+## Complexity and Trade-offs
+
+**Idempotency without a dedup table**: `updateSubscriptionStatus` includes `WHERE status != $target`. Calling it twice with the same status is a database no-op. Simpler than maintaining a processed-events table, but you can't distinguish "already processed" from "first time" in logs.
+
+**Our `canceled` diverges from Stripe's `canceled`**: Stripe doesn't set `status: 'canceled'` immediately when a user cancels. It sets `cancel_at_period_end: true` while status remains `active`. The actual Stripe status flip happens at period end. We write `canceled` to our database immediately, which means our status and Stripe's disagree for the remainder of the billing period. That's intentional — `getActiveTier` bridges the gap by checking whether `currentPeriodEnd` is still in the future.
+
+**Type assertion on webhook payload**: The `as SubscriptionWebhookPayload` cast is unavoidable. Stripe's SDK types don't match the webhook payload shape for `current_period_end`. You could validate with Zod at runtime, but that's overhead for a field Stripe has shipped in webhook payloads since launch.
+
+**Org owner lookup for analytics**: Webhooks don't carry `userId` — only `orgId` lives in subscription metadata. We look up the org owner to attribute the cancellation analytics event. If the lookup fails, we skip analytics rather than failing the webhook. Correct trade-off: analytics is observability, not business logic.
 
 ## Patterns Worth Knowing
 
-- **Event Handler / Command Pattern** — Each event type maps to a handler function. In interviews, describe this as "dispatching commands based on event type." The switch is the dispatcher, each handler is a command.
-- **Idempotent Upsert** — Using `upsertSubscription` instead of `insertSubscription` means processing the same webhook twice won't fail or create duplicates. Stripe guarantees at-least-once delivery, so idempotency isn't optional.
-- **Metadata Round-Trip** — The `orgId`/`userId` embedded during checkout creation come back here. This closes the async loop. If an interviewer asks "how do you know which org just paid?", this is the answer.
-- **Graceful Degradation** — Missing data logs an error and returns 200 to Stripe. No retry storm. This is the correct behavior for webhooks from third-party services.
+**Event-driven state machine**: The subscription lifecycle (active → canceled → reactivated → active) is managed through webhook events rather than user-initiated API calls. The database is a projection of Stripe's state, not the source of truth. In an interview, you'd call this "event sourcing lite" — we don't store the events themselves, just apply their effects.
+
+**Metadata as the join key**: Stripe subscriptions carry arbitrary `metadata`. We store `orgId` there during checkout, so the `subscription.updated` handler knows which org to update without a separate mapping table.
+
+**Fire-and-forget analytics**: `trackEvent` doesn't block the webhook response. If analytics fails, subscription state is still correct.
+
+**Graceful degradation at every level**: Missing metadata → log and return. Missing org owner → skip analytics. Past due → defer to future story. The handler never throws.
 
 ## Interview Questions
 
-**Q: Why return early instead of throwing when metadata is missing?**
-A: If the handler throws, the route returns a 500, and Stripe retries the webhook. But if the data is genuinely malformed, retries will keep failing — you get an infinite retry loop that burns through your webhook quota and generates noise. Returning early with an error log lets you investigate manually while keeping Stripe happy.
+**Q: Why not use `customer.subscription.deleted` for cancellations?**
+A: Stripe fires `deleted` only after the period actually ends. We want to mark the cancellation immediately (when the user clicks "cancel") so the UI can show "Your plan ends on [date]." The `updated` event with `cancel_at_period_end: true` gives us that signal in real time.
 
-**Q: Why is `currentPeriodEnd` set to null?**
-A: The `checkout.session.completed` event doesn't reliably carry subscription period information. Stripe sends a separate `customer.subscription.updated` event with that data. Rather than extract incorrect dates, the code defers to the right event. This is an example of not guessing when you can wait for authoritative data.
+**Q: What happens if Stripe sends the same webhook twice?**
+A: Nothing breaks. `updateSubscriptionPeriod` overwrites with the same date. `updateSubscriptionStatus` has a `WHERE status != $target` guard, so duplicate cancellations are no-ops. The analytics event fires twice, but that's acceptable — analytics pipelines are designed for at-least-once delivery.
 
-**Q: What does "at-least-once delivery" mean for webhook design?**
-A: Stripe may send the same event multiple times (network issues, timeouts, retries). Your handler must produce the same result regardless of how many times it runs. The `upsert` achieves this — writing `status: 'active', plan: 'pro'` twice is the same as writing it once. If you used an `INSERT`, the second call would fail with a unique constraint violation.
+**Q: How does a canceled subscription still grant access?**
+A: `getActiveTier` checks both `status` and `currentPeriodEnd`. A canceled subscription with a future period end still returns `'pro'`. The user keeps access until their paid time runs out. This is the behavioral keystone of the subscription system.
 
-**Q: Why is `trackEvent` not awaited?**
-A: Analytics is non-critical. If tracking fails, you still want the subscription upgrade to succeed. Fire-and-forget keeps the critical path short. In a larger system, you might push analytics to a queue, but the principle is the same — don't let observability failures break business logic.
+**Q: Why store orgId in Stripe metadata instead of looking it up from the customer ID?**
+A: A customer ID → org ID lookup would require a database read on every webhook. Metadata travels with the event payload, so we get the org ID for free. It also means the handler works even if our database is temporarily unreachable for reads — we only need write access.
+
+**Q: Why is currentPeriodEnd null after checkout?**
+A: The `checkout.session.completed` event doesn't carry period info reliably. Stripe fires `customer.subscription.updated` moments later with the authoritative period dates. Rather than guess, we leave it null and let the right event fill it in.
 
 ## Data Structures
 
 ```typescript
+// Intersection type — bridges Stripe SDK v20 types and actual webhook payload
+type SubscriptionWebhookPayload = Stripe.Subscription & {
+  current_period_end: number; // Unix seconds, multiply by 1000 for JS Date
+};
+
 // Stripe.Checkout.Session (relevant fields)
 {
   id: string;
@@ -68,21 +93,13 @@ A: Analytics is non-critical. If tracking fails, you still want the subscription
   metadata: { orgId: string; userId: string } | null;
 }
 
-// upsertSubscription input
-{
-  orgId: number;
-  stripeCustomerId: string;
-  stripeSubscriptionId: string;
-  status: 'active';
-  plan: 'pro';
-  currentPeriodEnd: null;
-}
-
-// Analytics event
-ANALYTICS_EVENTS.SUBSCRIPTION_UPGRADED  // constant from shared package
-{ stripeSessionId: string }             // event properties
+// Analytics events
+ANALYTICS_EVENTS.SUBSCRIPTION_UPGRADED   // fired on checkout completion
+ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED  // fired on cancel_at_period_end: true
 ```
 
 ## Impress the Interviewer
 
-Bring up **Stripe's polymorphic field shapes**. Most candidates write webhook handlers that assume `session.customer` is a string. In production, depending on your API version and whether you've called `expand`, it might be a full `Customer` object. The ternary on line 22-23 handles both — and that kind of defensive normalization is what separates code that works in development from code that works at 3am when Stripe changes their default expand behavior. If you've dealt with this in production, say so. It's the kind of battle scar interviewers respect.
+The subtlety people miss: our `canceled` status means something different from Stripe's. In Stripe, `canceled` means the subscription has fully ended — period over, no access. In our system, `canceled` means the user has requested cancellation but may still have active access. This semantic gap is bridged entirely by `getActiveTier`'s period-aware query. If you drew the subscription state diagram on a whiteboard, you'd show two parallel state machines — Stripe's and ours — with `currentPeriodEnd` as the synchronization point.
+
+The `past_due` guard is also worth mentioning. It's a single `if` statement and an early return, but it shows awareness of event modeling. Payment failures are a different domain with different business rules (retry logic, grace periods, dunning emails). Handling them in the same branch as voluntary cancellation would muddy both. The deferred Story 5.4 comment makes this intentional, not lazy.
