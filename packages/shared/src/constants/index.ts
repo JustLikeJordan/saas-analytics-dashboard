@@ -45,6 +45,7 @@ export const ANALYTICS_EVENTS = {
   SUBSCRIPTION_UPGRADE_INTENDED: 'subscription.upgrade_intended',
   SUBSCRIPTION_UPGRADED: 'subscription.upgraded',
   SUBSCRIPTION_CANCELLED: 'subscription.cancelled',
+  SUBSCRIPTION_STATUS_CHECKED: 'subscription.status_checked',
   TRANSPARENCY_PANEL_OPENED: 'transparency_panel.opened',
 } as const;
 

@@ -11,6 +11,7 @@ import { ANALYTICS_EVENTS } from 'shared/constants';
 import { apiClient } from '@/lib/api-client';
 import { trackClientEvent } from '@/lib/analytics';
 import { useIsMobile } from '@/lib/hooks/useIsMobile';
+import { useSubscription } from '@/lib/hooks/useSubscription';
 import { useSidebar } from './contexts/SidebarContext';
 import { RevenueChart } from './charts/RevenueChart';
 import { ExpenseChart } from './charts/ExpenseChart';
@@ -119,10 +120,12 @@ function FilteredEmptyState({ onReset }: { onReset: () => void }) {
   );
 }
 
-export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tier }: DashboardShellProps) {
+export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tier: serverTier }: DashboardShellProps) {
   const router = useRouter();
   const { setOrgName } = useSidebar();
   const isMobile = useIsMobile();
+  const hasAuth = serverTier !== undefined;
+  const { tier } = useSubscription({ enabled: hasAuth, fallbackData: serverTier });
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [transparencyOpen, setTransparencyOpen] = useState(false);
   const [metadata, setMetadata] = useState<TransparencyMetadata | null>(cachedMetadata ?? null);

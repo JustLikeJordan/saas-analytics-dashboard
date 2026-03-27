@@ -1,20 +1,12 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import useSWR from 'swr';
-
-const fetcher = async (url: string) => {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
-};
+import { useSubscription } from '@/lib/hooks/useSubscription';
 
 export function BillingContent() {
-  const { data, isLoading } = useSWR('/api/subscriptions', fetcher);
+  const { tier, isLoading } = useSubscription({ enabled: true });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const tier = data?.data?.tier ?? 'free';
 
   const handleCheckout = useCallback(async () => {
     setLoading(true);

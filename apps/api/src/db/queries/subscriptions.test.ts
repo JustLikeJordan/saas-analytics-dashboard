@@ -103,6 +103,37 @@ describe('getActiveTier', () => {
     expect(tier).toBe('free');
   });
 
+  // Story 5.3 — documents expected behavior for statuses that return free by exclusion.
+  // These test the "empty result → free" mapping. Actual WHERE clause filtering is
+  // verified structurally in the "WHERE clause includes canceled-within-period branch" test
+  // below — unit mocks can't exercise real Drizzle query logic.
+  it('returns free for expired subscription', async () => {
+    mockLimit._resultPromise = Promise.resolve([]);
+
+    const { getActiveTier } = await import('./subscriptions.js');
+    const tier = await getActiveTier(1);
+
+    expect(tier).toBe('free');
+  });
+
+  it('returns free for past_due subscription', async () => {
+    mockLimit._resultPromise = Promise.resolve([]);
+
+    const { getActiveTier } = await import('./subscriptions.js');
+    const tier = await getActiveTier(1);
+
+    expect(tier).toBe('free');
+  });
+
+  it('returns free for canceled subscription with period in the past', async () => {
+    mockLimit._resultPromise = Promise.resolve([]);
+
+    const { getActiveTier } = await import('./subscriptions.js');
+    const tier = await getActiveTier(1);
+
+    expect(tier).toBe('free');
+  });
+
   it('WHERE clause includes canceled-within-period branch', async () => {
     mockLimit._resultPromise = Promise.resolve([]);
 
