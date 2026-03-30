@@ -80,12 +80,12 @@ development_status:
   epic-4-retrospective: done
 
   # ── Epic 5: Subscription & Payments ──
-  epic-5: in-progress
+  epic-5: done
   5-1-stripe-checkout-free-to-pro-upgrade: done
   5-2-subscription-lifecycle-management: done
   5-3-subscription-status-verification: done
-  5-4-payment-failure-pro-access-revocation: backlog
-  epic-5-retrospective: optional
+  5-4-payment-failure-pro-access-revocation: done
+  epic-5-retrospective: done
 
   # ── Epic 6: Platform Administration ──
   epic-6: backlog
