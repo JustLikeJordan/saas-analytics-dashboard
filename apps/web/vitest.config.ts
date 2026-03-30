@@ -13,6 +13,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('.', import.meta.url)),
+      'shared/constants': fileURLToPath(new URL('../../packages/shared/src/constants/index.ts', import.meta.url)),
+      'shared/types': fileURLToPath(new URL('../../packages/shared/src/types/index.ts', import.meta.url)),
+      'shared/schemas': fileURLToPath(new URL('../../packages/shared/src/schemas/index.ts', import.meta.url)),
     },
   },
 });
