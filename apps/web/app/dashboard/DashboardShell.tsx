@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useSWR from 'swr';
 import { Upload, Filter } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { ChartData, SubscriptionTier, TransparencyMetadata } from 'shared/types';
 import { ANALYTICS_EVENTS } from 'shared/constants';
@@ -126,6 +127,15 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
   const isMobile = useIsMobile();
   const hasAuth = serverTier !== undefined;
   const { tier } = useSubscription({ enabled: hasAuth, fallbackData: serverTier });
+
+  const prevTierRef = useRef(tier);
+  useEffect(() => {
+    if (prevTierRef.current === 'pro' && tier === 'free') {
+      toast.warning("Your Pro subscription has ended. You're now on the free plan.");
+    }
+    prevTierRef.current = tier;
+  }, [tier]);
+
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [transparencyOpen, setTransparencyOpen] = useState(false);
   const [metadata, setMetadata] = useState<TransparencyMetadata | null>(cachedMetadata ?? null);

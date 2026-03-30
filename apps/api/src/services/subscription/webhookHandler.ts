@@ -19,6 +19,12 @@ export async function handleWebhookEvent(event: Stripe.Event) {
     case 'customer.subscription.updated':
       await handleSubscriptionUpdated(event.data.object as SubscriptionWebhookPayload);
       break;
+    case 'invoice.payment_failed':
+      await handleInvoicePaymentFailed(event.data.object as InvoiceWebhookPayload);
+      break;
+    case 'customer.subscription.deleted':
+      await handleSubscriptionDeleted(event.data.object as SubscriptionWebhookPayload);
+      break;
     default:
       logger.info({ eventType: event.type }, 'Unhandled Stripe webhook event');
   }
@@ -63,11 +69,6 @@ async function handleSubscriptionUpdated(subscription: SubscriptionWebhookPayloa
     return;
   }
 
-  if (subscription.status === 'past_due') {
-    logger.info({ orgId, stripeSubscriptionId }, 'Subscription past_due — deferred to Story 5.4');
-    return;
-  }
-
   // always keep period dates fresh regardless of cancellation state
   const rowsUpdated = await subscriptionsQueries.updateSubscriptionPeriod(stripeSubscriptionId, currentPeriodEnd);
   if (rowsUpdated === 0) {
@@ -89,5 +90,63 @@ async function handleSubscriptionUpdated(subscription: SubscriptionWebhookPayloa
     // user reactivated before period ended
     await subscriptionsQueries.updateSubscriptionStatus(stripeSubscriptionId, 'active', currentPeriodEnd);
     logger.info({ orgId, stripeSubscriptionId }, 'Subscription reactivated');
+  } else if (subscription.status === 'past_due') {
+    // analytics fired by handleInvoicePaymentFailed — omitted here to avoid double-counting
+    await subscriptionsQueries.updateSubscriptionStatus(stripeSubscriptionId, 'past_due', currentPeriodEnd);
+    logger.info({ orgId, stripeSubscriptionId }, 'Subscription past_due — payment failed');
   }
+}
+
+// webhook invoice payload carries subscription as string or expanded object
+type InvoiceWebhookPayload = Stripe.Invoice & {
+  subscription: string | { id: string } | null;
+};
+
+async function handleInvoicePaymentFailed(invoice: InvoiceWebhookPayload) {
+  const stripeSubscriptionId = typeof invoice.subscription === 'string'
+    ? invoice.subscription
+    : invoice.subscription?.id ?? null;
+
+  if (!stripeSubscriptionId) {
+    logger.warn({ invoiceId: invoice.id }, 'invoice.payment_failed without subscription — skipping');
+    return;
+  }
+
+  const sub = await subscriptionsQueries.getSubscriptionByStripeId(stripeSubscriptionId);
+  if (!sub) {
+    logger.warn({ stripeSubscriptionId }, 'invoice.payment_failed for unknown subscription — skipping');
+    return;
+  }
+
+  await subscriptionsQueries.updateSubscriptionStatus(stripeSubscriptionId, 'past_due');
+
+  const ownerId = await userOrgsQueries.getOrgOwnerId(sub.orgId);
+  if (ownerId) {
+    trackEvent(sub.orgId, ownerId, ANALYTICS_EVENTS.SUBSCRIPTION_PAYMENT_FAILED, { stripeSubscriptionId });
+  } else {
+    logger.warn({ orgId: sub.orgId, stripeSubscriptionId }, 'No org owner found — skipping payment failure analytics');
+  }
+
+  logger.info({ orgId: sub.orgId, stripeSubscriptionId }, 'Payment failed — subscription marked past_due');
+}
+
+async function handleSubscriptionDeleted(subscription: SubscriptionWebhookPayload) {
+  const stripeSubscriptionId = subscription.id;
+  const orgId = Number(subscription.metadata?.orgId);
+
+  if (!orgId) {
+    logger.error({ subscriptionId: stripeSubscriptionId }, 'Missing orgId metadata in subscription.deleted');
+    return;
+  }
+
+  await subscriptionsQueries.updateSubscriptionStatus(stripeSubscriptionId, 'expired');
+
+  const ownerId = await userOrgsQueries.getOrgOwnerId(orgId);
+  if (ownerId) {
+    trackEvent(orgId, ownerId, ANALYTICS_EVENTS.SUBSCRIPTION_EXPIRED, { stripeSubscriptionId });
+  } else {
+    logger.warn({ orgId, stripeSubscriptionId }, 'No org owner found — skipping expiration analytics');
+  }
+
+  logger.info({ orgId, stripeSubscriptionId }, 'Subscription deleted — marked expired');
 }

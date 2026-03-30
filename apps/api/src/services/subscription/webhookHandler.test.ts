@@ -4,6 +4,7 @@ import type Stripe from 'stripe';
 const mockUpsertSubscription = vi.fn();
 const mockUpdateSubscriptionPeriod = vi.fn();
 const mockUpdateSubscriptionStatus = vi.fn();
+const mockGetSubscriptionByStripeId = vi.fn();
 const mockGetOrgOwnerId = vi.fn();
 const mockTrackEvent = vi.fn();
 
@@ -12,6 +13,7 @@ vi.mock('../../db/queries/index.js', () => ({
     upsertSubscription: mockUpsertSubscription,
     updateSubscriptionPeriod: mockUpdateSubscriptionPeriod,
     updateSubscriptionStatus: mockUpdateSubscriptionStatus,
+    getSubscriptionByStripeId: mockGetSubscriptionByStripeId,
   },
   userOrgsQueries: {
     getOrgOwnerId: mockGetOrgOwnerId,
@@ -55,6 +57,37 @@ function fakeSubscriptionUpdatedEvent(overrides = {}): Stripe.Event {
         status: 'active',
         cancel_at_period_end: false,
         current_period_end: 1735689600, // 2025-01-01T00:00:00Z
+        metadata: { orgId: '10' },
+        ...overrides,
+      },
+    },
+  } as unknown as Stripe.Event;
+}
+
+function fakeInvoicePaymentFailedEvent(overrides = {}): Stripe.Event {
+  return {
+    id: 'evt_inv_fail_123',
+    type: 'invoice.payment_failed',
+    data: {
+      object: {
+        id: 'in_test_123',
+        subscription: 'sub_test_789',
+        ...overrides,
+      },
+    },
+  } as unknown as Stripe.Event;
+}
+
+function fakeSubscriptionDeletedEvent(overrides = {}): Stripe.Event {
+  return {
+    id: 'evt_sub_del_123',
+    type: 'customer.subscription.deleted',
+    data: {
+      object: {
+        id: 'sub_test_789',
+        customer: 'cus_test_456',
+        status: 'canceled',
+        current_period_end: 1735689600,
         metadata: { orgId: '10' },
         ...overrides,
       },
@@ -160,13 +193,20 @@ describe('webhookHandler', () => {
       );
     });
 
-    it('skips past_due status — deferred to Story 5.4', async () => {
+    it('updates status to past_due on payment failure', async () => {
       await handleWebhookEvent(fakeSubscriptionUpdatedEvent({
         status: 'past_due',
       }));
 
-      expect(mockUpdateSubscriptionPeriod).not.toHaveBeenCalled();
-      expect(mockUpdateSubscriptionStatus).not.toHaveBeenCalled();
+      expect(mockUpdateSubscriptionPeriod).toHaveBeenCalledWith(
+        'sub_test_789',
+        new Date(1735689600 * 1000),
+      );
+      expect(mockUpdateSubscriptionStatus).toHaveBeenCalledWith(
+        'sub_test_789',
+        'past_due',
+        new Date(1735689600 * 1000),
+      );
     });
 
     it('is idempotent — duplicate cancellation webhook is a no-op', async () => {
@@ -203,9 +243,115 @@ describe('webhookHandler', () => {
     });
   });
 
+  describe('invoice.payment_failed', () => {
+    it('updates subscription to past_due status', async () => {
+      mockGetSubscriptionByStripeId.mockResolvedValueOnce({ orgId: 10, stripeSubscriptionId: 'sub_test_789' });
+      mockGetOrgOwnerId.mockResolvedValueOnce(1);
+
+      await handleWebhookEvent(fakeInvoicePaymentFailedEvent());
+
+      expect(mockGetSubscriptionByStripeId).toHaveBeenCalledWith('sub_test_789');
+      expect(mockUpdateSubscriptionStatus).toHaveBeenCalledWith('sub_test_789', 'past_due');
+    });
+
+    it('fires subscription.payment_failed analytics event', async () => {
+      mockGetSubscriptionByStripeId.mockResolvedValueOnce({ orgId: 10, stripeSubscriptionId: 'sub_test_789' });
+      mockGetOrgOwnerId.mockResolvedValueOnce(1);
+
+      await handleWebhookEvent(fakeInvoicePaymentFailedEvent());
+
+      expect(mockTrackEvent).toHaveBeenCalledWith(
+        10,
+        1,
+        'subscription.payment_failed',
+        { stripeSubscriptionId: 'sub_test_789' },
+      );
+    });
+
+    it('is idempotent — duplicate webhook is a no-op at DB level', async () => {
+      mockGetSubscriptionByStripeId.mockResolvedValue({ orgId: 10, stripeSubscriptionId: 'sub_test_789' });
+      mockGetOrgOwnerId.mockResolvedValue(1);
+
+      await handleWebhookEvent(fakeInvoicePaymentFailedEvent());
+      await handleWebhookEvent(fakeInvoicePaymentFailedEvent());
+
+      // handler calls updateSubscriptionStatus both times, DB WHERE clause deduplicates
+      expect(mockUpdateSubscriptionStatus).toHaveBeenCalledTimes(2);
+    });
+
+    it('handles missing subscription gracefully', async () => {
+      mockGetSubscriptionByStripeId.mockResolvedValueOnce(null);
+
+      await handleWebhookEvent(fakeInvoicePaymentFailedEvent());
+
+      expect(mockUpdateSubscriptionStatus).not.toHaveBeenCalled();
+      expect(mockTrackEvent).not.toHaveBeenCalled();
+    });
+
+    it('skips analytics when org owner not found', async () => {
+      mockGetSubscriptionByStripeId.mockResolvedValueOnce({ orgId: 10, stripeSubscriptionId: 'sub_test_789' });
+      mockGetOrgOwnerId.mockResolvedValueOnce(null);
+
+      await handleWebhookEvent(fakeInvoicePaymentFailedEvent());
+
+      expect(mockUpdateSubscriptionStatus).toHaveBeenCalledWith('sub_test_789', 'past_due');
+      expect(mockTrackEvent).not.toHaveBeenCalled();
+    });
+
+    it('skips when invoice has no subscription', async () => {
+      await handleWebhookEvent(fakeInvoicePaymentFailedEvent({ subscription: null }));
+
+      expect(mockGetSubscriptionByStripeId).not.toHaveBeenCalled();
+      expect(mockUpdateSubscriptionStatus).not.toHaveBeenCalled();
+    });
+
+    it('handles expanded subscription object', async () => {
+      mockGetSubscriptionByStripeId.mockResolvedValueOnce({ orgId: 10, stripeSubscriptionId: 'sub_test_789' });
+      mockGetOrgOwnerId.mockResolvedValueOnce(1);
+
+      await handleWebhookEvent(fakeInvoicePaymentFailedEvent({
+        subscription: { id: 'sub_test_789' },
+      }));
+
+      expect(mockGetSubscriptionByStripeId).toHaveBeenCalledWith('sub_test_789');
+      expect(mockUpdateSubscriptionStatus).toHaveBeenCalledWith('sub_test_789', 'past_due');
+    });
+  });
+
+  describe('customer.subscription.deleted', () => {
+    it('updates subscription to expired status', async () => {
+      mockGetOrgOwnerId.mockResolvedValueOnce(1);
+
+      await handleWebhookEvent(fakeSubscriptionDeletedEvent());
+
+      expect(mockUpdateSubscriptionStatus).toHaveBeenCalledWith('sub_test_789', 'expired');
+    });
+
+    it('fires subscription.expired analytics event', async () => {
+      mockGetOrgOwnerId.mockResolvedValueOnce(1);
+
+      await handleWebhookEvent(fakeSubscriptionDeletedEvent());
+
+      expect(mockGetOrgOwnerId).toHaveBeenCalledWith(10);
+      expect(mockTrackEvent).toHaveBeenCalledWith(
+        10,
+        1,
+        'subscription.expired',
+        { stripeSubscriptionId: 'sub_test_789' },
+      );
+    });
+
+    it('handles missing orgId metadata gracefully', async () => {
+      await handleWebhookEvent(fakeSubscriptionDeletedEvent({ metadata: {} }));
+
+      expect(mockUpdateSubscriptionStatus).not.toHaveBeenCalled();
+      expect(mockTrackEvent).not.toHaveBeenCalled();
+    });
+  });
+
   describe('unhandled event types', () => {
     it('logs and returns without error', async () => {
-      const event = { id: 'evt_test', type: 'invoice.payment_failed', data: { object: {} } } as unknown as Stripe.Event;
+      const event = { id: 'evt_test', type: 'payment_intent.succeeded', data: { object: {} } } as unknown as Stripe.Event;
 
       await expect(handleWebhookEvent(event)).resolves.toBeUndefined();
       expect(mockUpsertSubscription).not.toHaveBeenCalled();
