@@ -10,6 +10,17 @@ const client = new Anthropic({
   timeout: 15_000,
 });
 
+export async function checkClaudeHealth(): Promise<{ status: 'ok' | 'error'; latencyMs: number }> {
+  const start = Date.now();
+  try {
+    await client.models.list({ limit: 1 });
+    return { status: 'ok', latencyMs: Date.now() - start };
+  } catch (err) {
+    logger.warn({ err: (err as Error).message }, 'Claude API health check failed');
+    return { status: 'error', latencyMs: Date.now() - start };
+  }
+}
+
 export async function generateInterpretation(prompt: string): Promise<string> {
   try {
     const message = await client.messages.create({
