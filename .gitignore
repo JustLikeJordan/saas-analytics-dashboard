@@ -35,4 +35,7 @@ Thumbs.db
 .claude/memory/
 
 
+# Serena
+.serena/
+
 # BMAD - track framework + docs and planning artifacts
