@@ -1,4 +1,4 @@
-# generated: 2026-03-21
+# generated: 2026-03-30
 # project: SaaS Analytics Dashboard
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-03-21
+generated: 2026-03-30
 project: SaaS Analytics Dashboard
 project_key: NOKEY
 tracking_system: file-system
@@ -88,10 +88,10 @@ development_status:
   epic-5-retrospective: done
 
   # ── Epic 6: Platform Administration ──
-  epic-6: backlog
-  6-1-admin-dashboard-org-user-management: backlog
-  6-2-system-health-monitoring: backlog
-  6-3-cross-organization-analytics-events-view: backlog
+  epic-6: in-progress
+  6-1-admin-dashboard-org-user-management: done
+  6-2-system-health-monitoring: done
+  6-3-cross-organization-analytics-events-view: ready-for-dev
   epic-6-retrospective: optional
 
   # ── Epic 7: DevOps, Quality & Portfolio Readiness ──
