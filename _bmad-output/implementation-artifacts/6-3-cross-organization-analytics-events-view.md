@@ -1,8 +1,8 @@
 # Story 6.3: Cross-Organization Analytics Events View
 
-Status: ready-for-dev
+Status: review
 
-<!-- Validated: 2026-03-31. All 4 steps: Create ✓ → Validate ✓ → Dev → Code Review -->
+<!-- Validated: 2026-03-31. All 4 steps: Create ✓ → Validate ✓ → Dev ✓ → Code Review -->
 
 ## Story
 
@@ -20,31 +20,31 @@ so that I can understand platform usage patterns and identify trends.
 
 ## Tasks / Subtasks
 
-- [ ] 1. Cross-org analytics query (AC: #1, #2, #3)
-  - [ ] 1.1 Add `getAllAnalyticsEvents(opts)` to `apps/api/src/db/queries/analyticsEvents.ts` — cross-org (no orgId filter), same `db` instance as 6.1/6.2
-  - [ ] 1.2 Add `getAnalyticsEventsTotal(opts)` for count query (pagination meta)
-  - [ ] 1.3 Support filters: `eventName`, `orgId`, `startDate`, `endDate`, `limit` (default 50), `offset`
-  - [ ] 1.4 JOIN orgs (name) and users (email, name) for display fields
-  - [ ] 1.5 Unit tests for query function — all filter combinations, pagination, empty results
-- [ ] 2. Admin API endpoint (AC: #1, #2)
-  - [ ] 2.1 Add `GET /admin/analytics-events` to `apps/api/src/routes/admin.ts` (inherits `roleGuard('admin')`)
-  - [ ] 2.2 Zod validation on query params: `eventName` (optional enum), `orgId` (optional int), `startDate`/`endDate` (optional ISO dates), `limit` (1-200, default 50), `offset` (min 0)
-  - [ ] 2.3 Response format: `{ data: AnalyticsEventRow[], meta: { total, pagination: { page, pageSize, totalPages } } }`
-  - [ ] 2.4 Route handler tests — 200 with valid filters, 400 for bad params, response shape validation
-- [ ] 3. BFF proxy route (AC: #1)
-  - [ ] 3.1 Create `apps/web/app/api/admin/analytics-events/route.ts` — forward cookies + query params. NOTE: existing BFF proxies (`app/api/admin/orgs/route.ts`) don't forward query params — this one must. Append `request.nextUrl.search` to the Express URL.
-- [ ] 4. Frontend: Analytics Events table (AC: #1, #2)
-  - [ ] 4.1 Add `AnalyticsEventRow` type to `apps/web/app/admin/types.ts`
-  - [ ] 4.2 Create `apps/web/app/admin/analytics/page.tsx` — RSC page
-  - [ ] 4.3 Create `apps/web/app/admin/AnalyticsEventsTable.tsx` — Client Component using shadcn Table + Card
-  - [ ] 4.4 Columns: event name (badge), org name, user email, timestamp (Intl.DateTimeFormat hoisted), metadata (expandable or tooltip)
-  - [ ] 4.5 Pagination controls — prev/next + page indicator
-  - [ ] 4.6 Filter bar — event type dropdown (from ANALYTICS_EVENTS constant), org dropdown (fetch org list from existing `/api/admin/orgs` BFF), date range (presets: today, 7d, 30d)
-  - [ ] 4.7 Add "Analytics" nav link to admin sidebar
-  - [ ] 4.8 Component tests — render with mock data, pagination, filter submission, loading skeleton, empty state
-- [ ] 5. Accessibility (AC: #1, #2)
-  - [ ] 5.1 `aria-label` on filter controls, `role="status"` on pagination summary
-  - [ ] 5.2 Keyboard navigation through filter controls and pagination
+- [x] 1. Cross-org analytics query (AC: #1, #2, #3)
+  - [x] 1.1 Add `getAllAnalyticsEvents(opts)` to `apps/api/src/db/queries/analyticsEvents.ts` — cross-org (no orgId filter), same `db` instance as 6.1/6.2
+  - [x] 1.2 Add `getAnalyticsEventsTotal(opts)` for count query (pagination meta)
+  - [x] 1.3 Support filters: `eventName`, `orgId`, `startDate`, `endDate`, `limit` (default 50), `offset`
+  - [x] 1.4 JOIN orgs (name) and users (email, name) for display fields
+  - [x] 1.5 Unit tests for query function — all filter combinations, pagination, empty results
+- [x] 2. Admin API endpoint (AC: #1, #2)
+  - [x] 2.1 Add `GET /admin/analytics-events` to `apps/api/src/routes/admin.ts` (inherits `roleGuard('admin')`)
+  - [x] 2.2 Zod validation on query params: `eventName` (optional enum), `orgId` (optional int), `startDate`/`endDate` (optional ISO dates), `limit` (1-200, default 50), `offset` (min 0)
+  - [x] 2.3 Response format: `{ data: AnalyticsEventRow[], meta: { total, pagination: { page, pageSize, totalPages } } }`
+  - [x] 2.4 Route handler tests — 200 with valid filters, 400 for bad params, response shape validation
+- [x] 3. BFF proxy route (AC: #1)
+  - [x] 3.1 Create `apps/web/app/api/admin/analytics-events/route.ts` — forward cookies + query params. NOTE: existing BFF proxies (`app/api/admin/orgs/route.ts`) don't forward query params — this one must. Append `request.nextUrl.search` to the Express URL.
+- [x] 4. Frontend: Analytics Events table (AC: #1, #2)
+  - [x] 4.1 Add `AnalyticsEventRow` type to `apps/web/app/admin/types.ts`
+  - [x] 4.2 Create `apps/web/app/admin/analytics/page.tsx` — RSC page
+  - [x] 4.3 Create `apps/web/app/admin/AnalyticsEventsTable.tsx` — Client Component using shadcn Table + Card
+  - [x] 4.4 Columns: event name (badge), org name, user email, timestamp (Intl.DateTimeFormat hoisted), metadata (expandable or tooltip)
+  - [x] 4.5 Pagination controls — prev/next + page indicator
+  - [x] 4.6 Filter bar — event type dropdown (from ANALYTICS_EVENTS constant), org dropdown (fetch org list from existing `/api/admin/orgs` BFF), date range (presets: today, 7d, 30d)
+  - [x] 4.7 Add "Analytics" nav link to admin sidebar
+  - [x] 4.8 Component tests — render with mock data, pagination, filter submission, loading skeleton, empty state
+- [x] 5. Accessibility (AC: #1, #2)
+  - [x] 5.1 `aria-label` on filter controls, `role="status"` on pagination summary
+  - [x] 5.2 Keyboard navigation through filter controls and pagination
 
 ## Dev Notes
 
@@ -123,9 +123,30 @@ apps/web/app/
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Debug Log References
+No debug issues encountered.
 
 ### Completion Notes List
+- Task 1: Added `getAllAnalyticsEvents()` and `getAnalyticsEventsTotal()` cross-org query functions with shared `buildFilterConditions()` helper. Supports eventName, orgId, startDate, endDate, limit, offset filters. JOINs orgs and users for display fields. 11 unit tests.
+- Task 2: Added `GET /admin/analytics-events` endpoint to admin router. Zod-validated query params with `z.coerce` for numeric types. Response includes pagination meta (page, pageSize, totalPages). Parallel data+count fetch via `Promise.all`. 7 route handler tests (200, 403, 401, filters, bad params, pagination math).
+- Task 3: Created BFF proxy at `app/api/admin/analytics-events/route.ts`. Key difference from existing proxies: appends `request.nextUrl.search` to forward query params.
+- Task 4: Built `AnalyticsEventsTable` client component with shadcn Table+Card, event name badges (color-coded by prefix), expandable metadata via `<details>`, filter bar (event type/org/date presets), prev/next pagination. Added `AnalyticsEventRow` and `AnalyticsEventsMeta` types. Created RSC page at `/admin/analytics`. Added "Analytics" nav link to sidebar. 11 component tests.
+- Task 5: Accessibility built into Task 4 — `aria-label` on all filter controls, `role="status"` + `aria-live="polite"` on pagination summary, `aria-label` on pagination buttons, native `<select>` for keyboard nav, `<details>` for accessible metadata expansion.
 
 ### File List
+- `apps/api/src/db/queries/analyticsEvents.ts` — MODIFIED (added getAllAnalyticsEvents, getAnalyticsEventsTotal, AdminEventsFilter, buildFilterConditions)
+- `apps/api/src/db/queries/analyticsEvents.test.ts` — NEW (11 query tests)
+- `apps/api/src/routes/admin.ts` — MODIFIED (added GET /analytics-events endpoint with Zod validation)
+- `apps/api/src/routes/admin.test.ts` — MODIFIED (added 7 analytics-events route tests)
+- `apps/web/app/api/admin/analytics-events/route.ts` — NEW (BFF proxy with query param forwarding)
+- `apps/web/app/admin/types.ts` — MODIFIED (added AnalyticsEventRow, AnalyticsEventsMeta)
+- `apps/web/app/admin/analytics/page.tsx` — NEW (RSC page)
+- `apps/web/app/admin/AnalyticsEventsTable.tsx` — NEW (client component with table, filters, pagination)
+- `apps/web/app/admin/AnalyticsEventsTable.test.tsx` — NEW (11 component tests)
+- `apps/web/components/layout/Sidebar.tsx` — MODIFIED (added Analytics nav link)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — MODIFIED (6-3 status: in-progress → review)
+
+## Change Log
+- 2026-03-31: Implemented Story 6.3 — cross-org analytics events view with paginated table, filtering by event type/org/date range, and admin sidebar navigation. 29 new tests across API and web.

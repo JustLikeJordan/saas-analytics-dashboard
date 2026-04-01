@@ -6,6 +6,8 @@ const mockGetOrgsWithStats = vi.fn();
 const mockGetUsers = vi.fn();
 const mockGetOrgDetail = vi.fn();
 const mockGetSystemHealth = vi.fn();
+const mockGetAllAnalyticsEvents = vi.fn();
+const mockGetAnalyticsEventsTotal = vi.fn();
 
 vi.mock('../services/auth/tokenService.js', () => ({
   verifyAccessToken: mockVerifyAccessToken,
@@ -16,6 +18,11 @@ vi.mock('../services/admin/index.js', () => ({
   getUsers: mockGetUsers,
   getOrgDetail: mockGetOrgDetail,
   getSystemHealth: mockGetSystemHealth,
+}));
+
+vi.mock('../db/queries/analyticsEvents.js', () => ({
+  getAllAnalyticsEvents: mockGetAllAnalyticsEvents,
+  getAnalyticsEventsTotal: mockGetAnalyticsEventsTotal,
 }));
 
 vi.mock('../config.js', () => ({
@@ -214,5 +221,92 @@ describe('GET /admin/health', () => {
   it('returns 401 without auth', async () => {
     const res = await fetch(`${baseUrl}/admin/health`);
     expect(res.status).toBe(401);
+  });
+});
+
+const fakeEvents = [
+  {
+    id: 1, eventName: 'user.signed_in', orgName: 'Acme', userEmail: 'a@b.com',
+    userName: 'Alice', metadata: null, createdAt: '2026-03-30T12:00:00.000Z',
+  },
+];
+
+describe('GET /admin/analytics-events', () => {
+  it('returns 200 with paginated events for admin', async () => {
+    mockVerifyAccessToken.mockResolvedValueOnce(adminPayload());
+    mockGetAllAnalyticsEvents.mockResolvedValueOnce(fakeEvents);
+    mockGetAnalyticsEventsTotal.mockResolvedValueOnce(1);
+
+    const res = await fetch(`${baseUrl}/admin/analytics-events`, { headers: authHeaders });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data).toEqual(fakeEvents);
+    expect(json.meta.total).toBe(1);
+    expect(json.meta.pagination).toEqual({ page: 1, pageSize: 50, totalPages: 1 });
+  });
+
+  it('returns 403 for non-admin user', async () => {
+    mockVerifyAccessToken.mockResolvedValueOnce(regularPayload());
+
+    const res = await fetch(`${baseUrl}/admin/analytics-events`, { headers: authHeaders });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 401 without auth', async () => {
+    const res = await fetch(`${baseUrl}/admin/analytics-events`);
+    expect(res.status).toBe(401);
+  });
+
+  it('passes valid filters to query functions', async () => {
+    mockVerifyAccessToken.mockResolvedValueOnce(adminPayload());
+    mockGetAllAnalyticsEvents.mockResolvedValueOnce([]);
+    mockGetAnalyticsEventsTotal.mockResolvedValueOnce(0);
+
+    const params = new URLSearchParams({
+      eventName: 'user.signed_in',
+      orgId: '5',
+      startDate: '2026-01-01T00:00:00.000Z',
+      endDate: '2026-03-31T23:59:59.000Z',
+      limit: '25',
+      offset: '50',
+    });
+
+    const res = await fetch(`${baseUrl}/admin/analytics-events?${params}`, { headers: authHeaders });
+
+    expect(res.status).toBe(200);
+    expect(mockGetAllAnalyticsEvents).toHaveBeenCalledWith({
+      eventName: 'user.signed_in',
+      orgId: 5,
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      endDate: new Date('2026-03-31T23:59:59.000Z'),
+      limit: 25,
+      offset: 50,
+    });
+  });
+
+  it('returns 400 for invalid limit', async () => {
+    mockVerifyAccessToken.mockResolvedValueOnce(adminPayload());
+
+    const res = await fetch(`${baseUrl}/admin/analytics-events?limit=999`, { headers: authHeaders });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for negative offset', async () => {
+    mockVerifyAccessToken.mockResolvedValueOnce(adminPayload());
+
+    const res = await fetch(`${baseUrl}/admin/analytics-events?offset=-1`, { headers: authHeaders });
+    expect(res.status).toBe(400);
+  });
+
+  it('calculates pagination meta correctly', async () => {
+    mockVerifyAccessToken.mockResolvedValueOnce(adminPayload());
+    mockGetAllAnalyticsEvents.mockResolvedValueOnce([]);
+    mockGetAnalyticsEventsTotal.mockResolvedValueOnce(120);
+
+    const res = await fetch(`${baseUrl}/admin/analytics-events?limit=25&offset=50`, { headers: authHeaders });
+    const json = await res.json();
+
+    expect(json.meta.pagination).toEqual({ page: 3, pageSize: 25, totalPages: 5 });
   });
 });

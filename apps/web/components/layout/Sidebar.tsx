@@ -3,7 +3,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, Upload, Settings, ShieldCheck, X } from 'lucide-react';
+import { BarChart3, Upload, Settings, ShieldCheck, Activity, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/app/dashboard/contexts/SidebarContext';
 
@@ -66,20 +66,36 @@ function SidebarNav({ orgName, isAdmin, onNavigate }: { orgName?: string; isAdmi
           );
         })}
         {isAdmin && (
-          <Link
-            href="/admin"
-            onClick={onNavigate}
-            className={cn(
-              'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              pathname === '/admin' || pathname.startsWith('/admin/')
-                ? 'border-l-4 border-primary bg-accent text-foreground'
-                : 'border-l-4 border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
-            )}
-            aria-current={pathname.startsWith('/admin') ? 'page' : undefined}
-          >
-            <ShieldCheck className="h-4 w-4 shrink-0" />
-            Admin
-          </Link>
+          <>
+            <Link
+              href="/admin"
+              onClick={onNavigate}
+              className={cn(
+                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                pathname === '/admin' || (pathname.startsWith('/admin/') && pathname !== '/admin/analytics')
+                  ? 'border-l-4 border-primary bg-accent text-foreground'
+                  : 'border-l-4 border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
+              )}
+              aria-current={pathname === '/admin' ? 'page' : undefined}
+            >
+              <ShieldCheck className="h-4 w-4 shrink-0" />
+              Admin
+            </Link>
+            <Link
+              href="/admin/analytics"
+              onClick={onNavigate}
+              className={cn(
+                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                pathname === '/admin/analytics'
+                  ? 'border-l-4 border-primary bg-accent text-foreground'
+                  : 'border-l-4 border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
+              )}
+              aria-current={pathname === '/admin/analytics' ? 'page' : undefined}
+            >
+              <Activity className="h-4 w-4 shrink-0" />
+              Analytics
+            </Link>
+          </>
         )}
       </nav>
     </>

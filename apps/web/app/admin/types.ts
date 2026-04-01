@@ -23,4 +23,19 @@ export interface AdminStats {
   proSubscribers: number;
 }
 
+export interface AnalyticsEventRow {
+  id: number;
+  eventName: string;
+  orgName: string;
+  userEmail: string;
+  userName: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface AnalyticsEventsMeta {
+  total: number;
+  pagination: { page: number; pageSize: number; totalPages: number };
+}
+
 export type { ServiceStatus, SystemHealth } from 'shared/types';

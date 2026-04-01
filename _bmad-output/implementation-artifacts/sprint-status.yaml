@@ -91,7 +91,7 @@ development_status:
   epic-6: in-progress
   6-1-admin-dashboard-org-user-management: done
   6-2-system-health-monitoring: done
-  6-3-cross-organization-analytics-events-view: ready-for-dev
+  6-3-cross-organization-analytics-events-view: review
   epic-6-retrospective: optional
 
   # ── Epic 7: DevOps, Quality & Portfolio Readiness ──
