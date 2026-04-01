@@ -10,3 +10,4 @@ export * as chartsQueries from './charts.js';
 export * as aiSummariesQueries from './aiSummaries.js';
 export * as subscriptionsQueries from './subscriptions.js';
 export * as sharesQueries from './shares.js';
+export * as adminQueries from './admin.js';

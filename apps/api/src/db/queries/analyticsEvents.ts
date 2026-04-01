@@ -1,6 +1,6 @@
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, count, type SQL } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
-import { analyticsEvents } from '../schema.js';
+import { analyticsEvents, orgs, users } from '../schema.js';
 import type { AnalyticsEventName } from 'shared/constants';
 
 export async function recordEvent(
@@ -31,4 +31,60 @@ export async function getEventsByOrg(orgId: number, opts: GetEventsOpts = {}) {
     limit,
     offset,
   });
+}
+
+// Cross-org queries — no orgId required. Gated by roleGuard('admin') at route layer.
+
+export interface AdminEventsFilter {
+  eventName?: string;
+  orgId?: number;
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+  offset?: number;
+}
+
+function buildFilterConditions(opts: AdminEventsFilter): SQL | undefined {
+  const conditions: SQL[] = [];
+
+  if (opts.eventName) conditions.push(eq(analyticsEvents.eventName, opts.eventName));
+  if (opts.orgId) conditions.push(eq(analyticsEvents.orgId, opts.orgId));
+  if (opts.startDate) conditions.push(gte(analyticsEvents.createdAt, opts.startDate));
+  if (opts.endDate) conditions.push(lte(analyticsEvents.createdAt, opts.endDate));
+
+  return conditions.length ? and(...conditions) : undefined;
+}
+
+export async function getAllAnalyticsEvents(opts: AdminEventsFilter) {
+  const { limit = 50, offset = 0 } = opts;
+  const where = buildFilterConditions(opts);
+
+  return db
+    .select({
+      id: analyticsEvents.id,
+      eventName: analyticsEvents.eventName,
+      orgName: orgs.name,
+      userEmail: users.email,
+      userName: users.name,
+      metadata: analyticsEvents.metadata,
+      createdAt: analyticsEvents.createdAt,
+    })
+    .from(analyticsEvents)
+    .innerJoin(orgs, eq(orgs.id, analyticsEvents.orgId))
+    .innerJoin(users, eq(users.id, analyticsEvents.userId))
+    .where(where)
+    .orderBy(desc(analyticsEvents.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function getAnalyticsEventsTotal(opts: AdminEventsFilter) {
+  const where = buildFilterConditions(opts);
+
+  const [row] = await db
+    .select({ value: count() })
+    .from(analyticsEvents)
+    .where(where);
+
+  return row?.value ?? 0;
 }

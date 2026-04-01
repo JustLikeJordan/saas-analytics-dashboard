@@ -9,6 +9,10 @@ function getJwtSecret(): Uint8Array | null {
   return new TextEncoder().encode(webEnv.JWT_SECRET);
 }
 
+function isAdminRoute(pathname: string) {
+  return pathname === '/admin' || pathname.startsWith('/admin/');
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -28,14 +32,17 @@ export async function proxy(request: NextRequest) {
     const secret = getJwtSecret();
     if (secret) {
       try {
-        await jwtVerify(token, secret);
+        const { payload } = await jwtVerify(token, secret);
+
+        if (isAdminRoute(pathname) && !payload.isAdmin) {
+          return NextResponse.redirect(new URL('/dashboard', request.url));
+        }
       } catch {
         const loginUrl = new URL('/login', request.url);
         loginUrl.searchParams.set('redirect', pathname);
         return NextResponse.redirect(loginUrl);
       }
     } else if (webEnv.NODE_ENV === 'production') {
-      // JWT_SECRET must be set in production — never skip verification
       return new NextResponse('Server configuration error', { status: 500 });
     }
   }

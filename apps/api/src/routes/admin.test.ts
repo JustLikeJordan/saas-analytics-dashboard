@@ -104,8 +104,7 @@ describe('GET /admin/orgs', () => {
     mockGetOrgsWithStats.mockResolvedValueOnce({ orgs: fakeOrgs, stats: fakeStats });
 
     const res = await fetch(`${baseUrl}/admin/orgs`, { headers: authHeaders });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const json = (await res.json()) as any;
+    const json = await res.json();
 
     expect(res.status).toBe(200);
     expect(json.data).toEqual(fakeOrgs);
@@ -132,8 +131,7 @@ describe('GET /admin/users', () => {
     mockGetUsers.mockResolvedValueOnce(fakeUsers);
 
     const res = await fetch(`${baseUrl}/admin/users`, { headers: authHeaders });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const json = (await res.json()) as any;
+    const json = await res.json();
 
     expect(res.status).toBe(200);
     expect(json.data).toEqual(fakeUsers);
@@ -155,8 +153,7 @@ describe('GET /admin/orgs/:orgId', () => {
     mockGetOrgDetail.mockResolvedValueOnce(fakeOrg);
 
     const res = await fetch(`${baseUrl}/admin/orgs/1`, { headers: authHeaders });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const json = (await res.json()) as any;
+    const json = await res.json();
 
     expect(res.status).toBe(200);
     expect(json.data).toEqual(fakeOrg);
@@ -203,8 +200,7 @@ describe('GET /admin/health', () => {
     mockGetSystemHealth.mockResolvedValueOnce(fakeHealth);
 
     const res = await fetch(`${baseUrl}/admin/health`, { headers: authHeaders });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const json = (await res.json()) as any;
+    const json = await res.json();
 
     expect(res.status).toBe(200);
     expect(json.data).toEqual(fakeHealth);
@@ -242,8 +238,7 @@ describe('GET /admin/analytics-events', () => {
     mockGetAnalyticsEventsTotal.mockResolvedValueOnce(1);
 
     const res = await fetch(`${baseUrl}/admin/analytics-events`, { headers: authHeaders });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const json = (await res.json()) as any;
+    const json = await res.json();
 
     expect(res.status).toBe(200);
     expect(json.data).toEqual(fakeEvents);
@@ -310,8 +305,7 @@ const json = (await res.json()) as any;
     mockGetAnalyticsEventsTotal.mockResolvedValueOnce(120);
 
     const res = await fetch(`${baseUrl}/admin/analytics-events?limit=25&offset=50`, { headers: authHeaders });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const json = (await res.json()) as any;
+    const json = await res.json();
 
     expect(json.meta.pagination).toEqual({ page: 3, pageSize: 25, totalPages: 5 });
   });

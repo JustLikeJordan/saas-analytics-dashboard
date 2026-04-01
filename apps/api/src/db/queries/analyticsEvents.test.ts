@@ -26,7 +26,6 @@ for (const fn of Object.values(chainable)) {
 
 vi.mock('../../lib/db.js', () => ({
   db: { select: mockSelect },
-  dbAdmin: { select: mockSelect },
 }));
 
 vi.mock('drizzle-orm', () => ({

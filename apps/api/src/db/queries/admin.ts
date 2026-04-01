@@ -1,5 +1,5 @@
 import { eq, sql, count } from 'drizzle-orm';
-import { dbAdmin } from '../../lib/db.js';
+import { db } from '../../lib/db.js';
 import { orgs, users, userOrgs, datasets, subscriptions } from '../schema.js';
 
 /**
@@ -7,7 +7,7 @@ import { orgs, users, userOrgs, datasets, subscriptions } from '../schema.js';
  */
 
 export async function getAllOrgs() {
-  const rows = await dbAdmin
+  const rows = await db
     .select({
       id: orgs.id,
       name: orgs.name,
@@ -28,7 +28,7 @@ export async function getAllOrgs() {
 }
 
 export async function getAllUsers() {
-  const rows = await dbAdmin
+  const rows = await db
     .select({
       id: users.id,
       email: users.email,
@@ -40,7 +40,7 @@ export async function getAllUsers() {
     .orderBy(users.createdAt);
 
   // grab org memberships in a separate query to avoid cross-join blowup
-  const memberships = await dbAdmin
+  const memberships = await db
     .select({
       userId: userOrgs.userId,
       orgId: orgs.id,
@@ -64,7 +64,7 @@ export async function getAllUsers() {
 }
 
 export async function getOrgDetail(orgId: number) {
-  const [org] = await dbAdmin
+  const [org] = await db
     .select({
       id: orgs.id,
       name: orgs.name,
@@ -76,7 +76,7 @@ export async function getOrgDetail(orgId: number) {
 
   if (!org) return null;
 
-  const members = await dbAdmin
+  const members = await db
     .select({
       userId: users.id,
       email: users.email,
@@ -89,12 +89,12 @@ export async function getOrgDetail(orgId: number) {
     .innerJoin(users, eq(users.id, userOrgs.userId))
     .where(eq(userOrgs.orgId, orgId));
 
-  const datasetRows = await dbAdmin
+  const datasetRows = await db
     .select({ id: datasets.id, name: datasets.name, isSeedData: datasets.isSeedData, createdAt: datasets.createdAt })
     .from(datasets)
     .where(eq(datasets.orgId, orgId));
 
-  const [sub] = await dbAdmin
+  const [sub] = await db
     .select({ plan: subscriptions.plan, status: subscriptions.status })
     .from(subscriptions)
     .where(eq(subscriptions.orgId, orgId));
@@ -108,9 +108,9 @@ export async function getOrgDetail(orgId: number) {
 }
 
 export async function getAdminStats() {
-  const [orgCount] = await dbAdmin.select({ value: count() }).from(orgs);
-  const [userCount] = await dbAdmin.select({ value: count() }).from(users);
-  const [proCount] = await dbAdmin
+  const [orgCount] = await db.select({ value: count() }).from(orgs);
+  const [userCount] = await db.select({ value: count() }).from(users);
+  const [proCount] = await db
     .select({ value: count() })
     .from(subscriptions)
     .where(eq(subscriptions.plan, 'pro'));

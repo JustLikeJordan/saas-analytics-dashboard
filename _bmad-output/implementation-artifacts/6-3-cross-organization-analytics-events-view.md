@@ -1,6 +1,6 @@
 # Story 6.3: Cross-Organization Analytics Events View
 
-Status: done
+Status: review
 
 <!-- Validated: 2026-03-31. All 4 steps: Create ✓ → Validate ✓ → Dev ✓ → Code Review -->
 

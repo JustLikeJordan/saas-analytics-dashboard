@@ -1,6 +1,6 @@
 # Sidebar.tsx — Interview-Ready Documentation
 
-> Source file: `apps/web/components/layout/Sidebar.tsx` (128 lines)
+> Source file: `apps/web/components/layout/Sidebar.tsx` (178 lines)
 
 ---
 
@@ -73,6 +73,8 @@ An extracted component that both the desktop aside and mobile overlay render. Ta
 **Org name (lines 41-45):** If `orgName` is provided, a bordered section shows it with `truncate` to handle long names.
 
 **Nav links (lines 47-68):** Maps over `NAV_ITEMS`. Active detection uses `pathname === href || pathname.startsWith(href + '/')` — matching exact and nested routes. Active links get a left border highlight (`border-l-4 border-primary bg-accent`), inactive links get a transparent border (same width, no layout shift). Each link calls `onNavigate` on click (closing the mobile sheet) and sets `aria-current="page"` when active.
+
+**Admin links (lines 68-99):** Conditionally rendered when `isAdmin` is true. Two links: "Admin" (main dashboard at `/admin`) and "Analytics" (analytics events at `/admin/analytics`). The Admin link's active state explicitly excludes `/admin/analytics` — without that exclusion, both links would highlight simultaneously since `/admin/analytics` starts with `/admin/`. The Analytics link uses the `Activity` icon from lucide-react. This is a good example of how sub-route active states need careful handling when sibling routes share a prefix.
 
 ### Sidebar (lines 73-127)
 

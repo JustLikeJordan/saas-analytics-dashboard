@@ -20,9 +20,9 @@ const SERVICE_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<ServiceStatus['status'], string> = {
-  ok: 'bg-success',
-  degraded: 'bg-warning',
-  error: 'bg-destructive',
+  ok: 'bg-green-500',
+  degraded: 'bg-yellow-500',
+  error: 'bg-red-500',
 };
 
 const STATUS_LABELS: Record<ServiceStatus['status'], string> = {

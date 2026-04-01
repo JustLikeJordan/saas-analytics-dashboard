@@ -6,6 +6,8 @@ import { aiSummaryRouter } from './aiSummary.js';
 import { subscriptionsRouter } from './subscriptions.js';
 import { analyticsRouter } from './analytics.js';
 import { shareRouter } from './sharing.js';
+import { adminRouter } from './admin.js';
+import { roleGuard } from '../middleware/roleGuard.js';
 
 const protectedRouter = Router();
 
@@ -19,5 +21,6 @@ protectedRouter.use('/ai-summaries', aiSummaryRouter);
 protectedRouter.use('/subscriptions', subscriptionsRouter);
 protectedRouter.use('/analytics', analyticsRouter);
 protectedRouter.use('/shares', shareRouter);
+protectedRouter.use('/admin', roleGuard('admin'), adminRouter);
 
 export default protectedRouter;
