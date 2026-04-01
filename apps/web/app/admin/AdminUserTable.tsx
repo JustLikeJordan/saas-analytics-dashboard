@@ -11,8 +11,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShieldCheck } from 'lucide-react';
 import type { AdminUserRow } from './types';
-
-const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+import { dateFmt } from './formatters';
 
 export function AdminUserTable({ users }: { users: AdminUserRow[] }) {
   return (

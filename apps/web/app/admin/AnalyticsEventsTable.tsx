@@ -15,13 +15,9 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { ANALYTICS_EVENTS } from 'shared/constants';
 import { apiClient } from '@/lib/api-client';
 import type { AnalyticsEventRow, AnalyticsEventsMeta, AdminOrgRow } from './types';
+import { dateTimeFmt } from './formatters';
 
 const PAGE_SIZE = 50;
-
-const dateFmt = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
 
 const EVENT_OPTIONS = Object.values(ANALYTICS_EVENTS);
 
@@ -92,6 +88,7 @@ export function AnalyticsEventsTable() {
   const [events, setEvents] = useState<AnalyticsEventRow[]>([]);
   const [meta, setMeta] = useState<AnalyticsEventsMeta | null>(null);
   const [orgs, setOrgs] = useState<AdminOrgRow[]>([]);
+  const [orgsFailed, setOrgsFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<Filters>({ eventName: '', orgId: '', datePreset: '' });
@@ -133,7 +130,7 @@ export function AnalyticsEventsTable() {
   useEffect(() => {
     apiClient<AdminOrgRow[]>('/admin/orgs')
       .then((res) => setOrgs(res.data))
-      .catch(() => {});
+      .catch(() => setOrgsFailed(true));
   }, []);
 
   useEffect(() => {
@@ -172,8 +169,9 @@ export function AnalyticsEventsTable() {
             onChange={(e) => handleFilterChange('orgId', e.target.value)}
             className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
             aria-label="Filter by organization"
+            disabled={orgsFailed}
           >
-            <option value="">All organizations</option>
+            <option value="">{orgsFailed ? 'Failed to load orgs' : 'All organizations'}</option>
             {orgs.map((org) => (
               <option key={org.id} value={String(org.id)}>{org.name}</option>
             ))}
@@ -219,7 +217,7 @@ export function AnalyticsEventsTable() {
                   <TableCell className="font-medium">{ev.orgName}</TableCell>
                   <TableCell className="text-muted-foreground">{ev.userEmail}</TableCell>
                   <TableCell className="text-muted-foreground" style={{ fontFeatureSettings: '"tnum"' }}>
-                    {dateFmt.format(new Date(ev.createdAt))}
+                    {dateTimeFmt.format(new Date(ev.createdAt))}
                   </TableCell>
                   <TableCell>{metadataCell(ev.metadata)}</TableCell>
                 </TableRow>

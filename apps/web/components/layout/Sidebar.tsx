@@ -72,7 +72,7 @@ function SidebarNav({ orgName, isAdmin, onNavigate }: { orgName?: string; isAdmi
               onClick={onNavigate}
               className={cn(
                 'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                pathname === '/admin' || (pathname.startsWith('/admin/') && pathname !== '/admin/analytics')
+                pathname === '/admin'
                   ? 'border-l-4 border-primary bg-accent text-foreground'
                   : 'border-l-4 border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
               )}

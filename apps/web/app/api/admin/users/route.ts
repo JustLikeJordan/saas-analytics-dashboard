@@ -4,10 +4,17 @@ import { webEnv } from '@/lib/config';
 export async function GET(request: NextRequest) {
   const cookieHeader = request.headers.get('cookie') ?? '';
 
-  const response = await fetch(`${webEnv.API_INTERNAL_URL}/admin/users`, {
-    headers: { Cookie: cookieHeader },
-  });
+  try {
+    const response = await fetch(`${webEnv.API_INTERNAL_URL}/admin/users`, {
+      headers: { Cookie: cookieHeader },
+    });
 
-  const data = await response.json();
-  return NextResponse.json(data, { status: response.status });
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
+  } catch {
+    return NextResponse.json(
+      { error: { code: 'UPSTREAM_UNAVAILABLE', message: 'API server unreachable' } },
+      { status: 502 },
+    );
+  }
 }

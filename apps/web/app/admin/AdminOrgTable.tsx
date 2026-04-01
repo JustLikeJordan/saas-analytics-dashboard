@@ -10,8 +10,7 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { AdminOrgRow } from './types';
-
-const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+import { dateFmt } from './formatters';
 
 function tierBadge(tier: string | null) {
   if (tier === 'pro') {

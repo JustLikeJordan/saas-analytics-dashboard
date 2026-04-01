@@ -18,13 +18,13 @@ This is the admin-facing analytics events table — a client component that lets
 
 **Over alternative:** shadcn/ui's Select (built on Radix). It wasn't installed in the project, and installing it for three dropdowns on an admin page would add bundle weight. Native selects are the right call for functional admin UI.
 
-### Decision 2: Hoisted Intl.DateTimeFormat at module level
+### Decision 2: Shared date formatters extracted to `formatters.ts`
 
-**What's happening:** `const dateFmt = new Intl.DateTimeFormat(...)` is declared outside the component, at the top of the module. Creating a DateTimeFormat instance involves locale negotiation and format pattern compilation — it's not free. By hoisting it to module level, it's created once when the module loads, not on every render or for every table cell.
+**What's happening:** The three admin tables (orgs, users, analytics events) all need date formatting. Instead of each declaring its own `Intl.DateTimeFormat` instance, they import from a shared `formatters.ts` file that exports `dateFmt` (date only) and `dateTimeFmt` (date + time). Creating a DateTimeFormat instance involves locale negotiation and format pattern compilation — it's not free, so sharing instances avoids redundant work.
 
-**How to say it in an interview:** "DateTimeFormat construction involves locale negotiation and pattern compilation. Hoisting to module level means one instance shared across all renders and all cells, instead of creating one per row per render cycle."
+**How to say it in an interview:** "DateTimeFormat construction involves locale negotiation and pattern compilation. We share formatter instances across admin tables through a module-level export, so there's one instance per format style rather than one per component."
 
-**Over alternative:** Inline `new Intl.DateTimeFormat(...)` in the JSX or a `useMemo`. Module-level is simpler and doesn't depend on React's render cycle.
+**Over alternative:** Inline `new Intl.DateTimeFormat(...)` per component works but duplicates the configuration. When the analytics table needed `timeStyle: 'short'` while the other tables only needed `dateStyle: 'medium'`, the shared module made the two formats explicit and discoverable.
 
 ### Decision 3: `<details>/<summary>` for metadata expansion
 
@@ -62,7 +62,7 @@ This is the admin-facing analytics events table — a client component that lets
 
 ### Component state (lines 91-97)
 
-Five pieces of state: `events` (the current page of data), `meta` (pagination metadata from the API), `orgs` (the org list for the filter dropdown), `loading` (boolean), `page` (current page number), and `filters` (object with eventName, orgId, datePreset strings). All state is local — no context or global store. This component is self-contained.
+Six pieces of state: `events` (the current page of data), `meta` (pagination metadata from the API), `orgs` (the org list for the filter dropdown), `orgsFailed` (boolean — whether the org fetch errored), `loading` (boolean), `page` (current page number), and `filters` (object with eventName, orgId, datePreset strings). All state is local — no context or global store. This component is self-contained. The `orgsFailed` flag was added so the org filter dropdown can show "Failed to load orgs" and disable itself rather than silently showing an empty list.
 
 ### fetchEvents (lines 99-131)
 
@@ -72,7 +72,7 @@ A `useCallback`-wrapped async function that builds URLSearchParams from the curr
 
 ### Effects (lines 133-141)
 
-Two effects. The first fetches the org list once on mount (for the org filter dropdown). The second calls `fetchEvents` whenever `page`, `filters`, or `fetchEvents` change — since `fetchEvents` is stable (empty deps), only page and filter changes trigger refetches.
+Two effects. The first fetches the org list once on mount (for the org filter dropdown) — on failure, it sets `orgsFailed` to true so the dropdown shows a disabled "Failed to load orgs" state instead of silently appearing empty. The second calls `fetchEvents` whenever `page`, `filters`, or `fetchEvents` change — since `fetchEvents` is stable (empty deps), only page and filter changes trigger refetches.
 
 ### Filter bar (lines 157-193)
 
