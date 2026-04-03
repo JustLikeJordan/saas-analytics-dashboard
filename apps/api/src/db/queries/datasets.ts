@@ -49,8 +49,11 @@ export async function createDataset(
   return dataset;
 }
 
-export async function getDatasetsByOrg(orgId: number) {
-  return db.query.datasets.findMany({
+export async function getDatasetsByOrg(
+  orgId: number,
+  client: typeof db | DbTransaction = db,
+) {
+  return client.query.datasets.findMany({
     where: eq(datasets.orgId, orgId),
     orderBy: desc(datasets.createdAt),
   });

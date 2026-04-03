@@ -202,7 +202,7 @@ describe('tokenService', () => {
 
       const result = await rotateRefreshToken('a'.repeat(64));
 
-      expect(mockRevokeToken).toHaveBeenCalledWith(5);
+      expect(mockRevokeToken).toHaveBeenCalledWith(5, expect.anything());
       expect(result.accessToken).toBeDefined();
       expect(result.refreshToken).toBeDefined();
       expect(result.userId).toBe(1);
@@ -232,7 +232,7 @@ describe('tokenService', () => {
       await expect(rotateRefreshToken('a'.repeat(64))).rejects.toThrow(
         'Invalid refresh token',
       );
-      expect(mockRevokeAllForUser).toHaveBeenCalledWith(42);
+      expect(mockRevokeAllForUser).toHaveBeenCalledWith(42, expect.anything());
     });
 
     it('throws AuthenticationError when user not found', async () => {

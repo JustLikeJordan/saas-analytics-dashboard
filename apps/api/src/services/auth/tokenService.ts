@@ -67,7 +67,7 @@ export async function createTokenPair(
     userId,
     orgId,
     expiresAt,
-  });
+  }, dbAdmin);
 
   logger.info({ userId, orgId }, 'Token pair created');
 
@@ -76,22 +76,22 @@ export async function createTokenPair(
 
 export async function rotateRefreshToken(rawToken: string) {
   const hash = createHash('sha256').update(rawToken).digest('hex');
-  const existing = await refreshTokensQueries.findByHash(hash);
+  const existing = await refreshTokensQueries.findByHash(hash, dbAdmin);
 
   if (!existing) {
     // Token not valid — check if it was previously revoked (reuse attack detection)
-    const revoked = await refreshTokensQueries.findAnyByHash(hash);
+    const revoked = await refreshTokensQueries.findAnyByHash(hash, dbAdmin);
     if (revoked) {
       logger.warn(
         { userId: revoked.userId, tokenHashPrefix: hash.slice(0, 8) },
         'Refresh token reuse detected — revoking all tokens for user',
       );
-      await refreshTokensQueries.revokeAllForUser(revoked.userId);
+      await refreshTokensQueries.revokeAllForUser(revoked.userId, dbAdmin);
     }
     throw new AuthenticationError('Invalid refresh token');
   }
 
-  await refreshTokensQueries.revokeToken(existing.id);
+  await refreshTokensQueries.revokeToken(existing.id, dbAdmin);
 
   const user = await usersQueries.findUserById(existing.userId);
   if (!user) {
