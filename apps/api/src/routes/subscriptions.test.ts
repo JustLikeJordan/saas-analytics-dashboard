@@ -23,6 +23,10 @@ vi.mock('../services/subscription/index.js', () => ({
   createPortalSession: mockCreatePortalSession,
 }));
 
+vi.mock('../lib/rls.js', () => ({
+  withRlsContext: vi.fn((_orgId: number, _isAdmin: boolean, fn: (tx: unknown) => Promise<unknown>) => fn({})),
+}));
+
 vi.mock('../config.js', () => ({
   env: { NODE_ENV: 'test', APP_URL: 'http://localhost:3000' },
 }));
@@ -115,7 +119,7 @@ describe('POST /subscriptions/checkout', () => {
 
     expect(res.status).toBe(200);
     expect(json.data.checkoutUrl).toBe('https://checkout.stripe.com/session/cs_test');
-    expect(mockCreateCheckoutSession).toHaveBeenCalledWith(10, 1);
+    expect(mockCreateCheckoutSession).toHaveBeenCalledWith(10, 1, expect.anything());
   });
 
   it('returns 401 without auth', async () => {

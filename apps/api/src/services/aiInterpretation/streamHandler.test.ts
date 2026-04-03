@@ -171,7 +171,7 @@ describe('streamToSSE', () => {
     const { streamToSSE } = await import('./streamHandler.js');
     await streamToSSE(req, res, 1, 42);
 
-    expect(mockStoreSummary).toHaveBeenCalledWith(1, 42, 'cached text', defaultMetadata, 'v1');
+    expect(mockStoreSummary).toHaveBeenCalledWith(1, 42, 'cached text', defaultMetadata, 'v1', false, undefined);
   });
 
   it('sends error event on stream failure', async () => {

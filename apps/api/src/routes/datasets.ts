@@ -12,6 +12,7 @@ import { logger } from '../lib/logger.js';
 import type { PreviewData, ParsedRow } from '../services/adapters/index.js';
 import { normalizeHeader } from '../services/dataIngestion/index.js';
 import { datasetsQueries } from '../db/queries/index.js';
+import { withRlsContext } from '../lib/rls.js';
 import { env } from '../config.js';
 
 const upload = multer({
@@ -242,7 +243,9 @@ datasetsRouter.post(
     }
 
     const normalizedRows = normalizeRows(parseResult.rows, parseResult.headers);
-    const result = await datasetsQueries.persistUpload(orgId, userId, fileName, normalizedRows);
+    const result = await withRlsContext(orgId, user.isAdmin, (tx) =>
+      datasetsQueries.persistUpload(orgId, userId, fileName, normalizedRows, tx),
+    );
 
     trackEvent(orgId, userId, ANALYTICS_EVENTS.DATASET_CONFIRMED, {
       datasetId: result.datasetId,

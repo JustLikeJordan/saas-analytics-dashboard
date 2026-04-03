@@ -5,6 +5,7 @@ import type { SubscriptionTier } from '../../db/queries/subscriptions.js';
 
 import { AI_TIMEOUT_MS, FREE_PREVIEW_WORD_LIMIT } from 'shared/constants';
 import { logger } from '../../lib/logger.js';
+import type { db, DbTransaction } from '../../lib/db.js';
 import { aiSummariesQueries } from '../../db/queries/index.js';
 import { runCurationPipeline, assemblePrompt, transparencyMetadataSchema } from '../curation/index.js';
 import { streamInterpretation } from './claudeClient.js';
@@ -46,6 +47,7 @@ export async function streamToSSE(
   orgId: number,
   datasetId: number,
   tier: SubscriptionTier = 'free',
+  client?: typeof db | DbTransaction,
 ): Promise<boolean> {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -83,7 +85,7 @@ export async function streamToSSE(
   let promptVersion: string;
 
   try {
-    const insights = await runCurationPipeline(orgId, datasetId);
+    const insights = await runCurationPipeline(orgId, datasetId, client);
     const { prompt: p, metadata } = assemblePrompt(insights);
     prompt = p;
     validatedMetadata = transparencyMetadataSchema.parse(metadata);
@@ -161,6 +163,8 @@ export async function streamToSSE(
         result.fullText,
         validatedMetadata,
         promptVersion,
+        false,
+        client,
       );
       logger.info({ orgId, datasetId }, 'AI summary streamed and cached');
     } catch (cacheErr) {

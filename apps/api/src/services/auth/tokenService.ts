@@ -6,6 +6,7 @@ import { AuthenticationError } from '../../lib/appError.js';
 import * as refreshTokensQueries from '../../db/queries/refreshTokens.js';
 import * as usersQueries from '../../db/queries/users.js';
 import * as userOrgsQueries from '../../db/queries/userOrgs.js';
+import { dbAdmin } from '../../lib/db.js';
 import { AUTH } from 'shared/constants';
 import { jwtPayloadSchema } from 'shared/schemas';
 import type { JwtPayload, Role } from 'shared/types';
@@ -97,7 +98,7 @@ export async function rotateRefreshToken(rawToken: string) {
     throw new AuthenticationError('User not found');
   }
 
-  const memberships = await userOrgsQueries.getUserOrgs(user.id);
+  const memberships = await userOrgsQueries.getUserOrgs(user.id, dbAdmin);
   const membership = memberships.find((m) => m.orgId === existing.orgId);
   if (!membership) {
     throw new AuthenticationError('Organization membership not found');

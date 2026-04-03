@@ -15,6 +15,10 @@ vi.mock('../services/sharing/index.js', () => ({
   getSharedInsight: mockGetSharedInsight,
 }));
 
+vi.mock('../lib/rls.js', () => ({
+  withRlsContext: vi.fn((_orgId: number, _isAdmin: boolean, fn: (tx: unknown) => Promise<unknown>) => fn({})),
+}));
+
 vi.mock('../services/analytics/trackEvent.js', () => ({
   trackEvent: mockTrackEvent,
 }));
@@ -98,7 +102,7 @@ describe('POST /shares', () => {
     expect(res.status).toBe(201);
     expect(body.data.url).toContain('/share/');
     expect(body.data.token).toBeDefined();
-    expect(mockGenerateShareLink).toHaveBeenCalledWith(10, 5, 1);
+    expect(mockGenerateShareLink).toHaveBeenCalledWith(10, 5, 1, expect.anything());
   });
 
   it('fires SHARE_CREATED analytics event', async () => {

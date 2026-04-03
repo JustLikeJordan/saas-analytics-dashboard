@@ -1,5 +1,5 @@
 import { eq, desc, and, gte, lte, count, type SQL } from 'drizzle-orm';
-import { db } from '../../lib/db.js';
+import { db, dbAdmin, type DbTransaction } from '../../lib/db.js';
 import { analyticsEvents, orgs, users } from '../schema.js';
 import type { AnalyticsEventName } from 'shared/constants';
 
@@ -8,8 +8,9 @@ export async function recordEvent(
   userId: number,
   eventName: AnalyticsEventName,
   metadata?: Record<string, unknown>,
+  client: typeof db | DbTransaction = db,
 ) {
-  const [event] = await db
+  const [event] = await client
     .insert(analyticsEvents)
     .values({ orgId, userId, eventName, metadata: metadata ?? null })
     .returning();
@@ -22,10 +23,14 @@ interface GetEventsOpts {
   offset?: number;
 }
 
-export async function getEventsByOrg(orgId: number, opts: GetEventsOpts = {}) {
+export async function getEventsByOrg(
+  orgId: number,
+  opts: GetEventsOpts = {},
+  client: typeof db | DbTransaction = db,
+) {
   const { limit = 50, offset = 0 } = opts;
 
-  return db.query.analyticsEvents.findMany({
+  return client.query.analyticsEvents.findMany({
     where: eq(analyticsEvents.orgId, orgId),
     orderBy: desc(analyticsEvents.createdAt),
     limit,
@@ -59,7 +64,7 @@ export async function getAllAnalyticsEvents(opts: AdminEventsFilter) {
   const { limit = 50, offset = 0 } = opts;
   const where = buildFilterConditions(opts);
 
-  return db
+  return dbAdmin
     .select({
       id: analyticsEvents.id,
       eventName: analyticsEvents.eventName,
@@ -81,7 +86,7 @@ export async function getAllAnalyticsEvents(opts: AdminEventsFilter) {
 export async function getAnalyticsEventsTotal(opts: AdminEventsFilter) {
   const where = buildFilterConditions(opts);
 
-  const [row] = await db
+  const [row] = await dbAdmin
     .select({ value: count() })
     .from(analyticsEvents)
     .where(where);

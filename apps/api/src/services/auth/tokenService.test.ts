@@ -25,6 +25,11 @@ vi.mock('../../db/queries/userOrgs.js', () => ({
   getUserOrgs: mockGetUserOrgs,
 }));
 
+vi.mock('../../lib/db.js', () => ({
+  db: {},
+  dbAdmin: {},
+}));
+
 vi.mock('../../config.js', () => ({
   env: {
     JWT_SECRET: 'test-secret-key-that-is-at-least-32-characters',

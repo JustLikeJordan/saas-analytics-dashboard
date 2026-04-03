@@ -8,8 +8,10 @@ import type { AuthenticatedRequest } from '../middleware/authMiddleware.js';
 import { subscriptionGate, type TieredRequest } from '../middleware/subscriptionGate.js';
 import { rateLimitAi } from '../middleware/rateLimiter.js';
 import { aiSummariesQueries } from '../db/queries/index.js';
+import { dbAdmin } from '../lib/db.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
 import { streamToSSE } from '../services/aiInterpretation/streamHandler.js';
+import { withRlsContext } from '../lib/rls.js';
 import { ValidationError } from '../lib/appError.js';
 import { logger } from '../lib/logger.js';
 
@@ -28,7 +30,9 @@ aiSummaryRouter.get('/:datasetId', subscriptionGate, async (req, res: Response) 
 
   trackEvent(orgId, userId, ANALYTICS_EVENTS.AI_SUMMARY_REQUESTED, { datasetId: rawId });
 
-  const cached = await aiSummariesQueries.getCachedSummary(orgId, rawId);
+  const cached = await withRlsContext(orgId, authedReq.user.isAdmin, (tx) =>
+    aiSummariesQueries.getCachedSummary(orgId, rawId, tx),
+  );
   if (cached) {
     logger.info({ orgId, datasetId: rawId }, 'AI summary cache hit');
     res.json({
@@ -41,7 +45,6 @@ aiSummaryRouter.get('/:datasetId', subscriptionGate, async (req, res: Response) 
     return;
   }
 
-  // rate limit only on fresh generation
   await new Promise<void>((resolve, reject) => {
     rateLimitAi(req, res, (err?: unknown) => {
       if (err) reject(err);
@@ -49,10 +52,11 @@ aiSummaryRouter.get('/:datasetId', subscriptionGate, async (req, res: Response) 
     });
   });
 
-  // if rateLimitAi already sent a 429, stop
   if (res.headersSent) return;
 
-  const ok = await streamToSSE(req, res, orgId, rawId, tier);
+  // streaming runs outside the RLS transaction (holding a tx for 3-15s would starve the pool).
+  // dbAdmin bypasses RLS — safe because the route is auth-gated and orgId comes from the JWT.
+  const ok = await streamToSSE(req, res, orgId, rawId, tier, dbAdmin);
 
   if (ok) {
     trackEvent(orgId, userId, ANALYTICS_EVENTS.AI_SUMMARY_COMPLETED, { datasetId: rawId });
