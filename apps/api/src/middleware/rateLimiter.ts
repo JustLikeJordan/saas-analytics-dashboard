@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { RateLimiterRedis, RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
+import { rateLimitHits } from '../lib/metrics.js';
 import { redis } from '../lib/redis.js';
 import { logger } from '../lib/logger.js';
 import { RATE_LIMITS } from 'shared/constants';
@@ -60,6 +61,7 @@ export function rateLimitAuth(req: Request, res: Response, next: NextFunction) {
     .then(() => next())
     .catch((rlRes) => {
       if (rlRes instanceof RateLimiterRes) {
+        rateLimitHits.inc({ limiter: 'auth' });
         logger.warn({ ip: key, path: req.path }, 'Auth rate limit exceeded');
         return sendRateLimited(res, rlRes);
       }
@@ -82,6 +84,7 @@ export function rateLimitAi(req: Request, res: Response, next: NextFunction) {
     .then(() => next())
     .catch((rlRes) => {
       if (rlRes instanceof RateLimiterRes) {
+        rateLimitHits.inc({ limiter: 'ai' });
         logger.warn({ userId: key, path: req.path }, 'AI rate limit exceeded');
         return sendRateLimited(res, rlRes);
       }
@@ -97,6 +100,7 @@ export function rateLimitPublic(req: Request, res: Response, next: NextFunction)
     .then(() => next())
     .catch((rlRes) => {
       if (rlRes instanceof RateLimiterRes) {
+        rateLimitHits.inc({ limiter: 'public' });
         logger.warn({ ip: key, path: req.path }, 'Public rate limit exceeded');
         return sendRateLimited(res, rlRes);
       }

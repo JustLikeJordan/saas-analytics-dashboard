@@ -35,13 +35,20 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
-# Claude Code - ignore local/sensitive, track shareable config
+# Claude Code
 .claude/settings.local.json
 .claude/plugins/
 .claude/memory/
+.claude/commands/
 
 
 # Serena
 .serena/
 
-# BMAD - track framework + docs and planning artifacts
+# Interview documentation companions
+*_explained.md
+
+# BMAD framework (planning artifacts in _bmad-output/ are tracked)
+_bmad/
+CLAUDE.md
+.claude/

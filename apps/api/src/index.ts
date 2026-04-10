@@ -1,4 +1,5 @@
 import express from 'express';
+import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import pinoHttp from 'pino-http';
 import { env } from './config.js';
@@ -15,10 +16,33 @@ import dashboardRouter from './routes/dashboard.js';
 import { stripeWebhookRouter } from './routes/stripeWebhook.js';
 import { redis } from './lib/redis.js';
 import { queryClient, adminClient } from './lib/db.js';
+import { abortAll as abortAllStreams } from './lib/activeStreams.js';
+import { registry, httpRequestDuration } from './lib/metrics.js';
 
 const app = express();
 
 app.set('trust proxy', 1); // BFF proxy is the first hop — needed for correct req.ip in rate limiting
+
+// Prometheus metrics — before helmet so scraper doesn't need to handle security headers
+app.get('/metrics', async (_req, res) => {
+  res.set('Content-Type', registry.contentType);
+  res.end(await registry.metrics());
+});
+
+// request duration histogram — wraps all routes
+app.use((req, res, next) => {
+  const end = httpRequestDuration.startTimer();
+  res.on('finish', () => {
+    const route = req.route?.path ?? req.path;
+    end({ method: req.method, route, status: String(res.statusCode) });
+  });
+  next();
+});
+
+app.use(helmet({
+  contentSecurityPolicy: false, // API serves JSON/SSE, not HTML — CSP is the frontend's job
+  crossOriginResourcePolicy: { policy: 'cross-origin' }, // BFF proxy forwards from a different port
+}));
 app.use(correlationId);
 app.use(stripeWebhookRouter);
 app.use(express.json({ limit: '10mb' }));
@@ -27,7 +51,7 @@ app.use(
   pinoHttp({
     logger,
     autoLogging: {
-      ignore: (req) => req.url === '/health',
+      ignore: (req) => (req.url?.startsWith('/health') || req.url === '/metrics') ?? false,
     },
   }),
 );
@@ -59,10 +83,13 @@ async function start() {
   async function shutdown(signal: string) {
     if (shuttingDown) return;
     shuttingDown = true;
-    logger.info({ signal }, 'Shutdown signal received — draining connections');
+    const aborted = abortAllStreams();
+    logger.info({ signal, activeStreams: aborted }, 'Shutdown signal received — draining connections');
 
     server.close(async () => {
       try {
+        // brief pause for aborted streams to flush final SSE events
+        if (aborted > 0) await new Promise((r) => setTimeout(r, 500));
         await redis.quit();
         await queryClient.end({ timeout: 5 });
         await adminClient.end({ timeout: 5 });

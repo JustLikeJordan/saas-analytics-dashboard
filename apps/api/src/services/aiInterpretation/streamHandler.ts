@@ -6,6 +6,8 @@ import type { SubscriptionTier } from '../../db/queries/subscriptions.js';
 import { AI_TIMEOUT_MS, FREE_PREVIEW_WORD_LIMIT } from 'shared/constants';
 import { logger } from '../../lib/logger.js';
 import type { db, DbTransaction } from '../../lib/db.js';
+import { register, deregister } from '../../lib/activeStreams.js';
+import { CircuitOpenError } from '../../lib/circuitBreaker.js';
 import { aiSummariesQueries } from '../../db/queries/index.js';
 import { runCurationPipeline, assemblePrompt, transparencyMetadataSchema } from '../curation/index.js';
 import { streamInterpretation } from './claudeClient.js';
@@ -19,6 +21,9 @@ function countWords(text: string): number {
 }
 
 function mapStreamError(err: unknown): SseErrorEvent {
+  if (err instanceof CircuitOpenError) {
+    return { code: 'AI_UNAVAILABLE', message: 'AI service is temporarily unavailable — try again shortly', retryable: true };
+  }
   // order matters — APIConnectionTimeoutError extends APIConnectionError
   if (err instanceof Anthropic.APIConnectionTimeoutError) {
     return { code: 'TIMEOUT', message: 'The analysis took longer than expected', retryable: true };
@@ -61,6 +66,7 @@ export async function streamToSSE(
   res.flushHeaders();
 
   const abortController = new AbortController();
+  register(abortController);
   let accumulatedText = '';
   let timedOut = false;
   let clientDisconnected = false;
@@ -70,6 +76,7 @@ export async function streamToSSE(
   function safeEnd() {
     if (ended) return;
     ended = true;
+    deregister(abortController);
     res.end();
   }
 
@@ -80,6 +87,7 @@ export async function streamToSSE(
 
   req.on('close', () => {
     clientDisconnected = true;
+    deregister(abortController);
     abortController.abort();
     clearTimeout(timeout);
   });
@@ -97,7 +105,7 @@ export async function streamToSSE(
     promptVersion = metadata.promptVersion;
   } catch (err) {
     clearTimeout(timeout);
-    if (clientDisconnected) return { ok: false };
+    if (clientDisconnected) { deregister(abortController); return { ok: false }; }
     logger.error(
       { orgId, datasetId, err: (err as Error).message },
       'curation pipeline failed',
@@ -185,6 +193,7 @@ export async function streamToSSE(
 
     if (clientDisconnected) {
       logger.info({ orgId, datasetId }, 'client disconnected during AI stream');
+      deregister(abortController);
       return { ok: false };
     }
 
@@ -192,7 +201,7 @@ export async function streamToSSE(
     if (truncatedForFree) return { ok: true };
 
     if (timedOut) {
-      if (ended) return { ok: false };
+      if (ended) { deregister(abortController); return { ok: false }; }
 
       if (accumulatedText) {
         logger.warn(
@@ -214,7 +223,7 @@ export async function streamToSSE(
       return { ok: false };
     }
 
-    if (ended) return { ok: false };
+    if (ended) { deregister(abortController); return { ok: false }; }
 
     const mapped = mapStreamError(err);
     logger.error(

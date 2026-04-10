@@ -20,7 +20,7 @@ import { chromium, type Page } from '@playwright/test';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = resolve(__dirname, '..', 'docs', 'screenshots');
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000';
-const VIEWPORT = { width: 1280, height: 800 };
+const VIEWPORT = { width: 1280, height: 1200 };
 
 // Recharts default animation is 500ms — pad generously
 const ANIMATION_SETTLE_MS = 1200;

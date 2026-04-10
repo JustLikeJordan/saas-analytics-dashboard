@@ -7,13 +7,14 @@ import type { SubscriptionTier } from 'shared/types';
 import type { AuthenticatedRequest } from '../middleware/authMiddleware.js';
 import { subscriptionGate, type TieredRequest } from '../middleware/subscriptionGate.js';
 import { rateLimitAi } from '../middleware/rateLimiter.js';
-import { aiSummariesQueries, analyticsEventsQueries } from '../db/queries/index.js';
+import { aiSummariesQueries, analyticsEventsQueries, dataRowsQueries } from '../db/queries/index.js';
 import { dbAdmin } from '../lib/db.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
 import { streamToSSE } from '../services/aiInterpretation/streamHandler.js';
 import { withRlsContext } from '../lib/rls.js';
 import { ValidationError, QuotaExceededError } from '../lib/appError.js';
 import { logger } from '../lib/logger.js';
+import { aiSummaryTotal, aiTokensUsed } from '../lib/metrics.js';
 
 const aiSummaryRouter = Router();
 
@@ -35,6 +36,12 @@ aiSummaryRouter.get('/:datasetId', subscriptionGate, async (req, res: Response) 
   );
   if (cached) {
     logger.info({ orgId, datasetId: rawId }, 'AI summary cache hit');
+    aiSummaryTotal.inc({ tier, cache_hit: 'true', outcome: 'ok' });
+    trackEvent(orgId, userId, ANALYTICS_EVENTS.AI_SUMMARY_COMPLETED, {
+      datasetId: rawId,
+      tier,
+      cacheHit: true,
+    });
     res.json({
       data: {
         content: cached.content,
@@ -66,13 +73,20 @@ aiSummaryRouter.get('/:datasetId', subscriptionGate, async (req, res: Response) 
 
   // streaming runs outside the RLS transaction (holding a tx for 3-15s would starve the pool).
   // dbAdmin bypasses RLS — safe because the route is auth-gated and orgId comes from the JWT.
-  const streamStart = Date.now();
+  const [streamStart, datasetSize] = [Date.now(), await dataRowsQueries.getRowCount(orgId, rawId, dbAdmin)];
   const outcome = await streamToSSE(req, res, orgId, rawId, tier, dbAdmin);
 
+  aiSummaryTotal.inc({ tier, cache_hit: 'false', outcome: outcome.ok ? 'ok' : 'error' });
   if (outcome.ok) {
+    if (outcome.usage) {
+      aiTokensUsed.inc({ tier, direction: 'input' }, outcome.usage.inputTokens);
+      aiTokensUsed.inc({ tier, direction: 'output' }, outcome.usage.outputTokens);
+    }
     trackEvent(orgId, userId, ANALYTICS_EVENTS.AI_SUMMARY_COMPLETED, {
       datasetId: rawId,
       tier,
+      cacheHit: false,
+      datasetSize,
       computationTimeMs: Date.now() - streamStart,
       ...(outcome.usage && {
         inputTokens: outcome.usage.inputTokens,

@@ -1,5 +1,5 @@
-import { eq, sql } from 'drizzle-orm';
-import { db, type DbTransaction } from '../../lib/db.js';
+import { eq, lt, sql } from 'drizzle-orm';
+import { db, dbAdmin, type DbTransaction } from '../../lib/db.js';
 import { shares } from '../schema.js';
 
 export async function createShare(
@@ -40,6 +40,14 @@ export async function incrementViewCount(
     .returning();
   if (!share) throw new Error(`Share ${id} not found during view count increment`);
   return share;
+}
+
+export async function deleteExpired(): Promise<number> {
+  const deleted = await dbAdmin
+    .delete(shares)
+    .where(lt(shares.expiresAt, new Date()))
+    .returning({ id: shares.id });
+  return deleted.length;
 }
 
 export async function getSharesByOrg(

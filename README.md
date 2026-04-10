@@ -4,6 +4,8 @@ AI-powered analytics that explains business data in plain English for small busi
 
 ![Dashboard — light mode](docs/screenshots/hero-light.png)
 
+[![CI](https://github.com/CoreyStevensDev/saas-analytics-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/CoreyStevensDev/saas-analytics-dashboard/actions/workflows/ci.yml)
+
 > 781 tests | 5-stage CI | 7 epics, 35 stories | MIT License
 
 ## Overview
@@ -77,11 +79,11 @@ AI responses stream back via Server-Sent Events, so users see the summary build 
 
 ## Screenshots
 
-> Generated via `pnpm screenshots` (requires the app running locally).
-
-### Dark Mode
+![Dashboard — light mode](docs/screenshots/hero-light.png)
 
 ![Dashboard — dark mode](docs/screenshots/hero-dark.png)
+
+> Regenerate locally: `pnpm screenshots` (requires the app running via `docker compose up`).
 
 ## Getting Started
 
@@ -132,7 +134,16 @@ apps/api/          — Express 5 API (port 3001)
 packages/shared/   — Shared schemas, types, constants
 scripts/           — CI tools (seed validation, screenshot generation)
 e2e/               — Playwright E2E tests
+_bmad-output/      — Planning artifacts (PRD, architecture, UX design, epics)
 ```
+
+## Planning Artifacts
+
+The `_bmad-output/` directory contains the full planning trail behind this project — product requirements, architecture decisions, UX specifications, epic breakdowns, and retrospectives. If you're curious how the codebase got here, start with:
+
+- [`prd.md`](_bmad-output/planning-artifacts/prd.md) — 41 functional requirements, 27 non-functional
+- [`architecture.md`](_bmad-output/planning-artifacts/architecture.md) — stack decisions, file map, curation pipeline design
+- [`epics.md`](_bmad-output/planning-artifacts/epics.md) — 7 epics, 35 stories, dependency graph
 
 ## License
 

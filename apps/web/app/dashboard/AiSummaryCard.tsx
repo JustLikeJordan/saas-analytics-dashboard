@@ -212,7 +212,7 @@ export function AiSummaryCard({
   shareLinkClipboardFailed,
   className,
 }: AiSummaryCardProps) {
-  const hasCached = !!cachedContent && !datasetId;
+  const hasCached = !!cachedContent;
   const { status, text, metadata: streamMetadata, error, code, retryable, maxRetriesReached, retry } =
     useAiStream(hasCached ? null : datasetId);
 

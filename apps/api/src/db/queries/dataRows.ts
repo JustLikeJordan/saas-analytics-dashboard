@@ -1,4 +1,4 @@
-import { eq, and, between, inArray, asc } from 'drizzle-orm';
+import { eq, and, between, inArray, asc, count } from 'drizzle-orm';
 import { db, type DbTransaction } from '../../lib/db.js';
 import { dataRows } from '../schema.js';
 
@@ -64,6 +64,18 @@ export async function getByCategory(
     where: and(...conditions),
     orderBy: asc(dataRows.date),
   });
+}
+
+export async function getRowCount(
+  orgId: number,
+  datasetId: number,
+  client: typeof db | DbTransaction = db,
+): Promise<number> {
+  const [row] = await client
+    .select({ value: count() })
+    .from(dataRows)
+    .where(and(eq(dataRows.orgId, orgId), eq(dataRows.datasetId, datasetId)));
+  return row?.value ?? 0;
 }
 
 export async function getRowsByDataset(

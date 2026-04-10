@@ -1,0 +1,15 @@
+node_modules
+.next
+.turbo
+.git
+.env
+.env.local
+coverage
+test-results
+playwright-report
+_bmad
+_bmad-output
+docs/screenshots
+*.md
+!README.md
+!CLAUDE.md

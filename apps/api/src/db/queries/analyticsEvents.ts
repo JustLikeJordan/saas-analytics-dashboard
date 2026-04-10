@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, lte, count, type SQL } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, lt, count, type SQL } from 'drizzle-orm';
 import { db, dbAdmin, type DbTransaction } from '../../lib/db.js';
 import { analyticsEvents, orgs, users } from '../schema.js';
 import { ANALYTICS_EVENTS, type AnalyticsEventName } from 'shared/constants';
@@ -92,6 +92,18 @@ export async function getAnalyticsEventsTotal(opts: AdminEventsFilter) {
     .where(where);
 
   return row?.value ?? 0;
+}
+
+export async function deleteOlderThan(retentionDays: number): Promise<number> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - retentionDays);
+
+  const deleted = await dbAdmin
+    .delete(analyticsEvents)
+    .where(lt(analyticsEvents.createdAt, cutoff))
+    .returning({ id: analyticsEvents.id });
+
+  return deleted.length;
 }
 
 export async function getMonthlyAiUsageCount(

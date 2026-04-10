@@ -1,8 +1,11 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { getOrgsWithStats, getUsers, getOrgDetail, getSystemHealth } from '../services/admin/index.js';
-import { getAllAnalyticsEvents, getAnalyticsEventsTotal } from '../db/queries/analyticsEvents.js';
+import { getAllAnalyticsEvents, getAnalyticsEventsTotal, deleteOlderThan } from '../db/queries/analyticsEvents.js';
+import { deleteExpired as deleteExpiredShares } from '../db/queries/shares.js';
 import { ValidationError } from '../lib/appError.js';
+import { env } from '../config.js';
+import { logger } from '../lib/logger.js';
 
 const orgIdParam = z.coerce.number().int().positive();
 
@@ -61,4 +64,17 @@ adminRouter.get('/analytics-events', async (req: Request, res: Response) => {
     data: events,
     meta: { total, pagination: { page, pageSize: limit, totalPages } },
   });
+});
+
+adminRouter.post('/analytics-events/cleanup', async (_req, res: Response) => {
+  const retentionDays = env.ANALYTICS_RETENTION_DAYS;
+  const deleted = await deleteOlderThan(retentionDays);
+  logger.info({ retentionDays, deleted }, 'analytics events cleanup completed');
+  res.json({ data: { deleted, retentionDays } });
+});
+
+adminRouter.post('/shares/cleanup', async (_req, res: Response) => {
+  const deleted = await deleteExpiredShares();
+  logger.info({ deleted }, 'expired shares cleanup completed');
+  res.json({ data: { deleted } });
 });
