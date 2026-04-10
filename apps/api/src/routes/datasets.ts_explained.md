@@ -2,7 +2,7 @@
 
 ## 1. 30-Second Elevator Pitch
 
-This file handles the two-step CSV upload flow: preview and confirm. When a user picks a CSV file, the preview endpoint parses it, validates the data, and sends back a summary with sample rows, column types, and a cryptographically signed token. The confirm endpoint persists the data to PostgreSQL — but only after verifying that token proves the file hasn't been swapped since the user previewed it. The persistence step wraps both the dataset record creation and the row batch insert in a single database transaction, so a partial failure leaves nothing behind.
+This file handles the two-step CSV upload flow: preview and confirm. When a user picks a CSV file, the preview endpoint parses it, enforces a 50,000-row hard limit, validates the data, and sends back a summary with sample rows, column types, and a cryptographically signed token. The confirm endpoint persists the data to PostgreSQL — but only after verifying that token proves the file hasn't been swapped since the user previewed it. The persistence step wraps both the dataset record creation and the row batch insert in a single database transaction, so a partial failure leaves nothing behind.
 
 **How to say it in an interview:** "This is a two-phase upload system with TOCTOU protection and transactional persistence. The preview endpoint validates the CSV and returns an HMAC-signed token binding the file's SHA-256 hash to the user's org. The confirm endpoint verifies that token, then writes the dataset header and all data rows inside a single transaction — so the database never ends up with a dataset record that has no rows."
 
@@ -105,10 +105,11 @@ Verification uses cheap rejections first (org mismatch, expiry) before the expen
 The happy path:
 1. Extract authenticated user's org and ID
 2. Parse CSV via the adapter
-3. Check for empty/rejected files (warnings, header validation, >50% failure)
-4. Build normalized sample rows (first 5) and column types
-5. Compute file hash and sign preview token
-6. Return the full preview payload including `fileHash` and `previewToken`
+3. **Row limit gate** — reject files exceeding `CSV_MAX_ROWS` (50,000) with a user-friendly message including the actual count. Runs before any other validation so oversized files fail fast.
+4. Check for empty/rejected files (warnings, header validation, >50% failure)
+5. Build normalized sample rows (first 5) and column types
+6. Compute file hash and sign preview token
+7. Return the full preview payload including `fileHash` and `previewToken`
 
 Three different failure modes are checked in sequence. First, zero rows with warnings (empty file, header-only). Second, header validation failures (missing required columns). Third, zero valid rows from a non-empty file (>50% row failure rate). Each gets a different error message.
 

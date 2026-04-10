@@ -2,9 +2,9 @@
 
 ## 1. Elevator Pitch
 
-This file orchestrates real-time AI summary delivery over Server-Sent Events (SSE). When a user requests an AI interpretation and there's no cached version, `streamToSSE` takes over: it runs the curation pipeline to build a privacy-safe prompt, streams Claude's response chunk by chunk to the browser, caches the result, and handles five failure modes — client disconnect, timeout with partial delivery, timeout with no text, pipeline errors, and classified API errors. It returns `Promise<boolean>` — `true` on successful stream+cache, `false` on any failure — so the caller can gate analytics events.
+This file orchestrates real-time AI summary delivery over Server-Sent Events (SSE). When a user requests an AI interpretation and there's no cached version, `streamToSSE` takes over: it runs the curation pipeline to build a privacy-safe prompt, streams Claude's response chunk by chunk to the browser, caches the result, and handles six failure modes — client disconnect, timeout with partial delivery, timeout with no text, pipeline errors, free-tier truncation, and classified API errors. It returns `Promise<StreamOutcome>` — a struct with `ok: boolean` and optional `usage: { inputTokens, outputTokens }` — so the caller can gate analytics events and log token metrics.
 
-**How to say it in an interview:** "I built the SSE streaming handler that connects the AI curation pipeline to the browser. It manages the full lifecycle — prompt assembly, chunked delivery, cache-after-stream, and graceful degradation. Error handling is split into two phases: pipeline failures get caught before Claude is ever called, and stream failures use instanceof checks against Anthropic SDK error classes for precise error code mapping. A double-end guard prevents race conditions between timeout and completion."
+**How to say it in an interview:** "I built the SSE streaming handler that connects the AI curation pipeline to the browser. It manages the full lifecycle — prompt assembly, chunked delivery, free-tier truncation, cache-after-stream, and graceful degradation. The return type is a structured `StreamOutcome` rather than a plain boolean, so the caller gets both the success signal and token usage data for analytics without needing side channels or shared state. Error handling is split into two phases: pipeline failures get caught before Claude is ever called, and stream failures use instanceof checks against Anthropic SDK error classes for precise error code mapping."
 
 ## 2. Why This Approach
 
@@ -25,6 +25,10 @@ This file orchestrates real-time AI summary delivery over Server-Sent Events (SS
 **`safeEnd()` double-end guard.** Three things can end the response: successful completion, timeout, and error handling. If timeout fires at the exact moment the stream completes, both paths try to call `res.end()`. Calling `res.end()` twice throws in Node. The `ended` flag + `safeEnd()` wrapper makes every end-path idempotent.
 
 **How to say it:** "I use a boolean guard to make `res.end()` idempotent. Timeout and completion can race — without the guard, you'd get a Node crash from double-ending the response."
+
+**`StreamOutcome` struct over bare boolean.** The function used to return `Promise<boolean>` — `true` for success, `false` for failure. But the caller (aiSummary route) now needs token usage data for analytics events (`inputTokens`, `outputTokens`). Options: (1) out-parameter, (2) shared mutable state, (3) return a struct. The struct is cleanest — `{ ok: true, usage: { inputTokens, outputTokens } }` on full success, `{ ok: true }` on free-tier truncation (we aborted before getting final usage), `{ ok: false }` on any failure. The optional `usage` field means the caller can spread it into analytics metadata without null checks.
+
+**How to say it:** "I changed the return type from boolean to a structured outcome so the caller gets both the success signal and token counts in one value. It's cleaner than out-parameters or shared state, and the optional usage field naturally handles cases where tokens aren't available — like free-tier truncation where we abort before the final message."
 
 **Cache-after-stream.** We stream to the client first, then cache. The user gets the fastest possible response. If caching fails, the user still got their summary. The next request just regenerates.
 

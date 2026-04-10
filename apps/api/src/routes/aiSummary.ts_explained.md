@@ -2,9 +2,9 @@
 
 ## 1. Elevator Pitch
 
-The AI summary route handler implements a cache-first strategy for serving AI-generated business insights. On cache hit, it returns JSON instantly. On cache miss, it hands off to the SSE streaming handler for real-time generation. Rate limiting only kicks in on the streaming path — cached responses are free. It fires `AI_SUMMARY_REQUESTED` at entry and only fires `AI_SUMMARY_COMPLETED` when `streamToSSE` returns `true` — meaning the stream finished successfully and was cached.
+The AI summary route handler implements a cache-first, quota-gated strategy for serving AI-generated business insights. On cache hit, it returns JSON instantly (cache hits don't count against quota). On cache miss, it checks the per-tier monthly quota (free: 3/month, pro: 100/month), then hands off to the SSE streaming handler for real-time generation. Rate limiting only kicks in on the streaming path. It fires `AI_SUMMARY_REQUESTED` at entry and only fires `AI_SUMMARY_COMPLETED` when `streamToSSE` returns `{ ok: true }` — with token usage metrics (inputTokens, outputTokens, computationTimeMs, tier) attached for cost monitoring.
 
-**How to say it in an interview:** "I built the route handler with a cache-first pattern where cached summaries return JSON and fresh generation streams via SSE. Rate limiting is conditional — only applied on cache misses. The completion analytics event is gated on the stream handler's boolean return, so partial deliveries and errors don't inflate success metrics."
+**How to say it in an interview:** "I built the route handler with a cache-first pattern where cached summaries return JSON and fresh generation streams via SSE. A per-tier monthly quota gate runs after the cache check — so cache hits are free — using a COUNT query against existing analytics events rather than a separate quota table. The completion event carries token usage metrics so we can track AI spend per org and tier without a separate logging system."
 
 ## 2. Why This Approach
 
@@ -25,10 +25,11 @@ The flow is linear and readable:
 2. Validate `datasetId` — must be a positive integer
 3. Fire `AI_SUMMARY_REQUESTED` analytics event (always, regardless of cache)
 4. Check cache — if hit, return JSON with `fromCache: true` flag
-5. If miss, wrap rate limiter in Promise, await it
-6. Guard against 429 already sent
-7. Stream the response via `streamToSSE`, capturing `const ok = await streamToSSE(...)`
-8. Fire `AI_SUMMARY_COMPLETED` only when `ok` is `true`
+5. **Quota gate** — count this month's `AI_SUMMARY_COMPLETED` events for this org, compare against `AI_MONTHLY_QUOTA[tier]`. Throw `QuotaExceededError` (402) if exhausted. Runs after cache check so cache hits are free.
+6. If miss, wrap rate limiter in Promise, await it
+7. Guard against 429 already sent
+8. Stream the response via `streamToSSE`, capturing `const outcome = await streamToSSE(...)`
+9. Fire `AI_SUMMARY_COMPLETED` only when `outcome.ok` is `true`, with `tier`, `computationTimeMs`, and token usage from `outcome.usage`
 
 Notice there's no try-catch. Express 5 forwards rejected promises to the error handler automatically. The `ValidationError` throw on invalid datasetId gets caught by the centralized `errorHandler` middleware, which returns a proper `{ error: { code, message } }` JSON response.
 

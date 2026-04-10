@@ -2,62 +2,55 @@
 
 ## 1. 30-Second Elevator Pitch
 
-This file creates a single, shared database connection to PostgreSQL and wraps it with Drizzle ORM so the rest of the application can run type-safe queries. It is 13 lines of code, but those 13 lines contain several important production decisions: connection pooling (reusing connections instead of opening a new one for every query), timeout configuration (so a broken database does not hang your entire API), and lazy connection (the pool does not actually connect until the first query runs, which makes startup faster and testing easier).
+This file creates two database connection pools — `db` and `dbAdmin` — each connecting to PostgreSQL through a different role. `db` connects as `app_user`, a role with Row-Level Security enforced, meaning every query is filtered by the current tenant's org_id. `dbAdmin` connects as `app_admin`, a role with `BYPASSRLS`, meaning it can see and modify all data across all organizations. Routes wrap tenant-scoped queries in `withRlsContext` (which uses `db`), while admin dashboards, webhooks, and fire-and-forget analytics use `dbAdmin` directly. The module also exports a `DbTransaction` type extracted from Drizzle's internals, so query functions can optionally accept a transaction client for RLS-scoped calls.
 
 **How to say it in an interview:**
-"This module sets up a connection pool to PostgreSQL using postgres.js and wraps it with Drizzle ORM for type-safe queries. The pool is configured with sensible production defaults — max connections, idle timeout, connect timeout — and connects lazily on first use."
+"This module sets up two connection pools — one for tenant-scoped queries with RLS enforced, and one for admin operations that bypass RLS. The dual-pool pattern is the standard approach for multi-tenant PostgreSQL: regular requests go through the restricted pool, while webhooks, admin panels, and background jobs use the privileged pool."
 
 ---
 
 ## 2. Why This Approach?
 
-### Decision 1: Connection pooling with a max of 10
+### Decision 1: Two pools, two database roles
 
-**What's happening:** `postgres(env.DATABASE_URL, { max: 10, ... })` creates a pool of up to 10 reusable database connections.
+**What's happening:** `db` connects via `DATABASE_URL` (the `app_user` role) and `dbAdmin` connects via `DATABASE_ADMIN_URL` (the `app_admin` role). They're completely separate connection pools to the same PostgreSQL database.
 
-**Why it matters:** Opening a database connection is expensive — it involves a TCP handshake, TLS negotiation, and PostgreSQL authentication, which can take 50-200 milliseconds. If every API request opened and closed its own connection, a server handling 100 requests per second would be doing 100 handshakes per second, wasting time and overwhelming PostgreSQL (which has a default limit of 100 connections). A connection pool opens a set of connections once and reuses them across requests. When a request needs the database, it borrows a connection from the pool, uses it, and returns it — like a library lending books instead of buying a new copy for every reader.
+**Why it matters:** PostgreSQL's Row-Level Security policies are enforced per-role. The `app_user` role has RLS enabled — every table has policies that check `current_setting('app.current_org_id')` to filter rows. The `app_admin` role has `BYPASSRLS`, which tells PostgreSQL to skip all RLS policy checks. By splitting into two pools, we get a clear architectural boundary: code that imports `db` is always subject to tenant isolation, code that imports `dbAdmin` explicitly opts out. This separation prevents the most dangerous class of multi-tenant bugs — accidentally running a cross-org query through a connection that should be tenant-scoped.
 
-The max of 10 is deliberate. PostgreSQL handles each connection as a separate OS process, consuming memory (roughly 5-10 MB per connection). With 10 connections, our single API server process can handle plenty of concurrency while leaving room for other services (like a migration runner or admin tool) to also connect. If we need more throughput, we scale horizontally (more API instances) rather than cranking up the pool size on one instance.
-
-**How to say it in an interview:**
-"We use a pool of 10 connections because each PostgreSQL connection costs real memory on the server side. Ten gives us plenty of concurrency for a single API process while leaving headroom for other clients. Scaling is horizontal — more API instances, each with their own pool — not a bigger pool on one instance."
-
-### Decision 2: Idle timeout and connect timeout
-
-**What's happening:** `idle_timeout: 20` closes connections that have been unused for 20 seconds. `connect_timeout: 10` gives up if a new connection cannot be established within 10 seconds.
-
-**Why it matters:** Without an idle timeout, connections that are no longer needed would sit open indefinitely, consuming PostgreSQL memory for nothing. This matters in a SaaS application with variable traffic — during quiet periods, the pool should shrink to free resources. The 20-second idle timeout means connections are reclaimed promptly but not so aggressively that they churn during normal request gaps.
-
-The connect timeout is a safety net against a misconfigured or unreachable database. Without it, a connection attempt to a dead database would hang indefinitely, which would cause your API to hang on every request that needs data — effectively a total outage. The 10-second timeout ensures the system fails fast and returns an error instead of hanging.
+The pool sizes differ intentionally: `db` has max 10 connections because it handles all user-facing requests, while `dbAdmin` has max 5 because admin and webhook traffic is lower volume. Together they use 15 connections, well within PostgreSQL's default limit of 100.
 
 **How to say it in an interview:**
-"The idle timeout prevents resource waste during low-traffic periods, and the connect timeout ensures we fail fast if the database is unreachable. Both are about resilience — the system should degrade gracefully, not hang indefinitely."
+"We use two separate pools with different PostgreSQL roles. The regular pool enforces RLS — you physically cannot read another tenant's data. The admin pool bypasses RLS for cross-org operations like admin dashboards and Stripe webhooks. The pool split makes the security boundary architectural, not just conventional."
 
-### Decision 3: Lazy connection (not connecting at import time)
+### Decision 2: Connection pooling with production timeouts
 
-**What's happening:** The `postgres()` call creates the pool configuration but does not actually connect to the database. The first real connection happens when the first query is executed.
+**What's happening:** Both pools configure `idle_timeout: 20` and `connect_timeout: 10`.
 
-**Why it matters:** This has two practical benefits. First, the API server starts up quickly because it does not wait for a database handshake during import. Second, it makes testing easier — you can import the db module in a test file without needing a running PostgreSQL instance, as long as your test does not execute a query that hits this module. A separate health-check endpoint explicitly verifies database connectivity, so we still know if the database is down.
-
-**How to say it in an interview:**
-"postgres.js connects lazily — the pool doesn't open connections until the first query. This makes startup fast and testing clean. Actual connectivity is verified by a dedicated health-check endpoint, not by the import itself."
-
-### Decision 4: Suppressing PostgreSQL NOTICE messages
-
-**What's happening:** `onnotice: () => {}` is a no-op callback that silently swallows PostgreSQL NOTICE messages.
-
-**Why it matters:** PostgreSQL sends NOTICE messages for non-critical information — things like "table already exists, skipping" during migrations. These messages are verbose and clutter development logs without providing actionable information. By setting the handler to an empty function, we keep the console clean. If you ever need to debug migration issues, you could temporarily log these, but for day-to-day development and production they are noise.
+**Why it matters:** `idle_timeout: 20` closes connections unused for 20 seconds, freeing PostgreSQL memory during quiet periods. `connect_timeout: 10` ensures fail-fast behavior if the database is unreachable — without it, a connection attempt to a dead database hangs indefinitely, causing every API request to hang in turn. These values balance responsiveness (not too aggressive during normal request gaps) with resource hygiene (not holding connections open for minutes).
 
 **How to say it in an interview:**
-"We suppress PostgreSQL NOTICE messages because they are mainly migration chatter that clutters the logs without providing actionable information during normal operation."
+"Idle timeout prevents resource waste during low traffic, and connect timeout ensures fail-fast if the database is down. Both pools share the same timeout configuration because the resilience requirements are identical regardless of role."
+
+### Decision 3: Suppressing NOTICE messages
+
+**What's happening:** `onnotice: () => {}` silently swallows PostgreSQL NOTICE messages on both pools.
+
+**Why it matters:** PostgreSQL emits NOTICE for non-critical events — "table already exists," "implicit index created," etc. These clutter development logs without actionable information. The no-op callback keeps output clean. If you need to debug migration behavior, you can temporarily log these.
+
+### Decision 4: Exporting DbTransaction type via Parameters extraction
+
+**What's happening:** `type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]` extracts the transaction client type from Drizzle's method signature.
+
+**Why it matters:** Drizzle doesn't export the transaction client type directly. This line uses TypeScript's `Parameters` utility type twice: first to get the callback parameter of `db.transaction()`, then to get the `tx` argument of that callback. It's the kind of line that looks cryptic until you read it inside-out. The payoff is zero maintenance — if Drizzle changes its transaction API, this type updates automatically. Query functions use it as `client: typeof db | DbTransaction = db`, creating a union type that accepts either the global pool or a transaction client.
+
+**How to say it in an interview:**
+"Drizzle doesn't export the transaction client type, so we extract it from the method signature using nested Parameters<>. It auto-tracks Drizzle's API — if they change the transaction interface, our type follows without manual updates."
 
 ---
 
 ## 3. Code Walkthrough
 
-This file is small enough to cover in two logical blocks.
-
-### Block 1: Creating the connection pool (lines 6-11)
+### Block 1: The tenant-scoped pool (lines 6-11)
 
 ```ts
 const queryClient = postgres(env.DATABASE_URL, {
@@ -68,39 +61,35 @@ const queryClient = postgres(env.DATABASE_URL, {
 });
 ```
 
-**`postgres(env.DATABASE_URL, options)`** — The `postgres` function (from the `postgres` npm package, often called "postgres.js") takes a connection string and an options object, and returns a connection pool. The connection string looks like `postgresql://user:password@host:5432/dbname` and comes from an environment variable so we never hardcode credentials in source code.
+`postgres()` from the postgres.js package creates a connection pool. `DATABASE_URL` points to the `app_user` role — the one with RLS enforced. Max 10 connections handles typical user-facing traffic. The variable is named `queryClient` (not `client`) to distinguish it from the admin pool.
 
-Think of this as opening an account at a car rental agency. You set up the account (the pool) with rules: maximum 10 cars out at once (`max: 10`), return any car that has been parked for 20 seconds (`idle_timeout: 20`), and if we cannot get you a car within 10 seconds, give up (`connect_timeout: 10`). The actual rental (database connection) does not happen until someone walks in and asks for a car (the first query).
+Think of it as a valet parking lot with 10 spots. Cars (connections) park idle and get handed out to arriving customers (queries). If all spots are full, customers queue. If a car sits idle for 20 seconds, it gets driven off the lot (closed). If the garage door won't open in 10 seconds (connect_timeout), the customer is told to come back later (error thrown).
 
-The variable is named `queryClient` (not just `client` or `connection`) because Drizzle's API distinguishes between the "query client" (the pool that runs raw SQL) and the "drizzle instance" (the type-safe wrapper). Clear naming prevents confusion about which layer you are working with.
+### Block 2: The admin pool (lines 13-18)
 
-### Block 2: Wrapping with Drizzle ORM (line 13)
+```ts
+const adminClient = postgres(env.DATABASE_ADMIN_URL, {
+  max: 5,
+  idle_timeout: 20,
+  connect_timeout: 10,
+  onnotice: () => {},
+});
+```
+
+Same configuration, different connection string pointing to the `app_admin` role. Max 5 reflects lower traffic — admin dashboard, Stripe webhooks, analytics event recording, and seed scripts are the primary consumers. Separate pool means admin operations never compete with user requests for connections.
+
+### Block 3: Drizzle wrappers and type export (lines 20-24)
 
 ```ts
 export const db = drizzle(queryClient, { schema });
-```
+export const dbAdmin = drizzle(adminClient, { schema });
 
-**`drizzle(queryClient, { schema })`** — This wraps the raw connection pool with Drizzle ORM, a type-safe query builder. Passing the schema enables Drizzle's relational query API (`db.query.users.findMany(...)`). Instead of writing raw SQL strings like `SELECT * FROM users WHERE id = $1`, you write TypeScript expressions like `db.select().from(users).where(eq(users.id, 1))`. The benefits are:
-
-1. **Type safety** — If you try to query a column that does not exist, TypeScript catches it at compile time, not at runtime when a user hits the bug.
-2. **SQL injection prevention** — Drizzle parameterizes all values automatically. You cannot accidentally concatenate user input into a query string.
-3. **Autocompletion** — Your editor knows every table and column, so you get suggestions as you type.
-
-The `db` object is what the rest of the application imports. It is the single entry point for all database operations. By centralizing it here, we ensure every part of the app uses the same pool with the same configuration.
-
-### Block 3: The `DbTransaction` type export (lines 15-16)
-
-```ts
 export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 ```
 
-**What's happening:** Drizzle doesn't export the transaction client type directly. This line extracts it from the `db.transaction()` method signature using TypeScript's `Parameters` utility type — twice. Think of it like opening a box (the transaction method) to find another box (the callback) and pulling out the thing inside (the `tx` argument).
+`drizzle()` wraps each raw pool with Drizzle's type-safe query builder. Passing `{ schema }` enables the relational query API (`db.query.users.findMany(...)`). Both pools share the same schema — they see the same tables, but with different permission levels.
 
-Step by step: `typeof db.transaction` is the function type. `Parameters<...>[0]` gets the first parameter — the callback. `Parameters<callback>[0]` gets the callback's first parameter — the transaction client. If Drizzle changes its internals, this type updates automatically.
-
-Query functions use this type as: `client: typeof db | DbTransaction = db`. The union means "either the global connection or a transaction." Defaulting to `db` means callers that don't need a transaction don't have to think about it.
-
-**How to say it in an interview:** "Drizzle doesn't export the transaction client type, so we extract it from the method signature using nested `Parameters<>`. It's zero-maintenance — if Drizzle's API changes, the type follows automatically."
+`DbTransaction` is the type for the `tx` argument inside `db.transaction(async (tx) => ...)`. Query functions declare `client: typeof db | DbTransaction = db` so they work both standalone (using the pool) and inside a transaction (using `tx` from `withRlsContext`).
 
 ---
 
@@ -108,105 +97,95 @@ Query functions use this type as: `client: typeof db | DbTransaction = db`. The 
 
 ### Runtime complexity
 
-Module initialization is O(1) — creating the pool configuration is just setting up an object. Each query borrows a connection from the pool in O(1) time (it is a queue internally) and returns it when done. The query itself depends on what SQL you run, but the pool management overhead is constant.
+Module initialization is O(1) — creating pools is just setting up configuration objects. postgres.js connects lazily on first query. Each query borrows a connection in O(1) (pop from idle list) and returns it in O(1) (push to idle list).
 
 ### Memory
 
-Each connection in the pool uses a small amount of memory on the Node.js side (for the socket and buffers) and approximately 5-10 MB on the PostgreSQL server side (for the backend process). With a max of 10, the PostgreSQL overhead is 50-100 MB — well within the norms for a production database server.
+Each connection uses ~5-10 MB on the PostgreSQL server side. With 15 total (10 + 5), that's 75-150 MB of PostgreSQL memory �� modest for a production database. On the Node.js side, each connection holds a TCP socket with buffers, roughly 50-100 KB each.
 
-### Trade-off: Fixed pool size instead of auto-scaling
+### Trade-off: Two pools vs. one pool with role switching
 
-We hardcode `max: 10` instead of dynamically adjusting the pool size based on load. The upside is simplicity and predictability — you always know the maximum number of connections your API will use. The downside is that under sudden traffic spikes, all 10 connections might be in use and new queries will queue (waiting for a connection to be returned). For our workload this is fine. If it became a bottleneck, the right solution is horizontal scaling (more API instances) or a connection pooler like PgBouncer, not a bigger pool per instance.
+An alternative is a single pool where you `SET ROLE app_admin` before admin queries and `RESET ROLE` after. This saves 5 connections but introduces cleanup complexity — if you forget RESET ROLE, the next request on that pooled connection runs as admin. Two separate pools eliminate this risk entirely. The cost is a few extra connections; the benefit is a security boundary you can't accidentally break.
 
 **How to say it in an interview:**
-"We use a fixed pool size of 10 for predictability. Under heavy load, queries queue instead of opening more connections — this protects PostgreSQL from connection storms. If we need more throughput, we scale horizontally or add PgBouncer, rather than inflating the pool on a single instance."
+"Two pools is slightly more resource-intensive, but the security properties are strictly better. A single pool with role switching requires manual cleanup on pooled connections — one missed RESET ROLE and you have a privilege escalation bug. Separate pools make that impossible."
 
-### Trade-off: `DbTransaction` type extraction vs. a hand-written interface
+### Trade-off: Fixed pool sizes vs. auto-scaling
 
-We could define `interface DbTransaction { insert: ...; select: ...; query: ... }` manually. But that's fragile — if Drizzle adds or changes methods, our interface falls out of sync silently. The `Parameters<>` extraction tracks Drizzle's actual API automatically. The cost is a line that looks cryptic until you understand `Parameters<>`, but the benefit is zero maintenance across library upgrades.
+We hardcode max 10 and max 5. Under sudden traffic spikes, queries queue. For a dashboard SaaS where the expensive operation (AI summary) is API-call-bound rather than DB-bound, this is fine. If DB concurrency became a bottleneck, the solution is horizontal scaling (more API instances) or PgBouncer, not bigger pools.
 
 ---
 
 ## 5. Patterns and Concepts Worth Knowing
 
-### Connection Pooling
+### The Dual-Role Pattern (Multi-Tenant PostgreSQL)
 
-A connection pool is a cache of database connections that are kept alive and shared across many requests. Without pooling, every request would open a new connection (expensive), use it for one query (fast), and close it (wasteful). Pooling amortizes the cost of connection setup across thousands of requests. Nearly every production web application uses connection pooling — it is one of those "invisible infrastructure" patterns that you rarely think about but cannot live without.
+Standard pattern used by Supabase, Citus, and most multi-tenant PostgreSQL architectures. You create two database roles: one with RLS enforced for tenant-scoped operations, one with BYPASSRLS for admin operations. The application connects as the appropriate role based on the operation type. This is more secure than a single superuser role with RLS bypassed via session variables, because a bug in your RLS context-setting code can't escalate to admin access — the connection is physically restricted.
 
 ### The Module Singleton Pattern
 
-In Node.js, when you `import { db } from './db.js'`, the module is executed once. Every subsequent import gets the same `db` object — the module system caches it. This means our pool is automatically a singleton without needing any special singleton implementation. Every part of the application shares the same pool because they all import the same module.
+In Node.js, `import { db } from './db.js'` executes the module once. Every subsequent import gets the same object. Both pools are automatically singletons without any explicit singleton code. Every file importing `db` shares the same 10-connection pool; every file importing `dbAdmin` shares the same 5-connection pool.
 
 ### Lazy Initialization
 
-Lazy initialization means "do not create something until it is actually needed." The postgres.js pool does not open connections at creation time — it waits until the first query. This pattern appears everywhere in software: lazy-loaded images on web pages, lazy evaluation in functional programming languages, and lazy initialization of expensive resources. The benefit is always the same: do not pay for something you might not use.
+postgres.js doesn't open connections at pool creation time — it waits for the first query. This means the API server starts quickly even if the database is momentarily unavailable. A separate health-check endpoint verifies actual connectivity. This pattern is standard for container orchestration where the app and database might start simultaneously.
 
 ### Separation of Configuration from Use
 
-The database URL comes from `env.DATABASE_URL`, not from a hardcoded string. This is the twelve-factor app principle of storing configuration in the environment. The same code runs in development (pointing to `localhost:5432`), staging (pointing to a staging database), and production (pointing to the real database), with zero code changes. You just set different environment variables in each environment.
+Both pool configurations come from `env.DATABASE_URL` and `env.DATABASE_ADMIN_URL`, validated by Zod at startup. The same code works in development, staging, and production — only the environment variables change.
 
 ---
 
 ## 6. Potential Interview Questions
 
-### Q1: "Why use a connection pool instead of opening a new connection per query?"
+### Q1: "Why two database connection pools instead of one?"
 
-**Strong answer:** "Opening a database connection involves TCP handshake, TLS negotiation, and PostgreSQL authentication — easily 50 to 200 milliseconds. At 100 requests per second, that is 5 to 20 seconds of cumulative overhead per second just on connection setup. A pool opens connections once and reuses them, amortizing that cost across thousands of queries. It also prevents connection storms — if a traffic spike causes 500 simultaneous queries, a pool with max 10 queues them orderly, while 500 new connections would likely crash PostgreSQL."
+**Strong answer:** "We use two PostgreSQL roles with different security postures. app_user has Row-Level Security enforced — every query is filtered by the current tenant's org_id. app_admin has BYPASSRLS for operations that need cross-org access — admin dashboards, Stripe webhooks, background jobs. Separate pools mean a bug in tenant-scoped code can't accidentally use the privileged connection, and vice versa. It's defense-in-depth at the connection level."
 
-**Red flag answer:** "Because it is faster." (Too vague. The interviewer wants to hear about connection setup cost, resource limits on the database side, and protection against connection storms.)
+**Red flag answer:** "For load balancing." (Misses the security motivation entirely.)
 
-### Q2: "What happens if the database is down when the server starts?"
+### Q2: "What is DbTransaction and why extract it that way?"
 
-**Strong answer:** "Nothing, at startup. postgres.js connects lazily — it does not attempt a connection until the first query. So the server starts up fine. When a request comes in and triggers a query, the pool attempts to connect, hits the 10-second connect_timeout, and throws an error. Our error handling middleware catches that and returns a 503 Service Unavailable. Meanwhile, a health check endpoint periodically verifies database connectivity, and our orchestrator (like Kubernetes) uses that endpoint to know the instance is unhealthy and stop routing traffic to it."
+**Strong answer:** "Drizzle ORM doesn't export the transaction client type directly. We extract it from the db.transaction method signature using TypeScript's Parameters utility type — nested twice to unwrap the callback and then its first argument. This gives us a type that auto-tracks Drizzle's API across version upgrades. Query functions use a union type — typeof db | DbTransaction — so they work both standalone and inside withRlsContext transactions."
 
-**Red flag answer:** "The server would crash on startup." (Incorrect for postgres.js, and misses the important topic of health checks and graceful degradation.)
+**Red flag answer:** "It's just a type alias." (Misses the why — the Drizzle API gap and the optional client pattern.)
 
-### Q3: "Why max 10 and not 100?"
+### Q3: "What happens if the admin database URL is wrong?"
 
-**Strong answer:** "Each PostgreSQL connection is a separate OS process consuming 5 to 10 MB of memory. With 100 connections from one API instance, you would consume up to a gigabyte just on connection overhead — and if you have 5 API instances, that is 500 connections and 5 GB. PostgreSQL's default max_connections is 100 total. A pool of 10 per instance gives us solid concurrency while leaving room for other clients. The guideline from the PostgreSQL community is that the optimal pool size is roughly 2 to 3 times the number of CPU cores — for a typical 4-core server, 10 is right in the sweet spot."
+**Strong answer:** "The pool is created with a lazy connection — it won't try to connect until the first admin query. When that happens, the 10-second connect_timeout kicks in and throws an error. Our error handler returns a 500 to the caller. Meanwhile, the tenant-scoped pool on db continues working fine — admin failures don't affect regular user requests because they're completely separate pools."
 
-**Red flag answer:** "10 was just a random number." (Shows lack of understanding of database resource management. Even if you do not know the exact formula, you should articulate that there is a resource trade-off.)
+### Q4: "Why max 5 for admin and max 10 for regular?"
 
-### Q4: "What is an ORM and why use Drizzle specifically?"
-
-**Strong answer:** "An ORM — Object-Relational Mapper — translates between your programming language's objects and your database's tables. Instead of writing raw SQL strings, you write typed expressions that the ORM converts to SQL. Drizzle specifically is appealing because it is 'SQL-like' — unlike ORMs like Prisma that abstract SQL away behind their own query language, Drizzle's API mirrors SQL syntax closely, so there is no new query language to learn. It also generates types directly from your schema definition, so your queries are type-checked at compile time. And it is lightweight — no query engine runtime, no binary dependencies."
-
-**Red flag answer:** "ORMs make it so you do not have to know SQL." (Dangerous mindset. You absolutely need to know SQL when using an ORM — for debugging, performance tuning, and writing queries the ORM cannot express. An ORM is a productivity tool, not a replacement for SQL knowledge.)
-
-### Q5: "How would you handle connection failures gracefully?"
-
-**Strong answer:** "There are three layers. First, the connect_timeout of 10 seconds ensures we fail fast instead of hanging. Second, postgres.js automatically retries connections — when a connection in the pool drops, the next query that needs it triggers a reconnection attempt. Third, our Express error handling middleware catches database errors and returns a proper HTTP 503 with a retry-after header, so the client knows the failure is temporary. Finally, the health check endpoint reports database status so the load balancer can route traffic away from unhealthy instances."
-
-**Red flag answer:** "I would wrap every query in a try-catch." (Try-catch handles individual query failures, but the question is about connection-level resilience. The strong answer addresses pool-level recovery, middleware-level error handling, and infrastructure-level health checking.)
+**Strong answer:** "Traffic patterns differ. Regular tenant-scoped requests handle all user-facing operations — page loads, uploads, AI summaries — so they need more concurrency. Admin operations are lower volume: periodic admin dashboard loads, Stripe webhook bursts, and fire-and-forget analytics. Five connections is generous for that workload. Together they use 15 connections total, well within PostgreSQL's defaults."
 
 ---
 
 ## 7. Data Structures & Algorithms Used
 
-### Queue (Connection Pool Internals)
+### Connection Pool (Queue Internals)
 
-Internally, a connection pool uses a queue (first-in, first-out) to manage waiting requests. When all 10 connections are busy and an 11th query comes in, it enters the queue. When a connection is returned to the pool, the next item in the queue gets that connection. This ensures fairness — requests are served in the order they arrived. The enqueue and dequeue operations are both O(1).
-
-### Hash Map (Connection String Parsing)
-
-The `DATABASE_URL` string is parsed into components (host, port, user, password, database name) which are stored in a hash-map-like options object. This parsing happens once at pool creation time and is O(n) where n is the length of the connection string — effectively constant for any reasonable URL.
+Each pool uses a queue internally. When all connections are busy, incoming queries enter a FIFO queue. When a connection is returned, the next queued query gets it. Borrow and return are both O(1).
 
 ### TCP Socket Pool
 
-Each connection in the pool is backed by a TCP socket — a persistent network channel to the PostgreSQL server. The pool maintains an array (or linked list) of these sockets, tracking which are "in use" and which are "idle." Borrowing an idle connection is O(1) (pop from the idle list), and returning it is O(1) (push to the idle list).
+Each connection is backed by a persistent TCP socket to PostgreSQL. The pool maintains two lists: idle connections (available) and active connections (in use). Borrowing pops from idle; returning pushes back to idle. Both O(1).
+
+### Type-Level Computation (Parameters<>)
+
+`Parameters<>` is a compile-time operation — it extracts the parameter types of a function type. Nesting it twice is like destructuring two levels deep. No runtime cost; the type is erased during compilation.
 
 ---
 
 ## 8. Impress the Interviewer
 
-### Talking Point 1: "13 lines, but every line is a production decision."
+### Talking Point 1: "The security boundary is architectural, not conventional."
 
-"This file looks trivially simple, but every configuration value addresses a specific production concern. max: 10 respects PostgreSQL's per-connection memory cost. idle_timeout: 20 prevents resource waste during low traffic. connect_timeout: 10 ensures fail-fast behavior when the database is unreachable. Even the onnotice suppression is a deliberate choice to keep logs clean. I think the best infrastructure code looks boring — the complexity is in the reasoning behind each value, not in the code itself."
+"A common approach to multi-tenant security is 'make sure every query has WHERE org_id = ?' and hope nobody forgets. Our approach makes it physically impossible to read another tenant's data through the regular pool — PostgreSQL's RLS policies enforce it at the database level. The dual-pool pattern means even if application code has a bug, the database layer catches it."
 
-### Talking Point 2: "Lazy connection is a feature, not a missing feature."
+### Talking Point 2: "25 lines of code, two security postures."
 
-"A common question is 'why does it not verify the database connection at startup?' The answer is that eager connection would couple your application's ability to start with the database's availability. In a container orchestration system like Kubernetes, your app and your database might start simultaneously — if the app demands an immediate connection, it might fail during a normal startup race condition. Lazy connection plus a health-check endpoint is the standard pattern: start fast, verify later, let the orchestrator manage the lifecycle."
+"The entire module is 25 lines including the type export. But it encodes a fundamental security decision: which code paths are tenant-restricted and which have full access. Every import of db vs. dbAdmin is a declaration of intent. If I see dbAdmin in a route handler, I know it's explicitly opting out of tenant isolation — and I can audit whether that's justified."
 
-### Talking Point 3: "This pairs with our architecture's DB encapsulation rule."
+### Talking Point 3: "This pairs with withRlsContext for complete coverage."
 
-"In our architecture, services never import this db module directly. They go through a queries layer — a barrel file that exports typed, parameterized query functions. The db module is an implementation detail hidden behind that abstraction. This means if we ever needed to switch from postgres.js to a different driver, or add PgBouncer, or shard the database, only this one file and the queries layer would change. The rest of the application — routes, services, middleware — would be completely unaffected."
+"db alone doesn't enforce RLS — you also need to set session variables via SET LOCAL inside a transaction. That's what withRlsContext does. The two modules work together: db.ts provides the connection with the right role, rls.ts provides the transaction with the right context. Neither is sufficient alone; together they form a complete multi-tenant isolation layer."

@@ -2,7 +2,7 @@
 
 ## 1. 30-Second Elevator Pitch
 
-This file is the data access layer for analytics events in a multi-tenant SaaS app. It has two jobs: per-org queries (recording events and fetching them for one tenant) and cross-org admin queries (viewing all events across every organization with filtering and pagination). The per-org functions power the regular app experience. The cross-org functions power the platform admin dashboard, where an admin can see what's happening across the entire platform — filtered by event type, organization, and date range.
+This file is the data access layer for analytics events in a multi-tenant SaaS app. It has three jobs: per-org queries (recording events and fetching them for one tenant), cross-org admin queries (viewing all events across the platform with filtering and pagination), and a monthly AI usage counter that powers the per-tier quota system (free: 3/month, pro: 100/month). The per-org functions power the regular app experience. The cross-org functions power the platform admin dashboard, where an admin can see what's happening across the entire platform — filtered by event type, organization, and date range.
 
 **How to say it in an interview:** "This is the repository layer for analytics events. It serves two audiences: tenant-scoped queries for regular users and cross-org queries for platform admins. The admin queries use a shared filter builder to keep the data fetch and count query in sync."
 
@@ -92,6 +92,16 @@ The INNER JOINs mean events without a matching org or user are excluded — whic
 ### getAnalyticsEventsTotal (lines 81-90)
 
 Runs `SELECT COUNT(*) FROM analytics_events WHERE ...`. No JOINs needed — count just needs to know how many rows match the filter conditions, not what's in the joined tables. The array destructure grabs the single result row, and `?? 0` handles the edge case where no rows match.
+
+### getMonthlyAiUsageCount (lines 97-117)
+
+This is the quota enforcement query. It counts how many `ai.summary_completed` events an org has fired in the current calendar month. The route handler compares this count against `AI_MONTHLY_QUOTA[tier]` to decide if the user can generate another summary.
+
+The date math is worth noting: `monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)` creates midnight on the 1st of the current month. This is a "rolling calendar month" — resets on the 1st, not "last 30 days." The `gte(createdAt, monthStart)` clause hits the `idx_analytics_events_created_at` index.
+
+**Why reuse analytics_events instead of a separate quota table?** A dedicated `ai_usage_quotas` table would need its own reset logic (cron or lazy reset on first request each month), a migration, and cache invalidation. The COUNT query against existing events is ~1ms with the index, runs once per non-cached AI request, and the data already exists. No new infrastructure. The tradeoff: if the analytics_events table grows very large, this COUNT gets slower — but partitioning by month or adding a composite index `(org_id, event_name, created_at)` would handle that.
+
+**How to say it in an interview:** "I chose to derive quota usage from existing analytics events rather than maintaining a separate counter table. It's one indexed COUNT query per non-cached request. The data is already there — adding a new table would mean a migration, reset logic, and another thing to keep in sync. If scale demanded it, I'd add a composite index or a materialized counter."
 
 ---
 

@@ -92,13 +92,15 @@ development_status:
   6-1-admin-dashboard-org-user-management: done
   6-2-system-health-monitoring: done
   6-3-cross-organization-analytics-events-view: done
-  epic-6-retrospective: optional
+  epic-6-retrospective: done
 
   # ── Epic 7: DevOps, Quality & Portfolio Readiness ──
-  epic-7: backlog
-  7-1-complete-ci-pipeline-5-stage: backlog
-  7-2-seed-data-ai-quality-validation: backlog
-  7-3-readme-case-study-hero-screenshot: backlog
-  7-4-analytics-event-verification-completeness: backlog
-  7-5-dark-mode-appearance: backlog
-  epic-7-retrospective: optional
+  # Revised sequencing (Epic 6 retro): 7.6 → 7.5 (parallel) → 7.1 → 7.2 + 7.4 (parallel) → 7.3
+  epic-7: done
+  7-6-rls-middleware-activation-service-role-db: done
+  7-1-complete-ci-pipeline-5-stage: done
+  7-2-seed-data-ai-quality-validation: done
+  7-3-readme-case-study-hero-screenshot: done
+  7-4-analytics-event-verification-completeness: done
+  7-5-dark-mode-appearance: done
+  epic-7-retrospective: done

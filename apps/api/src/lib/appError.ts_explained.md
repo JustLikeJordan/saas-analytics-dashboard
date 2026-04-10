@@ -2,7 +2,7 @@
 
 ## 1. 30-Second Elevator Pitch
 
-This file creates a family of custom error classes for our Express API. Instead of throwing generic `new Error("something broke")` everywhere and then scrambling to figure out what HTTP status code to send, we define purpose-built error types -- `ValidationError`, `AuthenticationError`, `AuthorizationError`, `NotFoundError`, and `ExternalServiceError` -- that each carry their own status code, a machine-readable error code string, and optional detail data. Any code in the API can throw one of these, and a single centralized error handler (in `errorHandler.ts`) catches it and knows exactly what to send back to the client.
+This file creates a family of custom error classes for our Express API. Instead of throwing generic `new Error("something broke")` everywhere and then scrambling to figure out what HTTP status code to send, we define purpose-built error types -- `ValidationError`, `AuthenticationError`, `AuthorizationError`, `NotFoundError`, `QuotaExceededError`, and `ExternalServiceError` -- that each carry their own status code, a machine-readable error code string, and optional detail data. Any code in the API can throw one of these, and a single centralized error handler (in `errorHandler.ts`) catches it and knows exactly what to send back to the client.
 
 **How to say it in an interview:** "We built a custom error hierarchy so that any layer of the application -- routes, services, middleware -- can throw a typed error with its HTTP status code baked in. A single error-handling middleware catches everything and formats a consistent JSON response. It separates the 'what went wrong' decision from the 'how to respond' decision."
 
@@ -130,7 +130,21 @@ export class NotFoundError extends AppError {
 
 HTTP 404 -- the resource doesn't exist. In a multi-tenant SaaS app, this is also used when a resource exists but belongs to a different organization. You return 404 instead of 403 to avoid leaking information about other tenants' data. This is called "information hiding" and it's a deliberate security choice.
 
-### Block 6: `ExternalServiceError` (lines 37-41)
+### Block 6: `QuotaExceededError` (lines 37-41)
+
+```ts
+export class QuotaExceededError extends AppError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'QUOTA_EXCEEDED', 402, details);
+  }
+}
+```
+
+HTTP 402 means "Payment Required." It's technically reserved in the HTTP spec but widely adopted in practice for subscription/billing gates. We use it when a user hits their monthly AI summary quota (free: 3/month, pro: 100/month). The client sees 402 and knows to show an upgrade CTA, not a "try again later" message. This is different from 429 (Too Many Requests) which implies rate limiting — 402 says "you need to pay for more," while 429 says "slow down and retry."
+
+The `details` field carries `{ tier, quota, used }` so the frontend can show exactly how many summaries were used and what the limit is.
+
+### Block 7: `ExternalServiceError` (lines 43-47)
 
 ```ts
 export class ExternalServiceError extends AppError {
@@ -163,6 +177,7 @@ Each error object holds a handful of string and number properties plus a stack t
 | Pre-filled status codes in subclasses | One-liner throws, consistent codes | If you need a custom status code for an edge case, you have to use `AppError` directly |
 | Default messages | Clean call sites, consistency | Developers might be lazy and not provide context-specific messages when they should |
 | Machine-readable `code` strings | Stable API contract for clients | You need to document and maintain the code vocabulary |
+| 402 for quota vs. 429 for rate limits | Client can distinguish "upgrade" from "retry later" | 402 is technically reserved in HTTP/1.1, though widely adopted in practice |
 
 **How to say it in an interview:** "The main trade-off is a small amount of class boilerplate in exchange for a strongly-typed, self-documenting error system. We accepted that trade-off because in a multi-tenant SaaS API, consistent error responses aren't optional -- they're part of the API contract. And the class hierarchy is intentionally shallow (one level of inheritance) to avoid the fragile base class problem."
 
@@ -204,6 +219,7 @@ Default parameter values (`message = 'Authentication required'`) are an example 
 The status codes chosen here follow the HTTP specification precisely:
 - **400** -- Client sent a malformed or invalid request
 - **401** -- Client is not authenticated (identity unknown)
+- **402** -- Payment required (quota exceeded, upgrade needed)
 - **403** -- Client is authenticated but not authorized (identity known, permission denied)
 - **404** -- Resource doesn't exist (or is hidden for security)
 - **502** -- The server, acting as a gateway, got a bad response from an upstream service
@@ -263,6 +279,7 @@ Error (built-in)
         |
         +-- ValidationError (400)
         +-- AuthenticationError (401)
+        +-- QuotaExceededError (402)
         +-- AuthorizationError (403)
         +-- NotFoundError (404)
         +-- ExternalServiceError (502)
