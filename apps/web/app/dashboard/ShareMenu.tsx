@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, Copy, Share2, Check, Loader2, Link2 } from 'lucide-react';
+import { Download, Copy, Share2, Check, Loader2, Link2, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/lib/hooks/useIsMobile';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 
 export type ShareStatus = 'idle' | 'generating' | 'done' | 'error';
 export type LinkStatus = 'idle' | 'creating' | 'done' | 'error';
+export type PdfStatus = 'idle' | 'generating' | 'done' | 'error';
 
 interface ShareMenuProps {
   status: ShareStatus;
@@ -17,10 +18,12 @@ interface ShareMenuProps {
   onCopyLink?: () => Promise<void>;
   linkStatus?: LinkStatus;
   linkClipboardFailed?: boolean;
+  onExportPdf?: () => Promise<void>;
+  pdfStatus?: PdfStatus;
   className?: string;
 }
 
-type ActionFeedback = 'idle' | 'downloaded' | 'copied' | 'linked';
+type ActionFeedback = 'idle' | 'downloaded' | 'copied' | 'linked' | 'pdf';
 
 const FEEDBACK_DURATION_MS = 2000;
 
@@ -32,7 +35,9 @@ function ShareOptions({
   onCopyLink,
   linkStatus = 'idle',
   linkClipboardFailed = false,
-}: Pick<ShareMenuProps, 'status' | 'onDownload' | 'onCopy' | 'onGenerate' | 'onCopyLink' | 'linkStatus' | 'linkClipboardFailed'>) {
+  onExportPdf,
+  pdfStatus = 'idle',
+}: Pick<ShareMenuProps, 'status' | 'onDownload' | 'onCopy' | 'onGenerate' | 'onCopyLink' | 'linkStatus' | 'linkClipboardFailed' | 'onExportPdf' | 'pdfStatus'>) {
   const isGenerating = status === 'generating';
   const isLinking = linkStatus === 'creating';
   const [feedback, setFeedback] = useState<ActionFeedback>('idle');
@@ -64,10 +69,17 @@ function ShareOptions({
     showFeedback('linked');
   }, [onCopyLink, showFeedback]);
 
+  const handleExportPdf = useCallback(async () => {
+    if (!onExportPdf) return;
+    await onExportPdf();
+    showFeedback('pdf');
+  }, [onExportPdf, showFeedback]);
+
   const feedbackText: Record<Exclude<ActionFeedback, 'idle'>, string> = {
     downloaded: 'Downloaded!',
     copied: 'Copied to clipboard!',
     linked: 'Link copied!',
+    pdf: 'PDF saved!',
   };
 
   return (
@@ -77,6 +89,17 @@ function ShareOptions({
           <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
           Generating image...
         </div>
+      )}
+      {pdfStatus === 'generating' && (
+        <div role="status" className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground" aria-live="polite">
+          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          Generating PDF...
+        </div>
+      )}
+      {pdfStatus === 'error' && (
+        <p className="px-3 py-2 text-sm text-destructive" role="status" aria-live="polite">
+          Failed to generate PDF. Try again.
+        </p>
       )}
       {isLinking && (
         <div role="status" className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground" aria-live="polite">
@@ -148,11 +171,30 @@ function ShareOptions({
         )}
         Copy image
       </button>
+      {onExportPdf && (
+        <>
+          <div className="mx-2 my-1 border-t border-border" />
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            onClick={handleExportPdf}
+            disabled={pdfStatus === 'generating'}
+            aria-label="Download PDF report"
+          >
+            {feedback === 'pdf' ? (
+              <Check className="h-4 w-4 text-success" aria-hidden="true" />
+            ) : (
+              <FileText className="h-4 w-4" aria-hidden="true" />
+            )}
+            Download PDF
+          </button>
+        </>
+      )}
     </div>
   );
 }
 
-export function ShareMenu({ status, onGenerate, onDownload, onCopy, onCopyLink, linkStatus, linkClipboardFailed, className }: ShareMenuProps) {
+export function ShareMenu({ status, onGenerate, onDownload, onCopy, onCopyLink, linkStatus, linkClipboardFailed, onExportPdf, pdfStatus, className }: ShareMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -214,6 +256,8 @@ export function ShareMenu({ status, onGenerate, onDownload, onCopy, onCopyLink, 
             onCopyLink={onCopyLink}
             linkStatus={linkStatus}
             linkClipboardFailed={linkClipboardFailed}
+            onExportPdf={onExportPdf}
+            pdfStatus={pdfStatus}
           />
         </div>
       )}
@@ -230,9 +274,11 @@ interface ShareFabProps {
   onCopyLink?: () => Promise<void>;
   linkStatus?: LinkStatus;
   linkClipboardFailed?: boolean;
+  onExportPdf?: () => Promise<void>;
+  pdfStatus?: PdfStatus;
 }
 
-export function ShareFab({ visible, status, onGenerate, onDownload, onCopy, onCopyLink, linkStatus, linkClipboardFailed }: ShareFabProps) {
+export function ShareFab({ visible, status, onGenerate, onDownload, onCopy, onCopyLink, linkStatus, linkClipboardFailed, onExportPdf, pdfStatus }: ShareFabProps) {
   const isMobile = useIsMobile();
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -260,6 +306,8 @@ export function ShareFab({ visible, status, onGenerate, onDownload, onCopy, onCo
             onCopyLink={onCopyLink}
             linkStatus={linkStatus}
             linkClipboardFailed={linkClipboardFailed}
+            onExportPdf={onExportPdf}
+            pdfStatus={pdfStatus}
           />
         </SheetContent>
       </Sheet>

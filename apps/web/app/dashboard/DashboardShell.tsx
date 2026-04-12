@@ -30,6 +30,7 @@ import { useShareInsight } from '@/lib/hooks/useShareInsight';
 import { useCreateShareLink } from '@/lib/hooks/useCreateShareLink';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { DemoModeBanner } from '@/components/common/DemoModeBanner';
+import { useExportPdf } from '@/lib/hooks/useExportPdf';
 import { KpiCards } from './KpiCards';
 
 interface DashboardShellProps {
@@ -203,6 +204,7 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
   const captureRef = useRef<HTMLDivElement>(null);
   const { status: shareStatus, generatePng, downloadPng, copyToClipboard } = useShareInsight(captureRef);
   const { status: linkStatus, clipboardFailed: linkClipboardFailed, createLink } = useCreateShareLink();
+  const { status: pdfStatus, exportPdf } = useExportPdf(captureRef);
 
   const handleCopyLink = useCallback(async () => {
     if (data.datasetId != null) await createLink(data.datasetId);
@@ -230,6 +232,8 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
       onShareCopyLink={handleCopyLink}
       shareLinkStatus={linkStatus}
       shareLinkClipboardFailed={linkClipboardFailed}
+      onExportPdf={exportPdf}
+      pdfStatus={pdfStatus}
     />
   );
 
@@ -362,6 +366,8 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
           onCopyLink={handleCopyLink}
           linkStatus={linkStatus}
           linkClipboardFailed={linkClipboardFailed}
+          onExportPdf={exportPdf}
+          pdfStatus={pdfStatus}
         />
       </section>
     </>

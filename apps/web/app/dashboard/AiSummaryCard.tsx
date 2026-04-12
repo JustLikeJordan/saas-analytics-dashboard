@@ -28,6 +28,8 @@ interface AiSummaryCardProps {
   onShareCopyLink?: () => Promise<void>;
   shareLinkStatus?: LinkStatus;
   shareLinkClipboardFailed?: boolean;
+  onExportPdf?: () => Promise<void>;
+  pdfStatus?: 'idle' | 'generating' | 'done' | 'error';
   className?: string;
 }
 
@@ -110,6 +112,8 @@ interface PostCompletionFooterProps {
   onShareCopyLink?: () => Promise<void>;
   shareLinkStatus?: LinkStatus;
   shareLinkClipboardFailed?: boolean;
+  onExportPdf?: () => Promise<void>;
+  pdfStatus?: 'idle' | 'generating' | 'done' | 'error';
 }
 
 function PostCompletionFooter({
@@ -122,6 +126,8 @@ function PostCompletionFooter({
   onShareCopyLink,
   shareLinkStatus,
   shareLinkClipboardFailed,
+  onExportPdf,
+  pdfStatus,
 }: PostCompletionFooterProps) {
   return (
     <div className="mt-4 flex items-center gap-3 border-t border-border pt-4 animate-fade-in">
@@ -155,6 +161,8 @@ function PostCompletionFooter({
             onCopyLink={onShareCopyLink}
             linkStatus={shareLinkStatus}
             linkClipboardFailed={shareLinkClipboardFailed}
+            onExportPdf={onExportPdf}
+            pdfStatus={pdfStatus}
           />
         ) : (
           <button
@@ -219,6 +227,8 @@ export function AiSummaryCard({
   onShareCopyLink,
   shareLinkStatus,
   shareLinkClipboardFailed,
+  onExportPdf,
+  pdfStatus,
   className,
 }: AiSummaryCardProps) {
   const hasCached = !!cachedContent;
@@ -269,7 +279,7 @@ export function AiSummaryCard({
         ) : (
           <>
             <SummaryText text={cachedContent!} />
-            <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} shareLinkClipboardFailed={shareLinkClipboardFailed} />
+            <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} shareLinkClipboardFailed={shareLinkClipboardFailed} onExportPdf={onExportPdf} pdfStatus={pdfStatus} />
           </>
         )}
       </div>
@@ -322,7 +332,7 @@ export function AiSummaryCard({
         <p className="text-sm italic text-muted-foreground">
           We focused on the most important findings to keep things quick.
         </p>
-        <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} shareLinkClipboardFailed={shareLinkClipboardFailed} />
+        <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} shareLinkClipboardFailed={shareLinkClipboardFailed} onExportPdf={onExportPdf} pdfStatus={pdfStatus} />
       </div>
     );
   }
@@ -385,7 +395,7 @@ export function AiSummaryCard({
         <SummaryText text={text} />
         {isActive && <StreamingCursor />}
       </div>
-      {isDone && <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} shareLinkClipboardFailed={shareLinkClipboardFailed} />}
+      {isDone && <PostCompletionFooter onToggleTransparency={onToggleTransparency} transparencyOpen={transparencyOpen} onShare={onShare} onShareDownload={onShareDownload} onShareCopy={onShareCopy} shareState={shareState} onShareCopyLink={onShareCopyLink} shareLinkStatus={shareLinkStatus} shareLinkClipboardFailed={shareLinkClipboardFailed} onExportPdf={onExportPdf} pdfStatus={pdfStatus} />}
     </div>
   );
 }
