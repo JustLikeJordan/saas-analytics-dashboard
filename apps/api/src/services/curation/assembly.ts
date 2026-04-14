@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { AppError } from '../../lib/appError.js';
 import type { ScoredInsight, AssembledContext, TransparencyMetadata } from './types.js';
 import { StatType } from './types.js';
+import type { BusinessProfile } from 'shared/types';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_VERSION = 'v1';
@@ -65,15 +66,51 @@ function formatStat(insight: ScoredInsight): string {
   }
 }
 
+const TEAM_SIZE_LABELS: Record<string, string> = {
+  solo: '1 person (solo)',
+  '2_5': '2-5 employees',
+  '6_20': '6-20 employees',
+  over_20: '20+ employees',
+};
+
+const REVENUE_LABELS: Record<string, string> = {
+  under_100k: 'under $100K/year',
+  '100k_500k': '$100K-$500K/year',
+  '500k_2m': '$500K-$2M/year',
+  over_2m: 'over $2M/year',
+};
+
+const CONCERN_LABELS: Record<string, string> = {
+  cash_flow: 'cash flow management',
+  growth: 'revenue growth',
+  cost_control: 'cost control',
+  seasonal_planning: 'seasonal planning',
+  profitability: 'profitability',
+};
+
+function formatBusinessContext(profile: BusinessProfile | null | undefined): string {
+  if (!profile) return 'No business context available. Give general advice.';
+
+  const type = profile.businessType.replace(/_/g, ' ');
+  const revenue = REVENUE_LABELS[profile.revenueRange] ?? profile.revenueRange;
+  const team = TEAM_SIZE_LABELS[profile.teamSize] ?? profile.teamSize;
+  const concern = CONCERN_LABELS[profile.topConcern] ?? profile.topConcern;
+
+  return `This is a ${type} business (${revenue}, ${team}). The owner's top concern is ${concern}. Tailor your advice to this context.`;
+}
+
 export function assemblePrompt(
   insights: ScoredInsight[],
   promptVersion = DEFAULT_VERSION,
+  businessProfile?: BusinessProfile | null,
 ): AssembledContext {
   const template = getTemplate(promptVersion);
+  const businessContext = formatBusinessContext(businessProfile);
 
   if (insights.length === 0) {
     const emptyPrompt = template
       .replace('{{statSummaries}}', 'No statistical insights available. The dataset may be empty or too small for meaningful analysis.')
+      .replace('{{businessContext}}', businessContext)
       .replace('{{statTypeList}}', 'none')
       .replace('{{categoryCount}}', '0')
       .replace('{{insightCount}}', '0');
@@ -94,11 +131,11 @@ export function assemblePrompt(
   const statSummaries = insights.map(formatStat).join('\n');
   const statTypes = [...new Set(insights.map((i) => i.stat.statType))];
   const categories = new Set(insights.map((i) => i.stat.category).filter(Boolean));
-  // all insights share the same weight config — scoring.ts applies uniform weights
   const { breakdown } = insights[0]!;
 
   const prompt = template
     .replace('{{statSummaries}}', statSummaries)
+    .replace('{{businessContext}}', businessContext)
     .replace('{{statTypeList}}', statTypes.join(', '))
     .replace('{{categoryCount}}', String(categories.size))
     .replace('{{insightCount}}', String(insights.length));

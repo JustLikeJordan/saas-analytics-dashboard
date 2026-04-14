@@ -41,6 +41,7 @@ export interface FullPipelineResult {
 export async function runFullPipeline(
   orgId: number,
   datasetId: number,
+  businessProfile?: Record<string, unknown> | null,
 ): Promise<FullPipelineResult> {
   const cached = await aiSummariesQueries.getCachedSummary(orgId, datasetId);
   if (cached) {
@@ -51,7 +52,7 @@ export async function runFullPipeline(
   logger.warn({ orgId, datasetId }, 'ai_summaries cache miss — generating fresh summary');
 
   const insights = await runCurationPipeline(orgId, datasetId);
-  const { prompt, metadata } = assemblePrompt(insights);
+  const { prompt, metadata } = assemblePrompt(insights, undefined, businessProfile as any);
 
   const validatedMetadata = transparencyMetadataSchema.parse(metadata);
 

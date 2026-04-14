@@ -44,3 +44,5 @@ export type { SubscriptionTier } from './subscription.js';
 export type { TransparencyMetadata } from './transparency.js';
 
 export type { ServiceStatus, SystemHealth } from './admin.js';
+
+export type { BusinessProfile } from '../schemas/businessProfile.js';

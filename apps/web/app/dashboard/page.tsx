@@ -81,12 +81,23 @@ export default async function DashboardPage() {
   // authenticated users get tier-gated experience
   const tier = hasAuth ? await fetchTier(cookieHeader) : undefined;
 
+  let needsOnboarding = false;
+  if (hasAuth) {
+    try {
+      const res = await apiServer<unknown>('/org/profile', { cookies: cookieHeader });
+      needsOnboarding = res.data === null;
+    } catch {
+      needsOnboarding = false;
+    }
+  }
+
   return (
     <DashboardShell
       initialData={chartData}
       cachedSummary={cachedSummary}
       cachedMetadata={cachedMetadata}
       tier={tier}
+      needsOnboarding={needsOnboarding}
     />
   );
 }

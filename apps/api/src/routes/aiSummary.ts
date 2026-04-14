@@ -7,7 +7,7 @@ import type { SubscriptionTier } from 'shared/types';
 import type { AuthenticatedRequest } from '../middleware/authMiddleware.js';
 import { subscriptionGate, type TieredRequest } from '../middleware/subscriptionGate.js';
 import { rateLimitAi } from '../middleware/rateLimiter.js';
-import { aiSummariesQueries, analyticsEventsQueries, dataRowsQueries } from '../db/queries/index.js';
+import { aiSummariesQueries, analyticsEventsQueries, dataRowsQueries, orgsQueries } from '../db/queries/index.js';
 import { dbAdmin } from '../lib/db.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
 import { streamToSSE } from '../services/aiInterpretation/streamHandler.js';
@@ -73,8 +73,12 @@ aiSummaryRouter.get('/:datasetId', subscriptionGate, async (req, res: Response) 
 
   // streaming runs outside the RLS transaction (holding a tx for 3-15s would starve the pool).
   // dbAdmin bypasses RLS — safe because the route is auth-gated and orgId comes from the JWT.
-  const [streamStart, datasetSize] = [Date.now(), await dataRowsQueries.getRowCount(orgId, rawId, dbAdmin)];
-  const outcome = await streamToSSE(req, res, orgId, rawId, tier, dbAdmin);
+  const [streamStart, datasetSize, profile] = await Promise.all([
+    Promise.resolve(Date.now()),
+    dataRowsQueries.getRowCount(orgId, rawId, dbAdmin),
+    orgsQueries.getBusinessProfile(orgId),
+  ]);
+  const outcome = await streamToSSE(req, res, orgId, rawId, tier, dbAdmin, profile as any);
 
   aiSummaryTotal.inc({ tier, cache_hit: 'false', outcome: outcome.ok ? 'ok' : 'error' });
   if (outcome.ok) {

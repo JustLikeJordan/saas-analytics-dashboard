@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
-import type { SseTextEvent, SseDoneEvent, SseErrorEvent, SsePartialEvent, SseUpgradeRequiredEvent } from 'shared/types';
+import type { SseTextEvent, SseDoneEvent, SseErrorEvent, SsePartialEvent, SseUpgradeRequiredEvent, BusinessProfile } from 'shared/types';
 import type { SubscriptionTier } from '../../db/queries/subscriptions.js';
 
 import { AI_TIMEOUT_MS, FREE_PREVIEW_WORD_LIMIT } from 'shared/constants';
@@ -58,6 +58,7 @@ export async function streamToSSE(
   datasetId: number,
   tier: SubscriptionTier = 'free',
   client?: typeof db | DbTransaction,
+  businessProfile?: BusinessProfile | null,
 ): Promise<StreamOutcome> {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -99,7 +100,7 @@ export async function streamToSSE(
 
   try {
     const insights = await runCurationPipeline(orgId, datasetId, client);
-    const { prompt: p, metadata } = assemblePrompt(insights);
+    const { prompt: p, metadata } = assemblePrompt(insights, undefined, businessProfile);
     prompt = p;
     validatedMetadata = transparencyMetadataSchema.parse(metadata);
     promptVersion = metadata.promptVersion;

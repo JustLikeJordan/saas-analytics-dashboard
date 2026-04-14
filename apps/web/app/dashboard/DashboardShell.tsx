@@ -33,12 +33,14 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { DemoModeBanner } from '@/components/common/DemoModeBanner';
 import { useExportPdf } from '@/lib/hooks/useExportPdf';
 import { KpiCards } from './KpiCards';
+import { OnboardingModal } from './OnboardingModal';
 
 interface DashboardShellProps {
   initialData: ChartData;
   cachedSummary?: string;
   cachedMetadata?: TransparencyMetadata | null;
   tier?: SubscriptionTier;
+  needsOnboarding?: boolean;
 }
 
 const EMPTY_FILTERS: FilterState = { datePreset: null, category: null, granularity: 'monthly' };
@@ -152,8 +154,9 @@ function FilteredEmptyState({ onReset }: { onReset: () => void }) {
   );
 }
 
-export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tier: serverTier }: DashboardShellProps) {
+export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tier: serverTier, needsOnboarding }: DashboardShellProps) {
   const router = useRouter();
+  const [showOnboarding, setShowOnboarding] = useState(needsOnboarding ?? false);
   const { setOrgName } = useSidebar();
   const isMobile = useIsMobile();
   const hasAuth = serverTier !== undefined;
@@ -265,6 +268,7 @@ export function DashboardShell({ initialData, cachedSummary, cachedMetadata, tie
 
   return (
     <>
+      {showOnboarding && <OnboardingModal onComplete={() => setShowOnboarding(false)} />}
       <DemoModeBanner demoState={data.demoState} onUploadClick={handleUploadClick} />
 
       {isLoading && hasAnyData && !hasData ? (

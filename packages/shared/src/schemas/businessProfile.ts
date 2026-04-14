@@ -1,0 +1,45 @@
+import { z } from 'zod';
+
+export const BUSINESS_TYPES = [
+  'restaurant',
+  'retail',
+  'services',
+  'construction',
+  'healthcare',
+  'technology',
+  'manufacturing',
+  'real_estate',
+  'transportation',
+  'other',
+] as const;
+
+export const REVENUE_RANGES = [
+  'under_100k',
+  '100k_500k',
+  '500k_2m',
+  'over_2m',
+] as const;
+
+export const TEAM_SIZES = [
+  'solo',
+  '2_5',
+  '6_20',
+  'over_20',
+] as const;
+
+export const TOP_CONCERNS = [
+  'cash_flow',
+  'growth',
+  'cost_control',
+  'seasonal_planning',
+  'profitability',
+] as const;
+
+export const businessProfileSchema = z.object({
+  businessType: z.enum(BUSINESS_TYPES),
+  revenueRange: z.enum(REVENUE_RANGES),
+  teamSize: z.enum(TEAM_SIZES),
+  topConcern: z.enum(TOP_CONCERNS),
+});
+
+export type BusinessProfile = z.infer<typeof businessProfileSchema>;

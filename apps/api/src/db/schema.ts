@@ -31,6 +31,7 @@ export const orgs = pgTable('orgs', {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   name: varchar({ length: 255 }).notNull(),
   slug: varchar({ length: 255 }).notNull().unique(),
+  businessProfile: jsonb('business_profile'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

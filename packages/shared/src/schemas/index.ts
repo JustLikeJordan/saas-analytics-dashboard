@@ -36,6 +36,14 @@ export {
 } from './filters.js';
 
 export {
+  businessProfileSchema,
+  BUSINESS_TYPES,
+  REVENUE_RANGES,
+  TEAM_SIZES,
+  TOP_CONCERNS,
+} from './businessProfile.js';
+
+export {
   createShareSchema,
   insightSnapshotSchema,
   shareResponseSchema,

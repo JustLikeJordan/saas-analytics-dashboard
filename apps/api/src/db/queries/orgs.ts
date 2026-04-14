@@ -38,3 +38,12 @@ export async function getSeedOrgId(): Promise<number> {
 export function resetSeedOrgCache(): void {
   cachedSeedOrgId = null;
 }
+
+export async function getBusinessProfile(orgId: number) {
+  const org = await findOrgById(orgId);
+  return org?.businessProfile ?? null;
+}
+
+export async function updateBusinessProfile(orgId: number, profile: Record<string, unknown>) {
+  await db.update(orgs).set({ businessProfile: profile }).where(eq(orgs.id, orgId));
+}
