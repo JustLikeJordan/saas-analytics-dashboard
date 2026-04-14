@@ -26,8 +26,8 @@ function YoyTooltip({ active, payload, label }: {
 }) {
   if (!active || !payload?.length) return null;
 
-  const current = payload.find((p) => p.name.includes('current'))?.value ?? 0;
-  const prior = payload.find((p) => p.name.includes('prior'))?.value ?? 0;
+  const prior = payload[0]?.value ?? 0;
+  const current = payload[1]?.value ?? 0;
   const change = prior > 0 ? ((current - prior) / prior) * 100 : null;
 
   return (

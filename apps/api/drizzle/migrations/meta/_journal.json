@@ -99,6 +99,13 @@
       "when": 1774675600000,
       "tag": "0013_fix-ai-summaries-rls-policy",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1774675700000,
+      "tag": "0014_add-business-profile",
+      "breakpoints": true
     }
   ]
 }
