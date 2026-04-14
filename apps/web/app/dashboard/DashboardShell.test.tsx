@@ -242,7 +242,7 @@ describe('DashboardShell', () => {
   it('shows empty state with upload CTA when no data', () => {
     render(<DashboardShell initialData={emptyData} />);
 
-    expect(screen.getByText('No data to display')).toBeInTheDocument();
+    expect(screen.getByText('Your data is waiting')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Upload a CSV' })).toHaveAttribute('href', '/upload');
   });
 

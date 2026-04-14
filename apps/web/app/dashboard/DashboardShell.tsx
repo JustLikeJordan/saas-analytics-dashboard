@@ -4,7 +4,7 @@ import { Component, type ReactNode, useCallback, useEffect, useRef, useState } f
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useSWR from 'swr';
-import { Upload, Filter } from 'lucide-react';
+import { Filter } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { ChartData, SubscriptionTier, TransparencyMetadata } from 'shared/types';
@@ -95,14 +95,33 @@ class ChartErrorBoundary extends Component<
   }
 }
 
+function EmptyStateIllustration() {
+  return (
+    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true" className="mb-1">
+      {/* stylized CSV file with upward arrow */}
+      <rect x="14" y="8" width="28" height="36" rx="3" className="stroke-muted-foreground/40" strokeWidth="1.5" fill="none" />
+      <line x1="20" y1="18" x2="36" y2="18" className="stroke-muted-foreground/30" strokeWidth="1.5" />
+      <line x1="20" y1="24" x2="32" y2="24" className="stroke-muted-foreground/30" strokeWidth="1.5" />
+      <line x1="20" y1="30" x2="34" y2="30" className="stroke-muted-foreground/30" strokeWidth="1.5" />
+      {/* arrow */}
+      <path d="M42 52 L42 38 M36 44 L42 38 L48 44" className="stroke-primary" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      {/* insight dot */}
+      <circle cx="48" cy="14" r="4" className="fill-accent-warm/60" />
+    </svg>
+  );
+}
+
 function EmptyState() {
   return (
-    <div className="col-span-full flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border p-6 text-center">
-      <Upload className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm text-muted-foreground">No data to display</p>
+    <div className="col-span-full flex min-h-[240px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-muted/30 p-8 text-center">
+      <EmptyStateIllustration />
+      <p className="text-sm font-medium text-foreground">Your data is waiting</p>
+      <p className="max-w-[260px] text-sm text-muted-foreground">
+        Drop a CSV and we'll turn it into charts and plain-English insights
+      </p>
       <Link
         href="/upload"
-        className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        className="mt-3 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
       >
         Upload a CSV
       </Link>
@@ -112,13 +131,16 @@ function EmptyState() {
 
 function FilteredEmptyState({ onReset }: { onReset: () => void }) {
   return (
-    <div className="col-span-full flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border p-6 text-center">
-      <Filter className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm text-muted-foreground">No data matches these filters</p>
+    <div className="col-span-full flex min-h-[240px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-muted/30 p-8 text-center">
+      <Filter className="mb-1 h-8 w-8 text-muted-foreground/50" />
+      <p className="text-sm font-medium text-foreground">Nothing here for those filters</p>
+      <p className="max-w-[260px] text-sm text-muted-foreground">
+        Try a wider date range or clear the category filter
+      </p>
       <button
         type="button"
         onClick={onReset}
-        className="rounded-md px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="mt-3 rounded-md px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
         Reset filters
       </button>

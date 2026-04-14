@@ -8,7 +8,7 @@ export function AiSummarySkeleton({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'rounded-lg border border-border border-l-4 border-l-primary bg-card p-4 shadow-md md:p-6',
+        'rounded-xl border border-border/50 bg-ai-surface p-5 shadow-sm md:p-8',
         className,
       )}
       role="status"

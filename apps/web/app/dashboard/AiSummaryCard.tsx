@@ -85,7 +85,7 @@ function highlightNumbers(text: string): React.ReactNode[] {
   const parts = text.split(/(\$[\d,]+(?:\.\d{2})?|\d+(?:\.\d+)?%)/g);
   return parts.map((part, i) =>
     /^\$[\d,]|^\d+.*%$/.test(part)
-      ? <span key={i} className="font-semibold text-foreground">{part}</span>
+      ? <span key={i} className="font-semibold text-accent-warm" style={{ fontFeatureSettings: '"tnum"' }}>{part}</span>
       : <span key={i}>{part}</span>
   );
 }
@@ -94,9 +94,11 @@ function SummaryText({ text }: { text: string }) {
   const paragraphs = text.split('\n\n').filter(Boolean);
 
   return (
-    <div className="text-sm leading-[1.6] text-card-foreground/85 md:text-[15px] md:leading-[1.7] [&>p+p]:mt-[1em]">
+    <div className="text-[15px] leading-[1.7] text-card-foreground/85 md:text-base md:leading-[1.75] [&>p+p]:mt-[1.1em]">
       {paragraphs.map((p, i) => (
-        <p key={i}>{highlightNumbers(p)}</p>
+        <p key={i} className={i === 0 ? 'text-card-foreground font-medium' : undefined}>
+          {highlightNumbers(p)}
+        </p>
       ))}
     </div>
   );
@@ -265,7 +267,7 @@ export function AiSummaryCard({
     return (
       <div
         className={cn(
-          'rounded-lg border border-border border-l-4 border-l-primary bg-card p-4 shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30 motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:hover:shadow-sm md:p-6',
+          'rounded-xl border border-border/50 bg-ai-surface p-5 shadow-sm md:p-8',
           className,
         )}
         role="region"
@@ -291,7 +293,7 @@ export function AiSummaryCard({
     return (
       <div
         className={cn(
-          'rounded-lg border border-border border-l-4 border-l-primary bg-card p-4 shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30 motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:hover:shadow-sm md:p-6',
+          'rounded-xl border border-border/50 bg-ai-surface p-5 shadow-sm md:p-8',
           className,
         )}
         role="region"
@@ -317,7 +319,7 @@ export function AiSummaryCard({
     return (
       <div
         className={cn(
-          'rounded-lg border border-border border-l-4 border-l-primary bg-card p-4 shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30 motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:hover:shadow-sm md:p-6',
+          'rounded-xl border border-border/50 bg-ai-surface p-5 shadow-sm md:p-8',
           className,
         )}
         role="region"
@@ -339,7 +341,7 @@ export function AiSummaryCard({
     return (
       <div
         className={cn(
-          'rounded-lg border border-border border-l-4 border-l-destructive bg-card p-4 shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30 motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:hover:shadow-sm md:p-6',
+          'rounded-xl border border-destructive/30 bg-destructive/[0.03] p-5 shadow-sm md:p-8',
           className,
         )}
         role="region"
@@ -379,13 +381,14 @@ export function AiSummaryCard({
   return (
     <div
       className={cn(
-        'rounded-lg border border-border border-l-4 border-l-primary bg-card p-4 shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30 motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:hover:shadow-sm md:p-6',
+        'rounded-xl border border-border/50 bg-ai-surface p-5 shadow-sm md:p-8',
+        isDone && 'animate-settle motion-reduce:animate-none',
         className,
       )}
       role="region"
       aria-label="AI business summary"
     >
-      <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">Analysis</h3>
+      <h3 className="mb-4 text-base font-semibold text-card-foreground">Analysis</h3>
       <div
         aria-live="polite"
         aria-busy={isActive}

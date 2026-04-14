@@ -47,12 +47,12 @@ describe('AiSummarySkeleton', () => {
     }
   });
 
-  it('renders with left-border accent card styling', () => {
+  it('renders with warm AI surface card styling', () => {
     render(<AiSummarySkeleton />);
 
     const container = screen.getByRole('status');
-    expect(container.className).toContain('border-l-4');
-    expect(container.className).toContain('border-l-primary');
+    expect(container.className).toContain('rounded-xl');
+    expect(container.className).toContain('bg-ai-surface');
   });
 
   it('renders title-bar skeleton with pulse and motion-reduce', () => {
