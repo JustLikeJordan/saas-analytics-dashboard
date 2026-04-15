@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function InvitesPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
+    <div className="mx-auto max-w-3xl px-6 py-8">
       <InviteManager />
     </div>
   );
