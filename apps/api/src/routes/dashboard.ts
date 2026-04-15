@@ -5,7 +5,7 @@ import { chartFiltersSchema } from 'shared/schemas';
 import type { DemoModeState } from 'shared/types';
 import { verifyAccessToken } from '../services/auth/tokenService.js';
 import { AuthenticationError } from '../lib/appError.js';
-import { aiSummariesQueries, chartsQueries, datasetsQueries, orgsQueries } from '../db/queries/index.js';
+import { aiSummariesQueries, chartsQueries, dataRowsQueries, datasetsQueries, orgsQueries } from '../db/queries/index.js';
 import { dbAdmin } from '../lib/db.js';
 import { withRlsContext } from '../lib/rls.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
@@ -55,13 +55,14 @@ dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => 
       const orgName = org?.name ?? 'Your Organization';
 
       // data_rows + datasets are RLS-enabled — run inside tenant context
-      const { chartData, datasets, demoState } = await withRlsContext(
+      const { chartData, datasets, demoState, activeDatasetId, datasetRowCount } = await withRlsContext(
         orgId,
         payload.isAdmin,
         async (tx) => {
-          const [cd, ds] = await Promise.all([
+          const [cd, ds, activeId] = await Promise.all([
             chartsQueries.getChartData(orgId, filterArg, undefined, tx),
             datasetsQueries.getDatasetsByOrg(orgId, tx),
+            orgsQueries.getActiveDatasetId(orgId, tx),
           ]);
           let state: DemoModeState;
           try {
@@ -69,11 +70,29 @@ dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => 
           } catch {
             state = 'empty';
           }
-          return { chartData: cd, datasets: ds, demoState: state };
+
+          // three-tier: query param → active → newest
+          const requestedId = typeof req.query.dataset === 'string'
+            ? parseInt(req.query.dataset, 10)
+            : NaN;
+          const requestedValid = Number.isInteger(requestedId) && requestedId > 0
+            && ds.some((d) => d.id === requestedId);
+
+          const resolvedId = requestedValid
+            ? requestedId
+            : (activeId != null && ds.some((d) => d.id === activeId) ? activeId : ds[0]?.id ?? null);
+
+          const rowCount = resolvedId != null
+            ? await dataRowsQueries.getRowCount(orgId, resolvedId, tx)
+            : 0;
+
+          return { chartData: cd, datasets: ds, demoState: state, activeDatasetId: resolvedId, datasetRowCount: rowCount };
         },
       );
 
-      const datasetId = datasets[0]?.id ?? null;
+      const resolvedDataset = datasets.find((d) => d.id === activeDatasetId) ?? datasets[0] ?? null;
+      const datasetId = resolvedDataset?.id ?? null;
+      const datasetName = resolvedDataset?.name ?? null;
 
       trackEvent(orgId, userId, ANALYTICS_EVENTS.DASHBOARD_VIEWED, {
         isDemo: false,
@@ -85,7 +104,7 @@ dashboardRouter.get('/dashboard/charts', async (req: Request, res: Response) => 
       logger.info({ orgId, isDemo: false, filtered: hasFilters(filters) }, 'Dashboard charts served');
 
       res.json({
-        data: { ...chartData, orgName, isDemo: false, demoState, datasetId },
+        data: { ...chartData, orgName, isDemo: false, demoState, datasetId, datasetName, datasetRowCount },
       });
       return;
     } catch (err) {
