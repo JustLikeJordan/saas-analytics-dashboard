@@ -3,7 +3,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Upload, Settings, ShieldCheck, Activity, X } from 'lucide-react';
+import { LayoutDashboard, Upload, ShieldCheck, Activity, X, Users, Database } from 'lucide-react';
 import { TellsightLogo } from '@/components/common/TellsightLogo';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/app/dashboard/contexts/SidebarContext';
@@ -12,7 +12,11 @@ import { ThemeToggle } from '@/components/common/ThemeToggle';
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/upload', label: 'Upload', icon: Upload },
-  { href: '/settings/invites', label: 'Settings', icon: Settings },
+] as const;
+
+const SETTINGS_ITEMS = [
+  { href: '/settings/invites', label: 'Invites', icon: Users },
+  { href: '/settings/datasets', label: 'Datasets', icon: Database },
 ] as const;
 
 function SidebarNav({ orgName, isAdmin, onNavigate }: { orgName?: string; isAdmin?: boolean; onNavigate?: () => void }) {
@@ -67,6 +71,29 @@ function SidebarNav({ orgName, isAdmin, onNavigate }: { orgName?: string; isAdmi
             </Link>
           );
         })}
+        <div className="mt-4 pt-4 border-t border-border">
+          <p className="px-3 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Settings</p>
+          {SETTINGS_ITEMS.map(({ href, label, icon: Icon }) => {
+            const isActive = pathname === href || pathname.startsWith(`${href}/`);
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={onNavigate}
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'border-l-4 border-primary bg-accent text-foreground'
+                    : 'border-l-4 border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
+                )}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {label}
+              </Link>
+            );
+          })}
+        </div>
         {isAdmin && (
           <>
             <Link
