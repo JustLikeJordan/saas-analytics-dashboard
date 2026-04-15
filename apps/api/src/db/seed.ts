@@ -35,62 +35,68 @@ function buildSeedRows(orgId: number, datasetId: number) {
     label: string | null;
   }> = [];
 
+  const WEEKS_PER_MONTH = 4;
+
   for (let year = 2024; year <= 2025; year++) {
-    const growth = year === 2025 ? 1.12 : 1.0; // 12% YoY revenue growth
+    const growth = year === 2025 ? 1.12 : 1.0;
     const months = Array.from({ length: 12 }, (_, i) => i);
 
     for (const m of months) {
-      const date = new Date(Date.UTC(year, m, 15));
-
-      // Revenue: $12k–$18k baseline in 2024, +12% in 2025. December spike both years.
-      const baseRevenue = m === 11 ? 28000 : parseFloat(lerp('12000.00', '18000.00', m));
-      rows.push({
-        orgId, datasetId, sourceType: 'csv',
-        category: 'Revenue', parentCategory: 'Income',
-        date, amount: (baseRevenue * growth).toFixed(2), label: null,
-      });
-
-      // Payroll: $5.5k–$6.5k, October anomaly only in 2025
-      const payroll = (year === 2025 && m === 9) ? '9200.00' : lerp('5500.00', '6500.00', m);
-      rows.push({
-        orgId, datasetId, sourceType: 'csv',
-        category: 'Payroll', parentCategory: 'Expenses',
-        date, amount: payroll, label: null,
-      });
-
-      // Marketing: Q3 dip in 2025 only. 2024 stays steady.
+      // Revenue: $12k–$18k monthly baseline in 2024, +12% in 2025. December spike both years.
+      const monthlyRevenue = m === 11 ? 28000 : parseFloat(lerp('12000.00', '18000.00', m));
+      const monthlyPayroll = (year === 2025 && m === 9) ? 9200 : parseFloat(lerp('5500.00', '6500.00', m));
       const isQ3Dip = year === 2025 && m >= 6 && m <= 8;
-      const marketing = isQ3Dip
-        ? lerp('200.00', '300.00', m - 6)
-        : lerp('800.00', '1200.00', m);
-      rows.push({
-        orgId, datasetId, sourceType: 'csv',
-        category: 'Marketing', parentCategory: 'Expenses',
-        date, amount: marketing, label: null,
-      });
+      const monthlyMarketing = isQ3Dip
+        ? parseFloat(lerp('200.00', '300.00', m - 6))
+        : parseFloat(lerp('800.00', '1200.00', m));
+      const monthlyRent = 3000;
+      const monthlySupplies = parseFloat(lerp('1500.00', '2500.00', m));
+      const monthlyUtilities = parseFloat(lerp('600.00', '400.00', m));
 
-      // Rent: flat $3000 both years
-      rows.push({
-        orgId, datasetId, sourceType: 'csv',
-        category: 'Rent', parentCategory: 'Expenses',
-        date, amount: '3000.00', label: null,
-      });
+      for (let w = 0; w < WEEKS_PER_MONTH; w++) {
+        const day = 1 + w * 7;
+        const date = new Date(Date.UTC(year, m, day));
+        const jitter = () => 0.9 + Math.random() * 0.2;
 
-      // Supplies: $1.5k–$2.5k, tracks revenue
-      const supplies = lerp('1500.00', '2500.00', m);
-      rows.push({
-        orgId, datasetId, sourceType: 'csv',
-        category: 'Supplies', parentCategory: 'Expenses',
-        date, amount: supplies, label: null,
-      });
+        rows.push({
+          orgId, datasetId, sourceType: 'csv',
+          category: 'Revenue', parentCategory: 'Income',
+          date, amount: ((monthlyRevenue / WEEKS_PER_MONTH) * growth * jitter()).toFixed(2), label: null,
+        });
 
-      // Utilities: $400–$600, winter months higher
-      const utilities = lerp('600.00', '400.00', m);
-      rows.push({
-        orgId, datasetId, sourceType: 'csv',
-        category: 'Utilities', parentCategory: 'Expenses',
-        date, amount: utilities, label: null,
-      });
+        rows.push({
+          orgId, datasetId, sourceType: 'csv',
+          category: 'Payroll', parentCategory: 'Expenses',
+          date, amount: ((monthlyPayroll / WEEKS_PER_MONTH) * jitter()).toFixed(2), label: null,
+        });
+
+        rows.push({
+          orgId, datasetId, sourceType: 'csv',
+          category: 'Marketing', parentCategory: 'Expenses',
+          date, amount: ((monthlyMarketing / WEEKS_PER_MONTH) * jitter()).toFixed(2), label: null,
+        });
+
+        // Rent: paid once per month on the 1st
+        if (w === 0) {
+          rows.push({
+            orgId, datasetId, sourceType: 'csv',
+            category: 'Rent', parentCategory: 'Expenses',
+            date, amount: monthlyRent.toFixed(2), label: null,
+          });
+        }
+
+        rows.push({
+          orgId, datasetId, sourceType: 'csv',
+          category: 'Supplies', parentCategory: 'Expenses',
+          date, amount: ((monthlySupplies / WEEKS_PER_MONTH) * jitter()).toFixed(2), label: null,
+        });
+
+        rows.push({
+          orgId, datasetId, sourceType: 'csv',
+          category: 'Utilities', parentCategory: 'Expenses',
+          date, amount: ((monthlyUtilities / WEEKS_PER_MONTH) * jitter()).toFixed(2), label: null,
+        });
+      }
     }
   }
 

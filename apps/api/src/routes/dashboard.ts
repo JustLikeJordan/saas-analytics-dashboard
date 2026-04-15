@@ -35,7 +35,7 @@ function parseFilterParams(query: Request['query']) {
 }
 
 function hasFilters(filters: ReturnType<typeof parseFilterParams>): boolean {
-  return !!(filters.dateFrom || filters.dateTo || filters.categories);
+  return !!(filters.dateFrom || filters.dateTo || filters.categories || filters.granularity);
 }
 
 // public — unauthenticated visitors get seed org
