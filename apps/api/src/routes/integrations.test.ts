@@ -43,6 +43,15 @@ vi.mock('../services/analytics/trackEvent.js', () => ({
   trackEvent: mockTrackEvent,
 }));
 
+vi.mock('../services/integrations/worker.js', () => ({
+  enqueueSyncJob: vi.fn(),
+}));
+
+vi.mock('../services/integrations/scheduler.js', () => ({
+  registerDailySync: vi.fn(),
+  removeDailySync: vi.fn(),
+}));
+
 vi.mock('../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -336,7 +345,10 @@ describe('integrations routes', () => {
   });
 });
 
-// Run the full middleware + handler chain for a route
+// Run the full middleware + handler chain for a route.
+// Each middleware must fully complete before we advance — we wait on the
+// current promise and only advance when done, since Express middleware
+// typically call next() without awaiting it themselves.
 function getRouteHandler(router: any, method: string, path: string) {
   const methodLower = method.toLowerCase();
   for (const layer of router.stack) {
@@ -345,16 +357,23 @@ function getRouteHandler(router: any, method: string, path: string) {
         (l: any) => l.method === methodLower || !l.method,
       );
 
-      // Return a function that runs all middleware in sequence
       return async (req: any, res: any, finalNext: any) => {
-        let idx = 0;
-        const next = async (err?: any) => {
-          if (err) throw err;
-          if (idx >= stack.length) return finalNext?.();
-          const fn = stack[idx++].handle;
-          await fn(req, res, next);
-        };
-        await next();
+        for (const routeLayer of stack) {
+          let advanced = false;
+          let nextErr: unknown = null;
+          const nextCalled = new Promise<void>((resolve) => {
+            const nx = (err?: unknown) => {
+              advanced = true;
+              nextErr = err;
+              resolve();
+            };
+            Promise.resolve(routeLayer.handle(req, res, nx)).then(() => resolve());
+          });
+          await nextCalled;
+          if (nextErr) throw nextErr;
+          if (!advanced) return; // route handler ended without calling next (sent response)
+        }
+        finalNext?.();
       };
     }
   }

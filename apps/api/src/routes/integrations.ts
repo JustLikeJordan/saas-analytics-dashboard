@@ -10,6 +10,8 @@ import { roleGuard } from '../middleware/roleGuard.js';
 import { integrationConnectionsQueries } from '../db/queries/index.js';
 import { encrypt } from '../services/integrations/encryption.js';
 import * as qbOAuth from '../services/integrations/quickbooks/oauth.js';
+import { enqueueSyncJob } from '../services/integrations/worker.js';
+import { registerDailySync, removeDailySync } from '../services/integrations/scheduler.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
 
 function qbGuard(_req: Request, res: Response, next: () => void) {
@@ -95,7 +97,7 @@ integrationsRouter.post('/quickbooks/sync', async (req: Request, res: Response) 
     return;
   }
 
-  // BullMQ enqueue will be wired in QB-7
+  await enqueueSyncJob(connection.id, 'manual');
   res.json({ data: { message: 'Sync started' } });
 });
 
@@ -111,8 +113,8 @@ integrationsRouter.delete('/quickbooks', roleGuard('owner'), async (req: Request
   }
 
   await qbOAuth.revokeToken(connection.encryptedRefreshToken);
+  await removeDailySync(user.org_id);
   await integrationConnectionsQueries.deleteByOrgAndProvider(user.org_id, 'quickbooks');
-  // BullMQ removeDailySync will be wired in QB-7
 
   trackEvent(user.org_id, Number(user.sub), ANALYTICS_EVENTS.INTEGRATION_DISCONNECTED, {
     provider: 'quickbooks',
@@ -172,7 +174,7 @@ integrationsCallbackRouter.get('/quickbooks/callback', async (req: Request, res:
 
     const orgId = Number(orgIdCookie);
 
-    await integrationConnectionsQueries.upsert({
+    const connection = await integrationConnectionsQueries.upsert({
       orgId,
       provider: 'quickbooks',
       providerTenantId: realmId,
@@ -184,6 +186,9 @@ integrationsCallbackRouter.get('/quickbooks/callback', async (req: Request, res:
 
     res.clearCookie('qb_oauth_org_id', { path: '/' });
     res.clearCookie('qb_oauth_user_id', { path: '/' });
+
+    await enqueueSyncJob(connection.id, 'initial');
+    await registerDailySync(orgId, connection.id);
 
     trackEvent(orgId, Number(userId), ANALYTICS_EVENTS.INTEGRATION_CONNECTED, {
       provider: 'quickbooks',
