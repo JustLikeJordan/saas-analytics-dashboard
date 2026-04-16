@@ -14,6 +14,7 @@ import { publicShareRouter } from './routes/sharing.js';
 import protectedRouter from './routes/protected.js';
 import dashboardRouter from './routes/dashboard.js';
 import { stripeWebhookRouter } from './routes/stripeWebhook.js';
+import { integrationsCallbackRouter } from './routes/integrations.js';
 import { redis } from './lib/redis.js';
 import { queryClient, adminClient } from './lib/db.js';
 import { abortAll as abortAllStreams } from './lib/activeStreams.js';
@@ -65,6 +66,7 @@ app.use(
 );
 app.use(healthRouter);
 app.use(authRouter);
+app.use('/integrations', rateLimitPublic, integrationsCallbackRouter);
 app.use(rateLimitPublic, publicInviteRouter);
 app.use(rateLimitPublic, publicShareRouter);
 app.use(rateLimitPublic, dashboardRouter);
