@@ -10,12 +10,18 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
     // ProgrammerErrors are real bugs — treat them like unhandled errors at the
     // logging + telemetry layer, but still route through the AppError branch
     // so the response shape stays consistent.
+    //
+    // devMessage is used as the log title and the Sentry fingerprint so that
+    // distinct invariants group as distinct issues. Using err.message would
+    // collapse every ProgrammerError into one issue titled with the generic
+    // client-facing text.
     if (err instanceof ProgrammerError) {
       Sentry.captureException(err, {
         level: 'error',
-        extra: { code: err.code, devMessage: err.devMessage },
+        fingerprint: ['programmer-error', err.devMessage],
+        extra: { code: err.code },
       });
-      log.error({ err, devMessage: err.devMessage }, 'Programmer error');
+      log.error({ err, code: err.code }, err.devMessage);
     } else {
       // ExternalServiceErrors (Stripe down, Claude timeout) are worth tracking
       if (err instanceof ExternalServiceError) {
