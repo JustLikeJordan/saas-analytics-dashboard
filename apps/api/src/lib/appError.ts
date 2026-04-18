@@ -48,10 +48,15 @@ export class ExternalServiceError extends AppError {
 
 // For invariants the server should uphold — not user-facing auth failures.
 // Use this when the cause is misconfigured code (missing middleware, unreachable
-// branch) rather than a bad request. Surfaces as 500 so it shows up in error
-// dashboards as a real bug instead of blending into user auth noise.
+// branch) rather than a bad request. Two audiences, two messages:
+//   - devMessage: the specific bug, for logs and Sentry
+//   - client-facing message: a generic 500 so we don't leak implementation
+// The error handler picks the right one for the right sink.
 export class ProgrammerError extends AppError {
-  constructor(message: string) {
-    super(message, 'INTERNAL_SERVER_ERROR', 500);
+  readonly devMessage: string;
+
+  constructor(devMessage: string) {
+    super('An unexpected error occurred', 'INTERNAL_SERVER_ERROR', 500);
+    this.devMessage = devMessage;
   }
 }

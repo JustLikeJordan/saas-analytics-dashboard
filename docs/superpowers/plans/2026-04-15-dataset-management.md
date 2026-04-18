@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-04-15-dataset-management-design.md`
 
+> **Note (historical):** Code snippets below show `req as AuthenticatedRequest` which was the pattern at the time of writing. As of commit `62d00ed`, the codebase uses `const user = requireUser(req)` from `apps/api/src/lib/requireUser.ts` instead. See current source for the idiom in use.
+
 ---
 
 ## File Structure

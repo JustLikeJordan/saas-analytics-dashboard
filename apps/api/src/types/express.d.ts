@@ -1,14 +1,16 @@
 // Global augmentation for Express Request.
 //
 // The auth middleware populates `req.user` on every authenticated route.
-// Before this augmentation, ~27 handler sites cast `req as AuthenticatedRequest`
-// to get at `user` — one false invariant repeated 27 times. Declaring `user`
-// on the global Express.Request interface once means every handler sees
-// `req.user` directly (typed as optional, matching runtime reality).
+// Before this augmentation, ~27 handler sites cast `req` to a local type
+// just to reach `user` — one false invariant repeated across the codebase.
+// Declaring `user` on the global Express.Request interface once means every
+// handler sees `req.user` directly (typed as optional, matching runtime
+// reality).
 //
 // Callers that need `user` to exist use `requireUser(req)` from
-// `lib/requireUser.ts` — more honest than the old cast since it actually
-// checks the invariant.
+// `lib/requireUser.ts` — it checks the invariant and throws a ProgrammerError
+// (500) if auth middleware didn't run. Honest about the fact that the type
+// is only guaranteed downstream of specific middleware.
 //
 // Why `namespace Express`, not `declare module 'express-serve-static-core'`:
 // @types/express-serve-static-core declares a global `Express` namespace at
