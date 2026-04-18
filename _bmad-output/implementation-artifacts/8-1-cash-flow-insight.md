@@ -1,6 +1,6 @@
 # Story 8.1: Cash Flow Insight — Trailing Burn/Surplus Stat Type
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is REQUIRED. Every story must complete all 4 steps: Create → Validate → Dev → Code Review. -->
 <!-- Post-MVP story. Epic 8 opened 2026-04-18 for post-MVP extensions to the curation pipeline and delivery layer. -->
@@ -58,45 +58,45 @@ The Weekly Email Digest (GTM Week 3) will consume this stat as one of its three 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Finish `computeCashFlow` business logic (AC: #1, #2, #3, #4)
-  - [ ] 1.1 Open `apps/api/src/services/curation/computation.ts` — the function stub at the `TODO — your turn` block
-  - [ ] 1.2 Import `median` from `simple-statistics` (already imported at top of file — no new import)
-  - [ ] 1.3 Compute `monthlyNet` as `median(recentMonths.map(m => m.net))`
-  - [ ] 1.4 Compute `avgMonthlyRevenue = mean(recentMonths.map(m => m.revenue))` for the break-even threshold
-  - [ ] 1.5 Compute `monthsBurning = recentMonths.filter(m => m.net < 0).length`
-  - [ ] 1.6 Determine `direction` in this exact order (early-return on each guard):
+- [x] Task 1: Finish `computeCashFlow` business logic (AC: #1, #2, #3, #4)
+  - [x] 1.1 Open `apps/api/src/services/curation/computation.ts` — the function stub at the `TODO — your turn` block
+  - [x] 1.2 Import `median` from `simple-statistics` (already imported at top of file — no new import)
+  - [x] 1.3 Compute `monthlyNet` as `median(recentMonths.map(m => m.net))`
+  - [x] 1.4 Compute `avgMonthlyRevenue = mean(recentMonths.map(m => m.revenue))` for the break-even threshold
+  - [x] 1.5 Compute `monthsBurning = recentMonths.filter(m => m.net < 0).length`
+  - [x] 1.6 Determine `direction` in this exact order (early-return on each guard):
       1. If any `recentMonths[i].revenue === 0` → return `[]` (zero-revenue month, data gap)
       2. If `avgMonthlyRevenue <= 0` → return `[]` (threshold ill-defined, nothing honest to say)
       3. If `|monthlyNet| < 0.05 * avgMonthlyRevenue` → `'break_even'` → return `[]`
       4. If `monthlyNet < 0` → `'burning'`
       5. Else → `'surplus'`
-  - [ ] 1.7 Return a single `CashFlowStat` with typed `details`: `{ monthlyNet, trailingMonths, direction, monthsBurning, recentMonths }`. Set `category: null` and `value: monthlyNet` to match the shape used by `MarginTrendStat`.
+  - [x] 1.7 Return a single `CashFlowStat` with typed `details`: `{ monthlyNet, trailingMonths, direction, monthsBurning, recentMonths }`. Set `category: null` and `value: monthlyNet` to match the shape used by `MarginTrendStat`.
 
-- [ ] Task 2: Wire scoring (AC: #5)
-  - [ ] 2.1 Open `apps/api/src/services/curation/scoring.ts`
-  - [ ] 2.2 Add a `case StatType.CashFlow` to `noveltyScore`: return `0.85` when `direction === 'burning'` and `monthsBurning >= 2`; `0.7` when `'burning'` and `monthsBurning === 1`; `0.5` when `'surplus'`. (Break-even never reaches this layer — suppressed in computation.)
-  - [ ] 2.3 Add a `case StatType.CashFlow` to `actionabilityScore`: return `0.9` when `'burning'` and `monthsBurning >= 2` (ties `MarginTrend shrinking` at `scoring.ts:79`); `0.75` when `'burning'` with `monthsBurning === 1`; `0.5` when `'surplus'`. See AC #5 rationale — preserves leading/trailing signal relationship with `MarginTrend`.
-  - [ ] 2.4 Add a `case StatType.CashFlow` to `specificityScore`: return `0.85` (always). Matches `SeasonalProjection` at `scoring.ts:97` — both stat types carry exact named months and amounts, so the specificity parity is intentional. `MarginTrend` stays at `0.8` because it is window-level, not month-level.
+- [x] Task 2: Wire scoring (AC: #5)
+  - [x] 2.1 Open `apps/api/src/services/curation/scoring.ts`
+  - [x] 2.2 Add a `case StatType.CashFlow` to `noveltyScore`: return `0.85` when `direction === 'burning'` and `monthsBurning >= 2`; `0.7` when `'burning'` and `monthsBurning === 1`; `0.5` when `'surplus'`. (Break-even never reaches this layer — suppressed in computation.)
+  - [x] 2.3 Add a `case StatType.CashFlow` to `actionabilityScore`: return `0.9` when `'burning'` and `monthsBurning >= 2` (ties `MarginTrend shrinking` at `scoring.ts:79`); `0.75` when `'burning'` with `monthsBurning === 1`; `0.5` when `'surplus'`. See AC #5 rationale — preserves leading/trailing signal relationship with `MarginTrend`.
+  - [x] 2.4 Add a `case StatType.CashFlow` to `specificityScore`: return `0.85` (always). Matches `SeasonalProjection` at `scoring.ts:97` — both stat types carry exact named months and amounts, so the specificity parity is intentional. `MarginTrend` stays at `0.8` because it is window-level, not month-level.
 
-- [ ] Task 3: Wire assembly / prompt formatting (AC: #6)
-  - [ ] 3.1 Open `apps/api/src/services/curation/assembly.ts`
-  - [ ] 3.2 Add a `case StatType.CashFlow` to `formatStat()` returning a one-line string matching existing conventions. Shape:
+- [x] Task 3: Wire assembly / prompt formatting (AC: #6)
+  - [x] 3.1 Open `apps/api/src/services/curation/assembly.ts`
+  - [x] 3.2 Add a `case StatType.CashFlow` to `formatStat()` returning a one-line string matching existing conventions. Shape:
     ```
     - [Overall] Cash Flow: {direction} — net ${signedMonthlyNet}/mo over {trailingMonths} months ({monthsBurning} burning, relevance: {score})
     ```
     Example output for a burning business: `- [Overall] Cash Flow: burning — net -$4,230/mo over 3 months (3 burning, relevance: 0.88)`. Note: the em dash in this format is deliberate prompt content going to the LLM — it is NOT user-facing prose. Do not auto-correct to `--` or the existing tests that string-match this shape will fail.
-  - [ ] 3.3 Add `cash_flow: 'Cash Flow'` to `STAT_TYPE_LABELS` in `apps/web/app/dashboard/TransparencyPanel.tsx`. Without this, the Transparency Panel renders `'cash_flow'` as a raw key. Single-line change; prevents a cosmetic bug report.
+  - [x] 3.3 Add `cash_flow: 'Cash Flow'` to `STAT_TYPE_LABELS` in `apps/web/app/dashboard/TransparencyPanel.tsx`. Without this, the Transparency Panel renders `'cash_flow'` as a raw key. Single-line change; prevents a cosmetic bug report.
 
-- [ ] Task 4: Extend prompt template for legal-safe framing and version-bump for cache invalidation (AC: #7)
-  - [ ] 4.1 Copy `apps/api/src/services/curation/config/prompt-templates/v1.md` to `v1.1.md`. Keep `v1.md` in place untouched (existing cached summaries reference it via `promptVersion` metadata — preserving the file means we don't break a replay of old caches).
-  - [ ] 4.2 In `v1.1.md`, extend the "rules" section with cash flow guidance under rule #4 ("Make it useful") or as a new dedicated rule. Reinforce the existing legal posture: describe the pattern ("you're spending about $X more than you're earning") and suggest action framing ("worth reviewing with your accountant", "you might want to look into"). Never prescriptive imperatives.
-  - [ ] 4.3 Add a margin/cash-flow deduplication line: "If both `margin_trend: shrinking` and `cash_flow: burning` appear in the stats, treat them as one pattern (margin compression causing cash burn), not two findings. Lead with margin because it is the earlier signal." Without this the LLM double-counts and reads as redundant to the owner.
-  - [ ] 4.4 Ensure the guidance lines up with the boundary rules at the top of `v1.1.md` ("Never tell the owner what they should do with their money").
-  - [ ] 4.5 Update `apps/api/src/services/curation/assembly.ts` `DEFAULT_VERSION` constant from `'v1'` to `'v1.1'` so new summaries pick up the new template. This triggers cache invalidation correctly: cached `ai_summaries` rows carry `promptVersion` in their `metadata` column; the cache-check logic in `services/aiSummary` compares against the current default and treats mismatches as stale. Existing `v1` cached rows continue to render unchanged until the user uploads new data (the intended behavior — no surprise re-generation of paid summaries).
+- [x] Task 4: Extend prompt template for legal-safe framing and version-bump for cache invalidation (AC: #7)
+  - [x] 4.1 Copy `apps/api/src/services/curation/config/prompt-templates/v1.md` to `v1.1.md`. Keep `v1.md` in place untouched (existing cached summaries reference it via `promptVersion` metadata — preserving the file means we don't break a replay of old caches).
+  - [x] 4.2 In `v1.1.md`, extend the "rules" section with cash flow guidance under rule #4 ("Make it useful") or as a new dedicated rule. Reinforce the existing legal posture: describe the pattern ("you're spending about $X more than you're earning") and suggest action framing ("worth reviewing with your accountant", "you might want to look into"). Never prescriptive imperatives.
+  - [x] 4.3 Add a margin/cash-flow deduplication line: "If both `margin_trend: shrinking` and `cash_flow: burning` appear in the stats, treat them as one pattern (margin compression causing cash burn), not two findings. Lead with margin because it is the earlier signal." Without this the LLM double-counts and reads as redundant to the owner.
+  - [x] 4.4 Ensure the guidance lines up with the boundary rules at the top of `v1.1.md` ("Never tell the owner what they should do with their money").
+  - [x] 4.5 Update `apps/api/src/services/curation/assembly.ts` `DEFAULT_VERSION` constant from `'v1'` to `'v1.1'` so new summaries pick up the new template. This triggers cache invalidation correctly: cached `ai_summaries` rows carry `promptVersion` in their `metadata` column; the cache-check logic in `services/aiSummary` compares against the current default and treats mismatches as stale. Existing `v1` cached rows continue to render unchanged until the user uploads new data (the intended behavior — no surprise re-generation of paid summaries).
 
-- [ ] Task 5: Unit tests — computation (AC: #9)
-  - [ ] 5.1 Open `apps/api/src/services/curation/computation.test.ts`
-  - [ ] 5.2 Add a `describe('computeCashFlow', ...)` block with the following fixtures:
+- [x] Task 5: Unit tests — computation (AC: #9)
+  - [x] 5.1 Open `apps/api/src/services/curation/computation.test.ts`
+  - [x] 5.2 Add a `describe('computeCashFlow', ...)` block with the following fixtures:
     - `burningBusiness`: 3 months, each with revenue < expenses — direction `'burning'`, `monthsBurning === 3`
     - `surplusBusiness`: 3 months, each with revenue > expenses — direction `'surplus'`, `monthsBurning === 0`
     - `mixedWindowBurning`: 2 burning + 1 small surplus, median net cleanly negative → direction `'burning'`, `monthsBurning === 2`
@@ -109,20 +109,20 @@ The Weekly Email Digest (GTM Week 3) will consume this stat as one of its three 
     - `windowN3`: default window of 3 — `simple-statistics.median` returns the middle element of a sorted array of 3 — assert `monthlyNet === sorted[1]`
     - `windowN6`: `opts.cashFlowWindow: 6` — `simple-statistics.median` returns mean of two middle elements — assert `monthlyNet === (sorted[2] + sorted[3]) / 2`. Prevents a hand-rolled "middle element" median bug at even window sizes.
     - `medianRobustness`: 2 small-loss months + 1 huge-loss month → mean would show `'burning'` badly; median should show a typical month — assert median is used, not mean
-  - [ ] 5.3 Verify typed details shape: `CashFlowDetails` fields all present, correct types
+  - [x] 5.3 Verify typed details shape: `CashFlowDetails` fields all present, correct types
 
-- [ ] Task 6: Unit tests — scoring (AC: #10)
-  - [ ] 6.1 Open `apps/api/src/services/curation/scoring.test.ts`
-  - [ ] 6.2 Add test cases: burning+monthsBurning=2 ranks in top-N; burning+monthsBurning=3 ranks higher; surplus still scored, ranks below burning
-  - [ ] 6.3 Verify config tunability unchanged (adjust weights, scores shift predictably)
+- [x] Task 6: Unit tests — scoring (AC: #10)
+  - [x] 6.1 Open `apps/api/src/services/curation/scoring.test.ts`
+  - [x] 6.2 Add test cases: burning+monthsBurning=2 ranks in top-N; burning+monthsBurning=3 ranks higher; surplus still scored, ranks below burning
+  - [x] 6.3 Verify config tunability unchanged (adjust weights, scores shift predictably)
 
-- [ ] Task 7: Integration test — end-to-end pipeline (AC: #1, #6, #8)
-  - [ ] 7.1 Open `apps/api/src/services/curation/index.test.ts`
-  - [ ] 7.2 Add a fixture that simulates a burning business (3 months of Income + Expenses data) and run `computeStats → scoreInsights → assembleContext`
-  - [ ] 7.3 Assert the final prompt text contains cash flow framing and signed `monthlyNet`
-  - [ ] 7.4 Assert `TransparencyMetadata.statTypes` includes `'cash_flow'`
-  - [ ] 7.5 Assert `TransparencyMetadata.promptVersion === 'v1.1'` (regression guard for the Task 4.5 version bump — if someone reverts the bump, this test catches it).
-  - [ ] 7.6 Verify the privacy boundary concretely: the fixture rows have identifiable `label` strings (e.g., `'Acme Corp invoice #4218'`). Assert the assembled prompt string does NOT contain any of those exact labels. This is stronger than a generic grep — it proves no row-level data leaks through assembly.
+- [x] Task 7: Integration test — end-to-end pipeline (AC: #1, #6, #8)
+  - [x] 7.1 Open `apps/api/src/services/curation/index.test.ts`
+  - [x] 7.2 Add a fixture that simulates a burning business (3 months of Income + Expenses data) and run `computeStats → scoreInsights → assembleContext`
+  - [x] 7.3 Assert the final prompt text contains cash flow framing and signed `monthlyNet`
+  - [x] 7.4 Assert `TransparencyMetadata.statTypes` includes `'cash_flow'`
+  - [x] 7.5 Assert `TransparencyMetadata.promptVersion === 'v1.1'` (regression guard for the Task 4.5 version bump — if someone reverts the bump, this test catches it).
+  - [x] 7.6 Verify the privacy boundary concretely: the fixture rows have identifiable `label` strings (e.g., `'Acme Corp invoice #4218'`). Assert the assembled prompt string does NOT contain any of those exact labels. This is stronger than a generic grep — it proves no row-level data leaks through assembly.
 
 ## Dev Notes
 
@@ -268,16 +268,50 @@ Also see:
 
 ### Agent Model Used
 
-_(populated by dev-story agent)_
+Claude Opus 4.7 (1M context) via `/bmad-bmm-dev-story` workflow.
 
 ### Debug Log References
 
-_(populated during dev)_
+None. Test suite went from 619 → 633 tests over three iterations, all green on final run. One TypeScript narrowing issue in the computation test helper (array destructuring produced `CashFlowStat | undefined` against declared `| null` return type) was fixed by switching to a type-predicate filter: `all.filter((s): s is CashFlowStat => ...)`.
 
 ### Completion Notes List
 
-_(populated during dev)_
+- **Task 1 — computeCashFlow body** — Implemented ~15 lines inside the pre-scaffolded TODO block. Five guards in the exact AC-specified order: (1) zero-revenue month, (2) zero-avg-revenue, (3) break-even threshold, (4) burning, (5) surplus. Uses `median` from `simple-statistics` (already imported). Matches `computeMarginTrend`'s `'expanding' as const` narrowing pattern for `direction`.
+- **Task 2 — scoring cases** — Added `CashFlow` branches to all three score functions. `actionabilityScore` returns `0.9` for burning+monthsBurning≥2 (ties `MarginTrend shrinking`), `0.75` for single-month burning, `0.5` for surplus. `noveltyScore` 0.85/0.7/0.5 across those three states. `specificityScore` flat `0.85` matching `SeasonalProjection`. Monotonicity vs `MarginTrend` documented inline.
+- **Task 3 — assembly formatStat + TransparencyPanel label** — One-line prompt render with signed `monthlyNet` (format: `-$4,230/mo`), direction, months burning, relevance score. `cash_flow: 'Cash Flow'` added to `STAT_TYPE_LABELS`.
+- **Task 4 — v1.1 prompt template + DEFAULT_VERSION bump** — Created `v1.1.md` alongside `v1.md` (preserved intact for cache-replay compatibility). New rules: cash flow framing guidance (rule 5) and margin/cash-flow dedup guidance (rule 6). `DEFAULT_VERSION` bumped from `'v1'` to `'v1.1'` in `assembly.ts`. Updated 2 tests that asserted against the old default (assembly.test.ts, index.test.ts); streamHandler.test.ts and aiSummary.test.ts use explicit fixture values so no change needed there.
+- **Task 5 — computation tests** — 12 fixtures covering every branch: burning/surplus/mixed-burning/mixed-break-even/below-threshold/zero-revenue-month/zero-avg-revenue/service-business/too-few-months/windowN3/windowN6/median-robustness, plus a `recentMonths` shape leak check.
+- **Task 6 — scoring tests** — 4 new tests: CashFlow burning appears in topN, monthsBurning=2 outranks =1, surplus ranks below burning, CashFlow does not invert vs MarginTrend (score delta < 0.05).
+- **Task 7 — integration test** — End-to-end burning-business fixture through the full pipeline. Asserts `statTypes` contains `'cash_flow'`, `promptVersion === 'v1.1'`, prompt contains `Cash Flow: burning` + signed monthly net regex, and none of the fixture's identifiable row labels (`'Acme Corp invoice #4218'`, `'Main St landlord wire'`, `'Gusto payroll batch #JK2'`, etc.) survive into the assembled prompt.
+- **Interview-docs update** — `computation.ts_explained.md` updated: elevator pitch now covers 9 dimensions (was 8), new `computeCashFlow` entry in the code walkthrough section, two new FAQ entries (median-vs-mean, suppression philosophy).
+- **Test suite** — 633 tests passing (previously 619). TypeScript typecheck clean on both `api` and `web` packages. ESLint clean on both packages.
+- **Commit sequence** — Three commits landed on `main`: `3a370b6` feat(curation): add CashFlow stat type, `09e40b6` feat(curation): score and render CashFlow in prompt assembly (v1.1), `af3b15a` test(curation): coverage for CashFlow computation, scoring, and e2e.
+- **Deferred** — None. All 7 tasks complete with validator-blessed fixes applied before dev.
 
 ### File List
 
-_(populated during dev — expected: computation.ts, scoring.ts, assembly.ts, v1.md, computation.test.ts, scoring.test.ts, index.test.ts, types.ts, plus _explained.md updates)_
+**Modified:**
+- `apps/api/src/services/curation/types.ts` — CashFlow enum, CashFlowDetails, CashFlowStat in discriminated union (done during story scoping; committed here)
+- `apps/api/src/services/curation/computation.ts` — `computeCashFlow` body filled in (~15 lines in the TODO block), `computeStats` already wired with `opts.cashFlowWindow`
+- `apps/api/src/services/curation/scoring.ts` — `CashFlow` case added to `noveltyScore`, `actionabilityScore`, `specificityScore`
+- `apps/api/src/services/curation/assembly.ts` — `CashFlow` case added to `formatStat`; `DEFAULT_VERSION` bumped `'v1'` → `'v1.1'`
+- `apps/web/app/dashboard/TransparencyPanel.tsx` — `cash_flow: 'Cash Flow'` added to `STAT_TYPE_LABELS`
+- `apps/api/src/services/curation/computation.test.ts` — 12 new CashFlow fixtures + type-predicate filter helper
+- `apps/api/src/services/curation/scoring.test.ts` — 4 new CashFlow scoring tests + CashFlow stat fixtures
+- `apps/api/src/services/curation/assembly.test.ts` — updated `promptVersion` expectation from `'v1'` to `'v1.1'`
+- `apps/api/src/services/curation/index.test.ts` — updated `promptVersion` expectations from `'v1'` to `'v1.1'`; new cash-flow end-to-end test with privacy-label assertions
+- `apps/api/src/services/curation/computation.ts_explained.md` — refreshed interview doc with CashFlow coverage (gitignored, not in the commits)
+
+**Created:**
+- `apps/api/src/services/curation/config/prompt-templates/v1.1.md` — new prompt template with cash flow framing + margin/cash-flow dedup guidance; `v1.md` preserved alongside
+
+**Not modified (scope guards held):**
+- `packages/shared/src/schemas/businessProfile.ts` — belongs to Story 8.2
+- `apps/api/src/db/schema/` — no schema changes; `ai_summaries` cache invalidates via `promptVersion` mismatch
+- `apps/api/src/services/curation/config/prompt-templates/v1.md` — preserved for cache-replay compatibility
+
+## Change Log
+
+| Date | Version | Description | Author |
+|------|---------|-------------|--------|
+| 2026-04-18 | 1.0 | Initial implementation — 7 tasks, 16 new tests, 3 commits | Claude Opus 4.7 via dev-story |
