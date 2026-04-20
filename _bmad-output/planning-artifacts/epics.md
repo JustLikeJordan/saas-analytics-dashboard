@@ -1379,7 +1379,22 @@ So that I can use the application comfortably in any lighting condition.
 
 ## Epic 8: Post-MVP Insights & Delivery
 
-Post-MVP expansion of the AI-powered insight layer. Extends the curation pipeline (FR23–26) with new statistical capabilities — starting with cash flow — and the share/export layer (FR29–31) with new delivery surfaces (weekly email digest, accountant handoff). No new requirements against the original PRD; each story adds new stat types, scoring rules, prompt guidance, or delivery channels within the existing architecture.
+Post-MVP expansion of the AI-powered insight layer, focused on the cash-flow arc — the single highest-anxiety area for small business owners. Extends the curation pipeline (FR23–26) with quantitative cash-flow intelligence and introduces the owner-input data model needed to move from descriptive to diagnostic analytics.
+
+**Story progression (cash-flow arc):**
+1. **8.1 Cash Flow** (done) — trailing burn/surplus signal. Answers "am I burning cash?"
+2. **8.2 Cash Balance UX + Runway** (ready-for-dev) — adds owner-provided cash balance, computes runway months. Answers "how long do I have?"
+3. **8.3 Break-Even Analysis** (planned) — adds owner-provided monthly fixed costs, computes break-even revenue. Answers "how much do I need to earn to stop burning?"
+4. **8.4 Forward Cash Flow Forecast** (planned) — extends SeasonalProjection to project 1–3 months of net cash flow. Answers "if this continues, where will I be?"
+
+**New architectural patterns introduced by this epic:**
+- **Financial baseline data model** — four optional fields on `orgs.businessProfile` JSONB (`cashOnHand`, `cashAsOfDate`, `monthlyFixedCosts`, `businessStartedDate`), backed by the append-only `cash_balance_snapshots` table for runway-over-time trending. Backward compatible with existing profiles.
+- **Locked Insight UX pattern** — contextual progressive disclosure. When a stat needs an owner-provided input, render an inline `LockedInsightCard` in the dashboard feed with the prompt + input + save action, rather than front-loading fields into onboarding. Reusable across 8.3 and any future gated stat (inventory turnover, CAC/LTV, etc.).
+- **Tier 1 hallucination validator extension** — the numeric-check harness shipped 2026-04-19 gains new checks for owner-input-derived fields (runway months, break-even revenue). Prevents the LLM from fabricating confidently wrong numbers when the underlying data is owner-provided.
+
+**Delivery-layer work** (weekly email digest, accountant handoff via FR29–31) is deferred to a separate epic once the cash-flow arc lands — the digest consumes these stats, so the stat types must exist first.
+
+No new requirements against the original PRD; each story adds new stat types, scoring rules, prompt guidance, or delivery channels within the existing architecture.
 
 ### Story 8.1: Cash Flow Insight — Trailing Burn/Surplus Stat Type
 
@@ -1425,10 +1440,77 @@ So that I understand my current cash position without waiting for my accountant.
 **When** unit tests run
 **Then** fixtures cover: burning business (3+ months of losses), surplus business (all positive nets), mixed (some burning, some surplus), and suppressed cases (zero-revenue gap, below 5% threshold, fewer than 3 months of data)
 
-### Story 8.2: (Planned) Cash Balance UX + Runway Months
+### Story 8.2: Cash Balance UX + Runway Months
 
-Captures user-provided cash balance on the Business Profile, computes `runway_months = cashBalance / monthlyBurn` when the cash flow stat reports `direction === 'burning'`. Requires Business Profile schema extension and a settings UX. Blocked by 8.1.
+As a **small business owner**,
+I want to see how many months of runway I have left at my current burn rate,
+So that I can make cash decisions without waiting for my accountant to tell me.
 
-### Story 8.3: (Planned) Forward Cash Flow Forecast
+**Acceptance Criteria:**
+
+**Given** an organization has uploaded CSV data and the `CashFlowStat` reports `direction === 'burning'`
+**When** the dashboard loads and no `cashOnHand` is set
+**Then** a locked insight card "Enable Runway" renders inline in the insight feed with a numeric input for current cash balance
+**And** submitting persists to `org_financials.cashOnHand` with `cashAsOfDate = now`
+**And** an append-only row is written to `cash_balance_snapshots` (for runway trending over time)
+
+**Given** `cashOnHand` is set and the `CashFlowStat` reports `direction === 'burning'`
+**When** the curation pipeline runs
+**Then** a new `StatType.Runway` is computed as `runwayMonths = cashOnHand / abs(monthlyNet)`
+**And** the stat carries `{ cashOnHand, monthlyNet, runwayMonths, cashAsOfDate, confidence }` (FR23)
+
+**Given** `runwayMonths < 6`
+**When** scoring runs
+**Then** the stat receives critical actionability (≥ 0.95) and high novelty (≥ 0.8)
+**And** ranks in the top-N insights passed to assembly (FR23, FR25)
+
+**Given** the business is not burning (`direction === 'surplus' | 'break_even'`) OR `runwayMonths >= 24`
+**When** computation runs
+**Then** the runway stat is suppressed — nothing urgent to say, matches `CashFlow`'s suppression pattern
+
+**Given** `cashAsOfDate` is older than 30 days
+**When** the dashboard loads
+**Then** a refresh banner appears: "Update your cash balance — runway accuracy depends on fresh data"
+**And** an inline-edit control updates the value without a page nav
+
+**Given** a user wants to edit their financial baseline
+**When** they visit `/settings/financials`
+**Then** they can view and update `cashOnHand`, `businessStartedDate`
+**And** each `cashOnHand` change appends a row to `cash_balance_snapshots`
+
+**Given** the runway stat passes into assembly
+**When** `formatStat` renders it into the LLM prompt
+**Then** output is one line with `runwayMonths`, signed `monthlyNet`, `cashOnHand`, and `cashAsOfDate`
+
+**Given** the LLM generates a summary referencing runway
+**When** it frames the insight
+**Then** it follows the legal posture from `v1.md`: "at this burn rate you have about X months of runway — worth reviewing with your accountant" — never "you need to cut expenses" (FR26)
+
+**Given** the Tier 1 hallucination validator runs on a summary with runway
+**When** the LLM output is checked
+**Then** any fabricated `runwayMonths` outside the computed value ± 5% is flagged as a validation error (extends validator shipped 2026-04-19)
+
+**Given** the privacy boundary from Story 3.1
+**When** runway is computed
+**Then** `computeRunway` operates on `CashFlowStat` + `cashOnHand` only — no raw `DataRow` access (NFR12)
+
+**Given** the computation is a pure function
+**When** unit tests run
+**Then** fixtures cover: critical runway (<3 months), caution runway (3–6 months), comfortable runway (6–24 months), suppressed cases (surplus business, stale data, null/zero cash balance, non-burning direction)
+
+**Technical Notes:**
+- New table `org_financials` (orgId PK, `cashOnHand` numeric, `cashAsOfDate` timestamp, `businessStartedDate` date nullable, createdAt, updatedAt) — RLS org_id scoped per Story 7.6 pattern.
+- New table `cash_balance_snapshots` (id, orgId FK, balance numeric, asOfDate timestamp, createdAt) — append-only, RLS org_id scoped.
+- New stat type `StatType.Runway` in `curation/types.ts` with `RunwayDetails` and `RunwayStat` interfaces.
+- Prompt version bump `v2` → `v3` in `curation/config/`.
+- API endpoints: `GET /api/org/financials`, `PUT /api/org/financials`, `GET /api/org/financials/cash-history`.
+- Shared schemas: `packages/shared/schemas/financials.ts` — Zod 3.x for drizzle-zod compatibility.
+- Service import boundary: queries via `db/queries/financials.ts` barrel, never `db/index.ts` directly.
+
+### Story 8.3: (Planned) Break-Even Analysis — Fixed Costs Input + Break-Even Stat Type
+
+Captures user-provided `monthlyFixedCosts` on the financial baseline, computes `break_even_revenue = monthlyFixedCosts / avgMarginPercent` when margin data is available. Introduces `StatType.BreakEven`. Blocked by 8.2 (shares `org_financials` table and locked-insight UI pattern).
+
+### Story 8.4: (Planned) Forward Cash Flow Forecast
 
 Extends `SeasonalProjection` to project net cash flow for the next 1–3 months. Combines seasonal pattern and recent trend. Blocked by 8.1.

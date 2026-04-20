@@ -504,6 +504,24 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Attached to Pino logger — threaded through entire LLM pipeline
 - Every log entry includes correlation ID for traceability
 
+**Financial Baseline (Story 8.2+):**
+- Owner-provided fields live in `orgs.businessProfile` JSONB alongside onboarding fields: `cashOnHand`, `cashAsOfDate`, `businessStartedDate`, `monthlyFixedCosts`. All optional for backward compat.
+- History of `cashOnHand` lives in append-only `cash_balance_snapshots` (orgId FK, balance, asOfDate). Required for runway-over-time trending — backfilling snapshots is impossible.
+- **Never write `orgs.businessProfile` directly when changing `cashOnHand`** — use `orgFinancialsQueries.updateOrgFinancials` which is transactional (JSONB merge + snapshot insert in one tx). `updateBusinessProfile` at `db/queries/orgs.ts:51` does FULL replacement and will blow away existing profile fields.
+- JSONB merge idiom: `sql\`business_profile || \${JSON.stringify(updates)}::jsonb\`` — existing keys survive, new keys set. Do not round-trip through read-modify-write.
+
+**Locked Insight UX Pattern (Story 8.2+):**
+- When a stat requires an owner-provided input (runway → cashOnHand, break-even → monthlyFixedCosts), render `LockedInsightCard` inline in the dashboard feed. Contextual prompt, inline submit, no onboarding bloat.
+- Component lives at `apps/web/app/dashboard/LockedInsightCard.tsx`. Reusable — accepts title/description/inputLabel/onSubmit props.
+- Do NOT front-load owner-input fields into `OnboardingModal.tsx`. Onboarding completion rate is protected; gated stats prompt at point-of-value.
+- Stale-data banner (`CashBalanceStaleBanner.tsx`) re-prompts at >30 days age, sessionStorage-dismissible. Mirror the pattern for other time-sensitive inputs.
+
+**Runway Computation Boundary (Story 8.2):**
+- `computeRunway` consumes `CashFlowStat[]` + `{ cashOnHand, cashAsOfDate }` — NEVER `DataRow[]`. Privacy boundary is non-negotiable.
+- Five suppression cases return `[]`: not burning, no cashOnHand, zero balance, missing/malformed asOfDate, >180 days stale. Never throws.
+- Confidence tiers (`high`/`moderate`/`low`) derive deterministically from `ageInDays` + `monthsBurning` — see `runwayConfidence()`.
+- Financial baseline flows through `runFullPipeline` → `runCurationPipeline` → `computeStats(opts.financials)`. Do NOT thread through `services/aiInterpretation/provider.ts` — `computeStats` is not called from there.
+
 ---
 
 ## Usage Guidelines
@@ -526,4 +544,4 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - UX Design: `_bmad-output/planning-artifacts/ux-design-specification.md` (~2000 lines, all screens + components)
 - This file is the LLM-optimized subset — agents should start here, reference architecture/UX for depth
 
-Last Updated: 2026-02-25
+Last Updated: 2026-04-20 (Story 8.2 — Runway + Locked Insight pattern)
