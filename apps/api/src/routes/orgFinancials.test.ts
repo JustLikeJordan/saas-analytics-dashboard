@@ -7,6 +7,7 @@ const mockUpdateOrgFinancials = vi.fn();
 const mockGetCashBalanceHistory = vi.fn();
 const mockGetActiveDatasetId = vi.fn();
 const mockGetRowsByDataset = vi.fn();
+const mockGetMonthlyBucketsByDataset = vi.fn();
 const mockTrackEvent = vi.fn();
 
 vi.mock('../services/auth/tokenService.js', () => ({
@@ -24,6 +25,7 @@ vi.mock('../db/queries/index.js', () => ({
   },
   dataRowsQueries: {
     getRowsByDataset: mockGetRowsByDataset,
+    getMonthlyBucketsByDataset: mockGetMonthlyBucketsByDataset,
   },
 }));
 
@@ -266,50 +268,26 @@ describe('GET /org/financials/cash-history', () => {
   });
 });
 
-// Build a 6-month burning-business row set that will produce a valid forecast
-function burningRows() {
-  const rows: Array<Record<string, unknown>> = [];
-  let id = 1000;
+// 6-month burning-business bucket map — revenue 10k, expenses 15k per month.
+// Matches the shape the SQL-backed query returns.
+function burningBuckets() {
+  const map = new Map<string, { revenue: number; expenses: number }>();
   for (let m = 1; m <= 6; m++) {
-    rows.push({
-      id: id++,
-      orgId: 10,
-      datasetId: 7,
-      sourceType: 'csv',
-      category: 'Revenue',
-      parentCategory: 'Income',
-      date: new Date(2026, m - 1, 15, 12),
-      amount: '10000.00',
-      label: null,
-      metadata: null,
-      createdAt: new Date(),
-    });
-    rows.push({
-      id: id++,
-      orgId: 10,
-      datasetId: 7,
-      sourceType: 'csv',
-      category: 'COGS',
-      parentCategory: 'Expenses',
-      date: new Date(2026, m - 1, 15, 12),
-      amount: '15000.00',
-      label: null,
-      metadata: null,
-      createdAt: new Date(),
-    });
+    const key = `2026-${String(m).padStart(2, '0')}`;
+    map.set(key, { revenue: 10_000, expenses: 15_000 });
   }
-  return rows;
+  return map;
 }
 
 describe('GET /org/financials/cash-forecast', () => {
-  it('returns forecast payload when cashOnHand + rows yield a valid projection', async () => {
+  it('returns forecast payload when cashOnHand + aggregated buckets yield a valid projection', async () => {
     mockVerifyAccessToken.mockResolvedValueOnce(ownerPayload());
     mockGetOrgFinancials.mockResolvedValueOnce({
       cashOnHand: 40_000,
       cashAsOfDate: new Date().toISOString(),
     });
     mockGetActiveDatasetId.mockResolvedValueOnce(7);
-    mockGetRowsByDataset.mockResolvedValueOnce(burningRows());
+    mockGetMonthlyBucketsByDataset.mockResolvedValueOnce(burningBuckets());
 
     const res = await fetch(`${baseUrl}/org/financials/cash-forecast?months=3`, { headers: authHeaders });
     const json = (await res.json()) as {
@@ -338,7 +316,7 @@ describe('GET /org/financials/cash-forecast', () => {
     mockVerifyAccessToken.mockResolvedValueOnce(ownerPayload());
     mockGetOrgFinancials.mockResolvedValueOnce({}); // no cashOnHand
     mockGetActiveDatasetId.mockResolvedValueOnce(7);
-    mockGetRowsByDataset.mockResolvedValueOnce(burningRows());
+    mockGetMonthlyBucketsByDataset.mockResolvedValueOnce(burningBuckets());
 
     const res = await fetch(`${baseUrl}/org/financials/cash-forecast`, { headers: authHeaders });
     const json = (await res.json()) as { data: unknown };
@@ -361,7 +339,7 @@ describe('GET /org/financials/cash-forecast', () => {
 
     expect(res.status).toBe(200);
     expect(json.data).toBeNull();
-    expect(mockGetRowsByDataset).not.toHaveBeenCalled();
+    expect(mockGetMonthlyBucketsByDataset).not.toHaveBeenCalled();
   });
 
   it('rejects unauthorized requests', async () => {

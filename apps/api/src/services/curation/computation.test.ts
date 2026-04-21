@@ -8,6 +8,10 @@ import {
   breakEvenConfidence,
   computeCashForecast,
   monthlyNetsWindow,
+  bucketRowsByMonth,
+  cashFlowFromBuckets,
+  netsFromBuckets,
+  type MonthlyBucketMap,
 } from './computation.js';
 import type {
   ComputedStat,
@@ -1226,6 +1230,108 @@ function midMonth(year: number, m: number, revenue: number, expenses: number) {
   rows.push(midMonthRow('Expenses', year, m, expenses));
   return rows;
 }
+
+function buckets(entries: Array<[string, { revenue: number; expenses: number }]>): MonthlyBucketMap {
+  return new Map(entries);
+}
+
+describe('bucketRowsByMonth', () => {
+  it('aggregates income + expenses per local-time month', () => {
+    const rows = [
+      ...midMonth(2026, 1, 10_000, 6_000),
+      ...midMonth(2026, 1, 5_000, 1_000), // same month — sums
+      ...midMonth(2026, 2, 8_000, 4_000),
+    ];
+    const map = bucketRowsByMonth(rows);
+    expect(map.get('2026-01')).toEqual({ revenue: 15_000, expenses: 7_000 });
+    expect(map.get('2026-02')).toEqual({ revenue: 8_000, expenses: 4_000 });
+  });
+
+  it('ignores rows with non-finite amounts', () => {
+    const rows = [
+      ...midMonth(2026, 1, 10_000, 6_000),
+      { ...midMonth(2026, 1, 0, 0)[0]!, amount: 'not-a-number' },
+    ];
+    const map = bucketRowsByMonth(rows);
+    expect(map.get('2026-01')?.revenue).toBe(10_000);
+  });
+});
+
+describe('cashFlowFromBuckets', () => {
+  it('emits burning stat for three consecutive loss months from pre-aggregated buckets', () => {
+    const map = buckets([
+      ['2026-01', { revenue: 10_000, expenses: 15_000 }],
+      ['2026-02', { revenue: 10_000, expenses: 14_000 }],
+      ['2026-03', { revenue: 10_000, expenses: 16_000 }],
+    ]);
+    const result = cashFlowFromBuckets(map, 3);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.details.direction).toBe('burning');
+  });
+
+  it('suppresses when a recent month has zero revenue (gap)', () => {
+    const map = buckets([
+      ['2026-01', { revenue: 10_000, expenses: 15_000 }],
+      ['2026-02', { revenue: 0, expenses: 14_000 }], // gap
+      ['2026-03', { revenue: 10_000, expenses: 16_000 }],
+    ]);
+    expect(cashFlowFromBuckets(map, 3)).toEqual([]);
+  });
+
+  it('suppresses when net is within the 5% break-even band', () => {
+    // avg revenue 10k, 5% band = 500. Net of 200 should suppress.
+    const map = buckets([
+      ['2026-01', { revenue: 10_000, expenses: 9_800 }], // net +200
+      ['2026-02', { revenue: 10_000, expenses: 9_800 }],
+      ['2026-03', { revenue: 10_000, expenses: 9_800 }],
+    ]);
+    expect(cashFlowFromBuckets(map, 3)).toEqual([]);
+  });
+
+  it('produces identical output as computeCashFlow(rows) for equivalent data', () => {
+    const rows = [
+      ...midMonth(2026, 1, 10_000, 15_000),
+      ...midMonth(2026, 2, 10_000, 14_000),
+      ...midMonth(2026, 3, 10_000, 16_000),
+    ];
+    const fromRows = cashFlowFromBuckets(bucketRowsByMonth(rows), 3);
+    const fromBuckets = cashFlowFromBuckets(
+      buckets([
+        ['2026-01', { revenue: 10_000, expenses: 15_000 }],
+        ['2026-02', { revenue: 10_000, expenses: 14_000 }],
+        ['2026-03', { revenue: 10_000, expenses: 16_000 }],
+      ]),
+      3,
+    );
+    expect(fromRows[0]!.details.monthlyNet).toBe(fromBuckets[0]!.details.monthlyNet);
+    expect(fromRows[0]!.details.monthsBurning).toBe(fromBuckets[0]!.details.monthsBurning);
+  });
+});
+
+describe('netsFromBuckets', () => {
+  it('drops zero-revenue months and returns the trailing window', () => {
+    const map = buckets([
+      ['2026-01', { revenue: 10_000, expenses: 6_000 }],
+      ['2026-02', { revenue: 0, expenses: 5_000 }], // gap — dropped
+      ['2026-03', { revenue: 10_000, expenses: 7_000 }],
+      ['2026-04', { revenue: 10_000, expenses: 8_000 }],
+    ]);
+    const { months, nets } = netsFromBuckets(map, 12);
+    expect(months).toEqual(['2026-01', '2026-03', '2026-04']);
+    expect(nets).toEqual([4_000, 3_000, 2_000]);
+  });
+
+  it('respects the windowSize limit against the non-gap months', () => {
+    const map = buckets([
+      ['2026-01', { revenue: 10_000, expenses: 6_000 }],
+      ['2026-02', { revenue: 10_000, expenses: 7_000 }],
+      ['2026-03', { revenue: 10_000, expenses: 8_000 }],
+      ['2026-04', { revenue: 10_000, expenses: 9_000 }],
+    ]);
+    const { months } = netsFromBuckets(map, 2);
+    expect(months).toEqual(['2026-03', '2026-04']);
+  });
+});
 
 describe('monthlyNetsWindow', () => {
   it('aggregates income − expenses per YYYY-MM month', () => {

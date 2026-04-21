@@ -411,33 +411,62 @@ function computeSeasonalProjection(rows: DataRow[]): ComputedStat[] {
   }];
 }
 
-// Trailing-window cash flow. Uses the same monthly bucket pattern as
-// computeMarginTrend, but looks at the *recent* window because cash pressure
-// is about now, not historical average. Signed monthlyNet — negative = burning.
-export function computeCashFlow(rows: DataRow[], trailingMonths = 3): CashFlowStat[] {
-  const revenueByMonth = new Map<string, number>();
-  const expenseByMonth = new Map<string, number>();
+/**
+ * Monthly revenue/expenses, keyed by YYYY-MM. The privacy-preserving shape
+ * that every monthly-bucket analysis downstream of raw rows consumes. Either
+ * built from rows (legacy path, via bucketRowsByMonth) or fetched directly
+ * from SQL (efficient path for endpoints that only need aggregates).
+ */
+export type MonthlyBucketMap = Map<string, { revenue: number; expenses: number }>;
+
+/**
+ * Group rows into monthly revenue/expenses buckets. The single row-access
+ * seam for cash-flow analysis — every downstream function works on the map,
+ * not rows. Mirrors the convention `computeMarginTrend` and
+ * `monthlyNetsWindow` have used internally since 8.1; extracted here so the
+ * SQL path can reuse the downstream analysis unchanged.
+ */
+export function bucketRowsByMonth(rows: DataRow[]): MonthlyBucketMap {
+  const buckets: MonthlyBucketMap = new Map();
 
   for (const row of rows) {
     const amt = parseAmount(row.amount);
     if (amt === null) continue;
 
     const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, '0')}`;
+    const bucket = buckets.get(key) ?? { revenue: 0, expenses: 0 };
     if (row.parentCategory === 'Income') {
-      revenueByMonth.set(key, (revenueByMonth.get(key) ?? 0) + amt);
+      bucket.revenue += amt;
     } else if (row.parentCategory === 'Expenses') {
-      expenseByMonth.set(key, (expenseByMonth.get(key) ?? 0) + amt);
+      bucket.expenses += amt;
     }
+    buckets.set(key, bucket);
   }
 
-  const months = [...new Set([...revenueByMonth.keys(), ...expenseByMonth.keys()])].sort();
+  return buckets;
+}
+
+/**
+ * Cash-flow analysis on pre-aggregated monthly buckets. Takes the last
+ * `trailingMonths` buckets (chronologically), applies three suppression
+ * guards (zero-revenue month, non-positive avg revenue, break-even band),
+ * and emits a CashFlowStat or [].
+ *
+ * This is the shared analytical core — both computeCashFlow(rows) (for the
+ * curation pipeline) and the /cash-forecast endpoint (for SQL-aggregated data)
+ * call this. Suppression semantics are identical across both paths.
+ */
+export function cashFlowFromBuckets(
+  buckets: MonthlyBucketMap,
+  trailingMonths = 3,
+): CashFlowStat[] {
+  const months = [...buckets.keys()].sort();
   if (months.length < trailingMonths) return [];
 
   const window = months.slice(-trailingMonths);
   const recentMonths = window.map((m) => {
-    const revenue = revenueByMonth.get(m) ?? 0;
-    const expenses = expenseByMonth.get(m) ?? 0;
-    return { month: m, revenue, expenses, net: revenue - expenses };
+    const bucket = buckets.get(m) ?? { revenue: 0, expenses: 0 };
+    return { month: m, revenue: bucket.revenue, expenses: bucket.expenses, net: bucket.revenue - bucket.expenses };
   });
 
   // Guards run in order — each is a reason to say nothing rather than say
@@ -460,6 +489,14 @@ export function computeCashFlow(rows: DataRow[], trailingMonths = 3): CashFlowSt
     value: monthlyNet,
     details: { monthlyNet, trailingMonths, direction, monthsBurning, recentMonths },
   }];
+}
+
+/**
+ * Trailing-window cash flow from raw rows. Thin wrapper over the bucket-based
+ * analysis — see cashFlowFromBuckets for the suppression contract.
+ */
+export function computeCashFlow(rows: DataRow[], trailingMonths = 3): CashFlowStat[] {
+  return cashFlowFromBuckets(bucketRowsByMonth(rows), trailingMonths);
 }
 
 export function runwayConfidence(
@@ -613,46 +650,41 @@ export function computeBreakEven(
 }
 
 /**
- * Aggregates rows into a trailing `windowSize` months of net cash flow
- * (revenue − expenses per month, income-only months excluded when revenue is
- * zero — same gap-handling as computeCashFlow). Returns the most recent months
- * in chronological order. This is the privacy seam for the forecast: rows only
- * appear here, and the caller passes the scalar result into computeCashForecast.
+ * Net cash flow per month on pre-aggregated buckets. Drops zero-revenue
+ * months (gap handling — same as cashFlowFromBuckets), returns the most
+ * recent `windowSize` months in chronological order. Output feeds directly
+ * into computeCashForecast.
+ */
+export function netsFromBuckets(
+  buckets: MonthlyBucketMap,
+  windowSize = 12,
+): { months: string[]; nets: number[] } {
+  const allMonths = [...buckets.keys()].sort();
+
+  const months: string[] = [];
+  const nets: number[] = [];
+  for (const m of allMonths) {
+    const bucket = buckets.get(m)!;
+    if (bucket.revenue === 0) continue; // gap month — don't forecast on zero-revenue signal
+    months.push(m);
+    nets.push(bucket.revenue - bucket.expenses);
+  }
+
+  const start = Math.max(0, months.length - windowSize);
+  return { months: months.slice(start), nets: nets.slice(start) };
+}
+
+/**
+ * Monthly nets window from raw rows. Thin wrapper — see netsFromBuckets.
+ * This is the legacy row-based entry point; endpoints that already have
+ * pre-aggregated data (SQL GROUP BY) should call netsFromBuckets directly
+ * to avoid the row fetch.
  */
 export function monthlyNetsWindow(
   rows: DataRow[],
   windowSize = 12,
 ): { months: string[]; nets: number[] } {
-  const revenueByMonth = new Map<string, number>();
-  const expenseByMonth = new Map<string, number>();
-
-  for (const row of rows) {
-    const amt = parseAmount(row.amount);
-    if (amt === null) continue;
-
-    const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, '0')}`;
-    if (row.parentCategory === 'Income') {
-      revenueByMonth.set(key, (revenueByMonth.get(key) ?? 0) + amt);
-    } else if (row.parentCategory === 'Expenses') {
-      expenseByMonth.set(key, (expenseByMonth.get(key) ?? 0) + amt);
-    }
-  }
-
-  const allMonths = [...new Set([...revenueByMonth.keys(), ...expenseByMonth.keys()])].sort();
-
-  const months: string[] = [];
-  const nets: number[] = [];
-  for (const m of allMonths) {
-    const revenue = revenueByMonth.get(m) ?? 0;
-    if (revenue === 0) continue; // gap month — don't forecast on zero-revenue signal
-    const expenses = expenseByMonth.get(m) ?? 0;
-    months.push(m);
-    nets.push(revenue - expenses);
-  }
-
-  // trailing window — most recent up to windowSize
-  const start = Math.max(0, months.length - windowSize);
-  return { months: months.slice(start), nets: nets.slice(start) };
+  return netsFromBuckets(bucketRowsByMonth(rows), windowSize);
 }
 
 // `true` when any net is more than 2σ from the window mean — flags an outlier

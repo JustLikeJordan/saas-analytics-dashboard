@@ -10,9 +10,9 @@ import { roleGuard } from '../middleware/roleGuard.js';
 import { logger } from '../lib/logger.js';
 import { trackEvent } from '../services/analytics/trackEvent.js';
 import {
-  computeCashFlow,
+  cashFlowFromBuckets,
   computeCashForecast,
-  monthlyNetsWindow,
+  netsFromBuckets,
 } from '../services/curation/computation.js';
 
 export const orgFinancialsRouter = Router();
@@ -117,22 +117,24 @@ orgFinancialsRouter.get('/financials/cash-forecast', async (req, res: Response) 
     return;
   }
 
-  const { financials, rows } = await withRlsContext(user.org_id, user.isAdmin, async (tx) => {
+  const { financials, buckets } = await withRlsContext(user.org_id, user.isAdmin, async (tx) => {
     const financials = await orgFinancialsQueries.getOrgFinancials(user.org_id, tx);
     const datasetId = await orgsQueries.getActiveDatasetId(user.org_id, tx);
-    const rows = datasetId != null
-      ? await dataRowsQueries.getRowsByDataset(user.org_id, datasetId, tx)
-      : [];
-    return { financials, rows };
+    // SQL-aggregated bucket map instead of full row fetch — a 50k-row dataset
+    // collapses to ~12-60 rows at the DB layer, so API memory stays bounded.
+    const buckets = datasetId != null
+      ? await dataRowsQueries.getMonthlyBucketsByDataset(user.org_id, datasetId, tx)
+      : new Map();
+    return { financials, buckets };
   });
 
-  if (rows.length === 0) {
+  if (buckets.size === 0) {
     res.json({ data: null });
     return;
   }
 
-  const cashFlow = computeCashFlow(rows);
-  const monthlyNets = monthlyNetsWindow(rows, 12);
+  const cashFlow = cashFlowFromBuckets(buckets);
+  const monthlyNets = netsFromBuckets(buckets, 12);
   const forecast = computeCashForecast(cashFlow, financials ?? null, monthlyNets);
 
   if (forecast.length === 0) {
