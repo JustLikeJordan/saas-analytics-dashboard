@@ -35,19 +35,24 @@ test.afterAll(async () => {
   await cleanupFixtureConnection();
 });
 
-async function clearFinancialBaseline() {
+async function setupRunwayOnlyFixture() {
   const sql = postgres(DATABASE_ADMIN_URL, { max: 1 });
   try {
-    // Strip cash + fixed-costs fields from the seed org's businessProfile
-    // JSONB so the dashboard renders ONLY the "Enable Runway" card, not the
-    // "Enable Break-Even Analysis" card (which also has a Save button).
-    // Leaves other onboarding fields intact (businessType, teamSize, etc.).
+    // Goal: only the "Enable Runway" Locked Insight card should render. That
+    // means cashOnHand must be absent AND monthlyFixedCosts must be SET (not
+    // null), because the Break-Even card's gate is `monthlyFixedCosts == null`.
+    //
+    // Clearing monthlyFixedCosts would render BOTH cards and produce two
+    // Save buttons — that's what the initial version of this fixture got
+    // wrong. Setting fixedCosts to a non-null value hides Break-Even
+    // unambiguously.
     await sql`
       UPDATE orgs
-      SET business_profile = COALESCE(business_profile, '{}'::jsonb)
-        - 'cashOnHand'
-        - 'cashAsOfDate'
-        - 'monthlyFixedCosts'
+      SET business_profile = jsonb_set(
+        COALESCE(business_profile, '{}'::jsonb) - 'cashOnHand' - 'cashAsOfDate',
+        '{monthlyFixedCosts}',
+        '10000'::jsonb
+      )
       WHERE id = ${SEED_ORG_ID}
     `;
   } finally {
@@ -57,7 +62,7 @@ async function clearFinancialBaseline() {
 
 test.describe('saveCashBalance revalidation', () => {
   test('Locked Insight card disappears after submitting a balance', async ({ browser }) => {
-    await clearFinancialBaseline();
+    await setupRunwayOnlyFixture();
 
     const ctx = await browser.newContext();
     await authenticateAs(ctx, { ...adminUser, role: 'owner', isAdmin: true });
@@ -67,18 +72,15 @@ test.describe('saveCashBalance revalidation', () => {
     const heading = page.locator('#dashboard-heading');
     await heading.waitFor({ timeout: 15_000 });
 
-    // Scope input + button lookups to the Enable Runway card. Break-Even
-    // uses the same LockedInsightCard scaffold with its own Save button, so
-    // a page-wide role query resolves ambiguously. `.filter({ has })`
-    // narrows to the nearest ancestor div that contains the heading.
-    const runwayCard = page
-      .locator('div')
-      .filter({ has: page.getByRole('heading', { name: 'Enable Runway' }) })
-      .first();
-    await expect(runwayCard).toBeVisible({ timeout: 10_000 });
+    // Fixture guarantees only the Runway card renders, so a page-wide role
+    // query is unambiguous. Break-Even card is hidden because monthlyFixedCosts
+    // is set (the gate is `== null` on that field).
+    await expect(
+      page.getByRole('heading', { name: 'Enable Runway' }),
+    ).toBeVisible({ timeout: 10_000 });
 
-    await runwayCard.getByLabel(/current cash balance/i).fill('50000');
-    await runwayCard.getByRole('button', { name: /^save$/i }).click();
+    await page.getByLabel(/current cash balance/i).fill('50000');
+    await page.getByRole('button', { name: /^save$/i }).click();
 
     // After the Promise.all resolves, financials revalidates → needsCashBalance
     // flips false → LockedInsightCard unmounts. If any SWR key is left stale
