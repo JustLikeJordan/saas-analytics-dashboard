@@ -35,16 +35,19 @@ test.afterAll(async () => {
   await cleanupFixtureConnection();
 });
 
-async function clearCashOnHand() {
+async function clearFinancialBaseline() {
   const sql = postgres(DATABASE_ADMIN_URL, { max: 1 });
   try {
-    // Strip cash-related fields from the seed org's businessProfile JSONB.
+    // Strip cash + fixed-costs fields from the seed org's businessProfile
+    // JSONB so the dashboard renders ONLY the "Enable Runway" card, not the
+    // "Enable Break-Even Analysis" card (which also has a Save button).
     // Leaves other onboarding fields intact (businessType, teamSize, etc.).
     await sql`
       UPDATE orgs
       SET business_profile = COALESCE(business_profile, '{}'::jsonb)
         - 'cashOnHand'
         - 'cashAsOfDate'
+        - 'monthlyFixedCosts'
       WHERE id = ${SEED_ORG_ID}
     `;
   } finally {
@@ -54,7 +57,7 @@ async function clearCashOnHand() {
 
 test.describe('saveCashBalance revalidation', () => {
   test('Locked Insight card disappears after submitting a balance', async ({ browser }) => {
-    await clearCashOnHand();
+    await clearFinancialBaseline();
 
     const ctx = await browser.newContext();
     await authenticateAs(ctx, { ...adminUser, role: 'owner', isAdmin: true });
@@ -64,20 +67,26 @@ test.describe('saveCashBalance revalidation', () => {
     const heading = page.locator('#dashboard-heading');
     await heading.waitFor({ timeout: 15_000 });
 
-    // Card renders because cashOnHand is null after the fixture wipe.
-    const enableRunway = page.getByRole('heading', { name: 'Enable Runway' });
-    await expect(enableRunway).toBeVisible({ timeout: 10_000 });
+    // Scope input + button lookups to the Enable Runway card. Break-Even
+    // uses the same LockedInsightCard scaffold with its own Save button, so
+    // a page-wide role query resolves ambiguously. `.filter({ has })`
+    // narrows to the nearest ancestor div that contains the heading.
+    const runwayCard = page
+      .locator('div')
+      .filter({ has: page.getByRole('heading', { name: 'Enable Runway' }) })
+      .first();
+    await expect(runwayCard).toBeVisible({ timeout: 10_000 });
 
-    // Submit a balance. Input id is generated via useId; target by label.
-    const input = page.getByLabel(/current cash balance/i);
-    await input.fill('50000');
-    await page.getByRole('button', { name: /^save$/i }).click();
+    await runwayCard.getByLabel(/current cash balance/i).fill('50000');
+    await runwayCard.getByRole('button', { name: /^save$/i }).click();
 
     // After the Promise.all resolves, financials revalidates → needsCashBalance
     // flips false → LockedInsightCard unmounts. If any SWR key is left stale
     // or the router.refresh races ahead, the card sticks at visible and this
     // assertion times out.
-    await expect(enableRunway).toBeHidden({ timeout: 15_000 });
+    await expect(
+      page.getByRole('heading', { name: 'Enable Runway' }),
+    ).toBeHidden({ timeout: 15_000 });
 
     // Heading is a stable anchor across the dashboard RSC tree. If the page
     // redirected (auth loss, error boundary) or crashed during save, this
