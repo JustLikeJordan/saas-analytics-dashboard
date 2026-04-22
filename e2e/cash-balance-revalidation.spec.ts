@@ -62,6 +62,11 @@ async function setupRunwayOnlyFixture() {
 
 test.describe('saveCashBalance revalidation', () => {
   test('Locked Insight card disappears after submitting a balance', async ({ browser }) => {
+    // Default per-test timeout is 30s, but this test does: nav → fill → PUT →
+    // three parallel SWR refetches → router.refresh → unmount. Each step is
+    // fast individually; together they can exceed 30s on cold CI runners.
+    test.setTimeout(60_000);
+
     await setupRunwayOnlyFixture();
 
     const ctx = await browser.newContext();
@@ -85,23 +90,29 @@ test.describe('saveCashBalance revalidation', () => {
     const saveButton = page.getByRole('button', { name: /^save$/i });
     await expect(saveButton).toBeEnabled({ timeout: 5_000 });
 
-    // Use `force: true` to bypass Playwright's re-check of actionability at
-    // click time. LockedInsightCard.handleSubmit sets `submitting = true`
-    // synchronously when the form handler fires, which flips the button to
-    // `disabled`. Playwright's retry logic sees the disabled state mid-click
-    // and keeps retrying until the 30s test timeout — even though the submit
-    // actually started. The toBeEnabled check above guards against clicking
-    // a button that was always disabled; force: true bypasses the redundant
-    // post-click re-check.
-    await saveButton.click({ force: true });
+    // Wait for the PUT response alongside the click so we can assert the
+    // save reached the server and succeeded. `force: true` bypasses
+    // Playwright's post-click actionability re-check — LockedInsightCard
+    // flips the button to `disabled` synchronously when submit fires, and
+    // the re-check otherwise retries until test timeout.
+    const [putResponse] = await Promise.all([
+      page.waitForResponse(
+        (resp) =>
+          resp.url().includes('/api/org/financials') && resp.request().method() === 'PUT',
+        { timeout: 10_000 },
+      ),
+      saveButton.click({ force: true }),
+    ]);
+    expect(putResponse.status()).toBe(200);
 
-    // After the Promise.all resolves, financials revalidates → needsCashBalance
-    // flips false → LockedInsightCard unmounts. If any SWR key is left stale
-    // or the router.refresh races ahead, the card sticks at visible and this
-    // assertion times out.
+    // After the Promise.all resolves in saveCashBalance, financials revalidates
+    // → needsCashBalance flips false → LockedInsightCard unmounts. If any SWR
+    // key is left stale or the router.refresh races ahead, the card sticks at
+    // visible and this assertion times out. Timeout widened to 30s because
+    // three parallel SWR refetches + router.refresh take measurable time in CI.
     await expect(
       page.getByRole('heading', { name: 'Enable Runway' }),
-    ).toBeHidden({ timeout: 15_000 });
+    ).toBeHidden({ timeout: 30_000 });
 
     // Heading is a stable anchor across the dashboard RSC tree. If the page
     // redirected (auth loss, error boundary) or crashed during save, this
