@@ -134,10 +134,11 @@ export function assemblePrompt(
   insights: ScoredInsight[],
   promptVersion = DEFAULT_VERSION,
   businessProfile?: BusinessProfile | null,
+  now: Date = new Date(),
 ): AssembledContext {
   const template = getTemplate(promptVersion);
   const businessContext = formatBusinessContext(businessProfile);
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const today = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const benchmarks = getIndustryBenchmarks(businessProfile?.businessType) ?? 'No industry benchmarks available.';
 
   if (insights.length === 0) {
@@ -159,7 +160,7 @@ export function assemblePrompt(
         insightCount: 0,
         scoringWeights: { novelty: 0, actionability: 0, specificity: 0 },
         promptVersion,
-        generatedAt: new Date().toISOString(),
+        generatedAt: now.toISOString(),
       },
     };
   }
@@ -186,7 +187,7 @@ export function assemblePrompt(
     insightCount: insights.length,
     scoringWeights: breakdown,
     promptVersion,
-    generatedAt: new Date().toISOString(),
+    generatedAt: now.toISOString(),
   };
 
   return { prompt, metadata };

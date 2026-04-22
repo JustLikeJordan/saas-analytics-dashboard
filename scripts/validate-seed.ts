@@ -154,7 +154,12 @@ function validate() {
   }
   console.log(`scoreInsights produced ${scored.length} ranked insights`);
 
-  const { prompt, metadata } = assemblePrompt(scored);
+  // Freeze the date so the snapshot stays deterministic. Otherwise the
+  // `{{today}}` placeholder in the prompt template rolls over at UTC midnight
+  // and the hash drifts. Same posture as any other snapshot test — inputs
+  // are fixed, output is fixed. Real runtime uses `new Date()` by default.
+  const FROZEN_NOW = new Date('2026-01-15T12:00:00Z');
+  const { prompt, metadata } = assemblePrompt(scored, undefined, undefined, FROZEN_NOW);
   if (!prompt || prompt.length === 0) {
     console.error('FAIL: assemblePrompt returned empty prompt');
     process.exit(1);
