@@ -331,6 +331,30 @@ apps/api/src/services/curation/
 
 **Privacy guarantee:** Raw data rows never leave the server. Only computed statistics and metadata enter the LLM prompt. This is architecturally enforced — the context assembly layer only accepts `ComputedStat[]`, not `DataRow[]`.
 
+### Email Service (Story 9.1)
+
+Transactional mail flows through a single service at `apps/api/src/services/email/`. One public entry point (`sendEmail`), a provider abstraction (`EmailProvider` interface + singleton registry), and pluggable backends (`console` for dev/test/CI, `resend` for production, `postmark` as a stub to prove the factory pattern compiles).
+
+| Component | Responsibility | File |
+|-----------|---------------|------|
+| **Provider interface** | Contract: `name`, `send(opts)`, `checkHealth()` + `SendEmailOpts`, `SendResult`, `EmailSendError` | `provider.ts` |
+| **Registry singleton** | `registerEmailProvider` / `getEmailProvider` / `resetEmailProvider` — one active provider per process, picked at boot | `provider.ts` |
+| **Init / swap seam** | `initEmailProvider(env)` selects the provider per `EMAIL_PROVIDER` env var | `init.ts` |
+| **Console provider** | Dev/test/CI default — renders React template, logs structured line, optional HTML capture to disk. Never sends. | `providers/console.ts` |
+| **Resend provider** | Production — wraps Resend SDK, classifies 5xx+429+network as retryable, 4xx as non-retryable, captures 4xx to Sentry only | `providers/resend.ts` |
+
+**Swap seam:** `init.ts` is the one file that knows about every concrete provider. Swapping Resend for Postmark means implementing one `providers/*.ts` file + adding one case to the switch. Call sites never change.
+
+**Privacy boundary:** `SendEmailOpts.react` is a rendered `ReactElement`, not `ComputedStat[]` or `DataRow[]`. Template rendering happens at the caller (digest generator in Story 9.2). The email service never sees raw business data — NFR12's privacy invariant is preserved downstream.
+
+**Retry contract:** The provider layer does not retry. `EmailSendError.retryable` classifies failures so BullMQ jobs (Story 9.2, Epic 10 alerts) can requeue via their own backoff config. Synchronous callers catch the error and decide themselves.
+
+**Observability:** One Pino log line per send attempt — success or failure — with `{ correlationId, template, to: redactedTo, provider, outcome, providerMessageId, durationMs }`. Operators grep by `template` + `outcome` to find every failure for a given email type. 4xx failures also land in Sentry (tagged `provider: 'email'`); 5xx storms do not, to avoid spamming oncall during upstream outages.
+
+**Health:** The email provider's `checkHealth()` returns static `ok` — no vendor probe. Resend availability surfaces via send-failure logs and Sentry, not liveness probes. `/health` includes `email: { provider, status, latencyMs }` for debugging (what backend is live?), fail-open for readiness (email outage doesn't stop the app from serving traffic).
+
+**Prior scaffolding:** `apps/api/src/services/emailDigest/` predates Epic 9 and is scheduled for deletion in Story 9.2 when the new digest generator at `apps/api/src/jobs/digest/` ships. A `README.md` in that directory directs new callers to use `services/email/` instead.
+
 ### Decision Impact Analysis
 
 **Implementation Sequence:**
@@ -467,10 +491,17 @@ apps/api/src/
 │   │   ├── csvAdapter.ts
 │   │   ├── normalizer.ts
 │   │   └── index.ts
-│   └── aiInterpretation/
-│       ├── claudeClient.ts
-│       ├── streamHandler.ts
-│       └── index.ts
+│   ├── aiInterpretation/
+│   │   ├── claudeClient.ts
+│   │   ├── streamHandler.ts
+│   │   └── index.ts
+│   └── email/                  # Story 9.1 — provider-abstracted transactional mail
+│       ├── index.ts           # public: sendEmail, types, EmailSendError
+│       ├── init.ts            # boot-time provider selection
+│       ├── provider.ts        # EmailProvider interface + singleton registry
+│       └── providers/
+│           ├── console.ts    # dev/test/CI default — renders + logs + optional capture
+│           └── resend.ts     # production — Resend SDK + retryable error classification
 ├── middleware/                 # Express middleware
 │   ├── authMiddleware.ts
 │   ├── rateLimiter.ts

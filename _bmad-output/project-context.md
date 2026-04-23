@@ -428,6 +428,9 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Curation pipeline is THREE separate layers (computation → scoring → assembly) — never a monolithic service
 - Route handlers are THIN — validate, call service, return. No business logic in routes.
 - CORS is explicitly NOT configured — BFF proxy means same-origin only. Do NOT add CORS.
+- **Email must go through `sendEmail()`** (Story 9.1) — never call `resend` SDK or `@react-email/components` directly from a route handler, service, or job. Provider swaps touch one file: `apps/api/src/services/email/init.ts` (+ a new `providers/*.ts`). Existing `apps/api/src/services/emailDigest/` predates this module and is scheduled for retirement in Story 9.2 — do not extend it.
+- **`EMAIL_PROVIDER=console` is forbidden in production** — enforced by config.ts refine. Console provider captures sends to logs; shipping it to prod silently drops customer mail.
+- **Email service privacy boundary** — `SendEmailOpts.react` is a rendered `ReactElement`. Never pass `ComputedStat[]`, `DataRow[]`, or raw business data to the email service. Template rendering happens at the caller.
 
 **Multi-Tenancy (fail closed):**
 - `org_id` is required on EVERY database query function — no exceptions

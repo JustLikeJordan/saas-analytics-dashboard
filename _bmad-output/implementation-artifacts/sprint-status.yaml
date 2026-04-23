@@ -127,7 +127,7 @@ development_status:
   #   [C] digest_preferences uses user_id as PK (one pref per user, all orgs).
   #       Per-org cadence deferred to Epic 9 retro if multi-org feedback demands it.
   epic-9: in-progress
-  9-1-email-infrastructure-provider-integration: ready-for-dev
+  9-1-email-infrastructure-provider-integration: review
   9-2-weekly-digest-generator-bullmq-cron: backlog
   9-3-digest-email-template: backlog
   9-4-preferences-unsubscribe-can-spam-compliance: backlog
