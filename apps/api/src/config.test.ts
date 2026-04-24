@@ -17,6 +17,8 @@ vi.hoisted(() => {
     JWT_SECRET: 'j'.repeat(32),
     APP_URL: 'http://localhost:3000',
     NODE_ENV: 'development',
+    EMAIL_FROM_ADDRESS: 'insights@kiln.test.local',
+    EMAIL_MAILING_ADDRESS: '123 Real Address, Denver, CO 80202',
   });
 });
 
@@ -36,11 +38,13 @@ function baseEnv(overrides: Record<string, string> = {}) {
     JWT_SECRET: 'j'.repeat(32),
     APP_URL: 'http://localhost:3000',
     NODE_ENV: 'development',
+    EMAIL_FROM_ADDRESS: 'insights@kiln.app',
+    EMAIL_MAILING_ADDRESS: '500 Real St, Denver, CO 80202',
     ...overrides,
   };
 }
 
-describe('envSchema — email refine rules', () => {
+describe('envSchema — email provider coupling', () => {
   it('accepts EMAIL_PROVIDER=resend when RESEND_API_KEY is set', () => {
     const result = envSchema.safeParse(
       baseEnv({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_abc' }),
@@ -79,7 +83,7 @@ describe('envSchema — email refine rules', () => {
     expect(result.success).toBe(true);
   });
 
-  it('defaults EMAIL_PROVIDER to "console" when unset outside production', () => {
+  it('defaults EMAIL_PROVIDER to "console" outside production', () => {
     const result = envSchema.safeParse(baseEnv());
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -87,12 +91,65 @@ describe('envSchema — email refine rules', () => {
     expect(result.data.EMAIL_PROVIDER).toBe('console');
     expect(result.data.EMAIL_FROM_NAME).toBe('Kiln Insights');
   });
+});
 
-  it('EMAIL_MAILING_ADDRESS defaults to a non-empty string (CAN-SPAM)', () => {
-    const result = envSchema.safeParse(baseEnv());
+describe('envSchema — CAN-SPAM + delivery guards (no placeholder defaults)', () => {
+  it('requires EMAIL_FROM_ADDRESS — fails when omitted', () => {
+    const env = baseEnv();
+    delete (env as Record<string, string>).EMAIL_FROM_ADDRESS;
+    const result = envSchema.safeParse(env);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.some((i) => i.path[0] === 'EMAIL_FROM_ADDRESS')).toBe(true);
+  });
+
+  it('requires EMAIL_MAILING_ADDRESS — fails when omitted', () => {
+    const env = baseEnv();
+    delete (env as Record<string, string>).EMAIL_MAILING_ADDRESS;
+    const result = envSchema.safeParse(env);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.some((i) => i.path[0] === 'EMAIL_MAILING_ADDRESS')).toBe(true);
+  });
+
+  it('rejects reserved @example.com FROM address in production', () => {
+    const result = envSchema.safeParse(
+      baseEnv({
+        NODE_ENV: 'production',
+        EMAIL_PROVIDER: 'resend',
+        RESEND_API_KEY: 're_prod',
+        EMAIL_FROM_ADDRESS: 'insights@example.com',
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.path[0] === 'EMAIL_FROM_ADDRESS');
+    expect(issue?.message).toMatch(/reserved test domain/);
+  });
+
+  it('rejects the "1234 Main St" placeholder mailing address in production', () => {
+    const result = envSchema.safeParse(
+      baseEnv({
+        NODE_ENV: 'production',
+        EMAIL_PROVIDER: 'resend',
+        RESEND_API_KEY: 're_prod',
+        EMAIL_MAILING_ADDRESS: 'Kiln Insights, 1234 Main St, Denver, CO 80202, USA',
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.path[0] === 'EMAIL_MAILING_ADDRESS');
+    expect(issue?.message).toMatch(/placeholder/i);
+  });
+
+  it('allows @example.* addresses outside production (dev / test / CI)', () => {
+    const result = envSchema.safeParse(
+      baseEnv({ NODE_ENV: 'development', EMAIL_FROM_ADDRESS: 'dev@example.com' }),
+    );
     expect(result.success).toBe(true);
-    if (!result.success) return;
-
-    expect(result.data.EMAIL_MAILING_ADDRESS.length).toBeGreaterThan(0);
   });
 });

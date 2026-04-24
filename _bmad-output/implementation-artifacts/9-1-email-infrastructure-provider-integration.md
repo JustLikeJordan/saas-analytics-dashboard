@@ -1,6 +1,6 @@
 # Story 9.1: Email Infrastructure & Provider Integration
 
-Status: review
+Status: done
 
 <!-- Epic 9: Weekly Email Digest & Retention Loop. First story in the epic; unblocks 9.2 (digest generator), 9.3 (template), 9.4 (preferences), 9.5 (observability). Also foundation for Epic 10 alerts (GTM Week 4). -->
 <!-- Every story must complete all 4 steps: Create → Validate → Dev → Code Review. Don't skip. -->
@@ -329,7 +329,7 @@ claude-opus-4-7 (Claude Code)
 - `apps/api/src/services/email/index.test.ts` — barrel integration (register + sendEmail round-trip)
 - `apps/api/src/routes/health.test.ts` — email payload presence on /health + /health/ready
 
-**New — docs:**
+**New — docs (note: `_explained.md` files are gitignored per project policy; they exist on disk but are not tracked in git):**
 - `apps/api/src/services/email/provider.ts_explained.md`
 - `apps/api/src/services/email/index.ts_explained.md`
 - `apps/api/src/services/email/init.ts_explained.md`
@@ -339,7 +339,7 @@ claude-opus-4-7 (Claude Code)
 - `_bmad-output/implementation-artifacts/epic-9-retro-pending.md` — retro ledger (Task 10)
 
 **Modified:**
-- `apps/api/src/config.ts` — email env vars + two refine rules + deprecation comment on DIGEST_FROM_EMAIL
+- `apps/api/src/config.ts` — email env vars + four refine rules (two new in review pass: RFC 2606 reserved-domain guard + CAN-SPAM placeholder-address guard) + deprecation comment on DIGEST_FROM_EMAIL. `EMAIL_FROM_ADDRESS` and `EMAIL_MAILING_ADDRESS` are required (no defaults).
 - `apps/api/src/config.ts_explained.md` — Story 9.1 delta section
 - `apps/api/src/index.ts` — initEmailProvider(env) call in boot sequence
 - `apps/api/src/routes/health.ts` — email check in /health + /health/ready
@@ -351,8 +351,58 @@ claude-opus-4-7 (Claude Code)
 - `_bmad-output/project-context.md` — three new rules under "Architecture Boundaries"
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — 9-1 status transitions (ready-for-dev → in-progress → review)
 
+## Senior Developer Review (AI) — 2026-04-23
+
+**Reviewer:** Corey (Dev agent, adversarial review pass)
+**Outcome:** Approved after HIGH/MEDIUM fixes applied in-session
+
+### Findings resolved
+
+1. **HIGH — CAN-SPAM + delivery risk from placeholder defaults**
+   `EMAIL_FROM_ADDRESS` and `EMAIL_MAILING_ADDRESS` had `.default()` values that would ship to production with a reserved `@example.com` sender (silent send failure via Resend domain verification) and a `1234 Main St` mailing address (CAN-SPAM §7704 violation). AC #4 said both fields are required.
+   **Fix:** removed both defaults in `apps/api/src/config.ts`. Added two new `.refine()` rules: (a) reject `@example.com/org/net`, `.test`, `localhost` FROM addresses in production (RFC 2606 reserved domains); (b) reject `1234 Main St` placeholder in mailing address in production. Dev/test/CI are unrestricted.
+
+2. **MEDIUM — Config test locked in the compliance risk**
+   `config.test.ts` asserted "defaults to a non-empty string (CAN-SPAM)" — a green test that approved the placeholder.
+   **Fix:** replaced with four positive-coverage tests: required-field absence (FROM + mailing), placeholder rejection in production (FROM + mailing), and permissive behavior in dev. Suite grew from 6 to 10 tests in `config.test.ts`.
+
+3. **MEDIUM — Silent-success fallback in Resend provider**
+   `response.data?.id ?? 'unknown'` reported success with a fake message id when the SDK returned neither error nor data.
+   **Fix:** `apps/api/src/services/email/providers/resend.ts` now throws `EmailSendError({ retryable: true })` on that branch with one `error`-level log. New unit test covers the branch.
+
+4. **LOW — RFC 5322 display-name escaping**
+   `` `${EMAIL_FROM_NAME} <${EMAIL_FROM_ADDRESS}>` `` silently broke if the name had `,`, `"`, `<`, `>`, or `\`. Typical product names are safe but a name like "Smith, Jones" would produce a malformed header.
+   **Fix:** `formatFromAddress(name, address)` helper — quotes + escapes when needed, unchanged otherwise. Two new tests for special-char + escape cases.
+
+5. **LOW — File List ambiguity around `_explained.md` files**
+   Listed as "New — docs" without noting the project-wide `.gitignore` rule on `*_explained.md`. Future reviewers would read the list, check git, and report missing files.
+   **Fix:** one-line note added to File List section.
+
+### Review delta
+
+| File | Change |
+|------|--------|
+| `apps/api/src/config.ts` | Defaults removed from `EMAIL_FROM_ADDRESS` + `EMAIL_MAILING_ADDRESS`; two production refine rules added |
+| `apps/api/src/config.test.ts` | Rewritten: 10 tests covering provider coupling + CAN-SPAM guards (was 6) |
+| `apps/api/src/services/email/providers/resend.ts` | `formatFromAddress()` helper; silent-success fallback now throws retryable `EmailSendError` |
+| `apps/api/src/services/email/providers/resend.test.ts` | +3 tests (silent-success branch, display-name quoting, backslash escaping) — 16 total (was 13) |
+| `apps/api/src/services/email/{provider,index}.test.ts` + `providers/{console,resend}.test.ts` + `routes/health.test.ts` | `vi.hoisted` env seed updated with the two new required fields |
+| `.env.example` | `EMAIL_FROM_ADDRESS` + `EMAIL_MAILING_ADDRESS` moved from commented-optional to uncommented-required with explanatory comments |
+
+### Test results
+
+- **API:** 70 files / 876 tests — all green
+- **Web:** 41 files / 426 tests — all green
+- **Total:** 1,302 tests (up from 1,295)
+- Type-check clean, lint clean, build clean
+
+### Decisions carried to retro
+
+No new items. Two deviations already tracked in `epic-9-retro-pending.md` (React Email v1 vs. `^0.x` spec pin; `providers/` subdirectory vs. flat) remain accepted.
+
 ## Change Log
 
 | Date | Change |
 |------|--------|
 | 2026-04-23 | Story 9.1 implementation complete — 47 new tests, 14/14 ACs satisfied, full 1,295-test suite green. Status → review. |
+| 2026-04-23 | Code review pass — 5 findings resolved (1 HIGH CAN-SPAM, 2 MEDIUM, 2 LOW). 7 net new tests added. Final suite 876 api + 426 web = 1,302 green. Status → done. |

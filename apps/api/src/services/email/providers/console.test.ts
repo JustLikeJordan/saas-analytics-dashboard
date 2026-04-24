@@ -15,6 +15,8 @@ vi.hoisted(() => {
     JWT_SECRET: 'j'.repeat(32),
     APP_URL: 'http://localhost:3000',
     NODE_ENV: 'development',
+    EMAIL_FROM_ADDRESS: 'insights@kiln.test.local',
+    EMAIL_MAILING_ADDRESS: '500 Test Ave, Denver, CO 80202',
   });
 });
 

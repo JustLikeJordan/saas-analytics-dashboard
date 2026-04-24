@@ -17,6 +17,8 @@ vi.hoisted(() => {
     NODE_ENV: 'development',
     EMAIL_PROVIDER: 'resend',
     RESEND_API_KEY: 're_test',
+    EMAIL_FROM_ADDRESS: 'insights@kiln.test.local',
+    EMAIL_MAILING_ADDRESS: '500 Test Ave, Denver, CO 80202',
   });
 });
 
@@ -272,6 +274,52 @@ describe('resend provider', () => {
     await provider.send({ to: 'a@b.com', subject: 's', react: template() });
     const [payload] = send.mock.calls[0]! as [Record<string, unknown>];
     expect(payload.tags).toBeUndefined();
+  });
+
+  it('throws retryable EmailSendError when SDK returns neither id nor error', async () => {
+    const { logger, error } = makeFakeLogger();
+    const { client } = fakeResend(async () => ({
+      data: null,
+      error: null,
+    }));
+    const provider = createResendProvider(env, { logger, resend: client, sentry });
+
+    await expect(
+      provider.send({ to: 'a@b.com', subject: 's', react: template() }),
+    ).rejects.toMatchObject({ retryable: true });
+    expect(error).toHaveBeenCalledTimes(1);
+    const [errPayload] = error.mock.calls[0]! as [Record<string, unknown>];
+    expect(errPayload.outcome).toBe('failed');
+  });
+
+  it('quotes display names containing RFC 5322 special characters', async () => {
+    const { logger } = makeFakeLogger();
+    const { client, send } = fakeResend(async () => ({ data: { id: 'x' }, error: null }));
+    const provider = createResendProvider(
+      {
+        ...env,
+        EMAIL_FROM_NAME: 'Smith, Jones & Co.',
+        EMAIL_FROM_ADDRESS: 'hello@kiln.app',
+      } as typeof env,
+      { resend: client, sentry, logger },
+    );
+
+    await provider.send({ to: 'a@b.com', subject: 's', react: template() });
+    const [payload] = send.mock.calls[0]! as [Record<string, unknown>];
+    expect(payload.from).toBe('"Smith, Jones & Co." <hello@kiln.app>');
+  });
+
+  it('escapes embedded quotes and backslashes in display names', async () => {
+    const { logger } = makeFakeLogger();
+    const { client, send } = fakeResend(async () => ({ data: { id: 'x' }, error: null }));
+    const provider = createResendProvider(
+      { ...env, EMAIL_FROM_NAME: 'Kiln "Pro" \\ Ops', EMAIL_FROM_ADDRESS: 'hello@kiln.app' } as typeof env,
+      { resend: client, sentry, logger },
+    );
+
+    await provider.send({ to: 'a@b.com', subject: 's', react: template() });
+    const [payload] = send.mock.calls[0]! as [Record<string, unknown>];
+    expect(payload.from).toBe('"Kiln \\"Pro\\" \\\\ Ops" <hello@kiln.app>');
   });
 
   it('treats a null statusCode from Resend as retryable', async () => {

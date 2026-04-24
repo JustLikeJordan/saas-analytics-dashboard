@@ -58,7 +58,7 @@ export function createResendProvider(env: Env, deps: ResendDeps = {}): EmailProv
       let response;
       try {
         response = await getClient().emails.send({
-          from: `${env.EMAIL_FROM_NAME} <${env.EMAIL_FROM_ADDRESS}>`,
+          from: formatFromAddress(env.EMAIL_FROM_NAME, env.EMAIL_FROM_ADDRESS),
           to: opts.to,
           subject: opts.subject,
           html,
@@ -126,7 +126,26 @@ export function createResendProvider(env: Env, deps: ResendDeps = {}): EmailProv
         });
       }
 
-      const providerMessageId = response.data?.id ?? 'unknown';
+      // Resend's discriminated response says one of `data` or `error` is always set.
+      // If we reach this branch with no error, a missing id means something is wrong —
+      // treat it as a retryable failure rather than reporting a fake success.
+      const providerMessageId = response.data?.id;
+      if (!providerMessageId) {
+        log.error(
+          {
+            correlationId,
+            provider: 'resend',
+            template,
+            to: redactedTo,
+            outcome: 'failed',
+            durationMs,
+          },
+          'email send returned neither id nor error',
+        );
+        throw new EmailSendError('Resend returned success with no message id', {
+          retryable: true,
+        });
+      }
 
       log.info(
         {
@@ -158,6 +177,17 @@ function isRetryableStatus(statusCode: number | null): boolean {
   if (statusCode === null) return true; // unknown = assume transient
   if (statusCode === 429) return true;
   return statusCode >= 500;
+}
+
+// RFC 5322 display-name rules: any of "(),.:;<>@[]\\ or a double-quote in the name
+// forces it to be wrapped in "..." with embedded " and \ escaped. Typical product
+// names (e.g. "Kiln Insights") don't trip this — but a name like Smith, Jones
+// would silently break the header without quoting.
+function formatFromAddress(name: string, address: string): string {
+  const needsQuoting = /[(),.:;<>@[\]\\"]/.test(name);
+  if (!needsQuoting) return `${name} <${address}>`;
+  const escaped = name.replace(/(["\\])/g, '\\$1');
+  return `"${escaped}" <${address}>`;
 }
 
 function tagsToResendFormat(
